@@ -1,0 +1,176 @@
+Expanded site description — CribMatch Zimbabwe (real-estate focused)
+
+CribMatch Zimbabwe is a fast, human-first rental assistant that connects renters, landlords and agents across Zimbabwe using two interfaces: the web and WhatsApp. Use the website to browse listings, understand the process, and shortlist options. Use WhatsApp for concierge matching, availability checks, viewing coordination, and basic verification steps. CribMatch combines local market knowledge, mobile-first UX, and practical automation to make listing, searching and renting properties simple, safe and fast for Zimbabwean users.
+
+Core benefits
+
+Speed: No long forms — start on the web or WhatsApp and move fast.
+
+Local-first: Listings and marketplace workflows tuned for Zimbabwe (currency, suburbs, tenant expectations).
+
+Agent-friendly: Tools and simple flows for agents to advertise properties, manage enquiries and schedule viewings without complicated portals.
+
+Trust & safety: Clear guidance on privacy, no requests for banking PINs, and optional basic verification steps for listings.
+
+Low friction: Browse on the web, then continue on WhatsApp — ideal for mobile-first users and agents.
+
+Suggested pages & sample copy (ready to use)
+Home (Hero + quick actions)
+
+Hero headline: Find or List Rentals — Fast, Local, On Web + WhatsApp
+Subheadline: “Browse local rentals on the web, then chat on WhatsApp to get matched, confirm availability, and book viewings.”
+Primary CTAs: Browse listings (web) — Chat on WhatsApp (opens chat) — List a Property (opens chat)
+Quick features: Mobile-first search, Agent partnerships, Secure messaging, Local area filters
+
+How It Works
+
+Explain step-by-step:
+
+Browse on the website or tap our WhatsApp link (or save +263 777 215 826).
+
+Tell the assistant what you want (area, budget, bedrooms).
+
+Get matched with listings or agent contacts, schedule viewings and handle negotiations — via WhatsApp, with the website as your browsing and reference point.
+Include screenshots or short GIFs showing WhatsApp flows.
+
+Listings (Browse / Agent Showcase)
+
+Search by suburb, price, beds, furnished.
+
+Highlight featured/verified listings and agent profiles.
+
+Each listing page: photos, short description, rent, deposit, contact button to WhatsApp, agent contact and viewing times.
+
+For Renters
+
+Quick checklist for renters (what to bring to viewings, how to report problems).
+
+Tips on avoiding scams and how to verify landlords.
+
+Payment and contract guidance specific to Zimbabwe (rent in USD or ZWL where applicable).
+
+For Landlords & Agents
+
+How to list: send property details and photos via WhatsApp.
+
+Pricing & promotion options (basic free listing vs featured paid listing).
+
+Agent dashboard (if you later add a web dashboard): simple CSV upload, quick-edit listing, enquiries log.
+
+Pricing & Packages
+
+Free basic listing (standard exposure).
+
+Featured listing (priority placement) — monthly fee.
+
+Agent partner plans with volume discounts.
+(Keep pricing transparent and link to WhatsApp for purchase/activation)
+
+FAQ
+
+Short answers: How do I pay? Can I verify my tenant? What areas do you cover? How long until my listing appears?
+
+Contact / Business Enquiries
+
+WhatsApp: +263 777 215 826 (primary)
+Email: rolandmungure@cribmatch.org
+ (partnerships, press)
+Form for non-WhatsApp users (optional) that emails the team.
+
+Privacy & Safety / Terms
+
+Clear statements: no asking for banking PINs, data retention policy, how to report abuse.
+
+Blog / Market Insights (optional)
+
+Short local-market updates, rental trends by suburb, seasonal tips for landlords and renters.
+
+Suggested UI elements & copy snippets (microcopy)
+
+Button: “Chat on WhatsApp” / “List your property”
+
+Small banner: “Verified listings receive priority display”
+
+Empty-state copy: “No matches yet — message us on WhatsApp and we’ll find it for you.”
+
+Toast success: “Message sent — we’ll reply within 1 business day.”
+
+Tailwind color palette (suitable for a real-estate agent company)
+
+Below is a compact, trustworthy palette — professional but warm and local-friendly. I include HEXs and how to add them to your tailwind.config.js as custom colors, plus example usage.
+
+// tailwind.config.js (extend colors)
+module.exports = {
+  theme: {
+    extend: {
+      colors: {
+        primary: {
+          DEFAULT: '#0B5E5A', // deep teal - brand primary (trustworthy, calm)
+          50: '#E7F6F5',
+          100: '#CFECEB',
+          200: '#9FDDD7',
+          300: '#6FCDBF',
+          400: '#3FBCA7',
+          500: '#0B5E5A'
+        },
+        accent: {
+          DEFAULT: '#F59E0B', // warm gold - call to action, highlights
+          100: '#FFF3DB',
+          200: '#FFE8A8',
+          300: '#FFD475',
+          400: '#F59E0B'
+        },
+        neutral: {
+          900: '#0F1724', // near-black for headings
+          700: '#334155', // body text
+          500: '#64748B', // muted text
+          300: '#CBD5E1', // border / alt bg
+          100: '#F1F5F9'  // page background
+        },
+        success: '#16A34A',
+        danger: '#DC2626',
+        mutedBlue: '#1E3A8A' // optional accent for links or badges
+      }
+    }
+  }
+}
+
+Example Tailwind usage (practical)
+
+Hero background: bg-neutral-100
+
+Primary button: bg-primary text-white hover:bg-primary/90 (or bg-primary-500)
+
+Secondary button: bg-white border border-primary text-primary
+
+Accent elements (badges, price tags): bg-accent text-neutral-900
+
+Card background: bg-white shadow-md rounded-2xl p-6 with border border-neutral-300
+
+Headings: text-neutral-900 font-semibold text-2xl
+
+Body text: text-neutral-700
+
+Footer: bg-primary text-white (or inverted bg-neutral-900 text-neutral-100)
+
+Why this palette works for real estate
+
+Deep teal (primary) feels trustworthy, modern and distinct from common blues used by competitors.
+
+Warm gold (accent) draws attention to CTAs like “Chat on WhatsApp” or “Featured”.
+
+Neutral greys keep the UI clean and let listing photos stand out.
+
+Quick accessibility & design tips
+
+Ensure contrast ratio between text and background meets WCAG AA (use dark text on light backgrounds or light text on dark backgrounds).
+
+Buttons must be at least 44px high on mobile for tappability (py-2 px-4 rounded-lg).
+
+Use plenty of white space around listing images and CTAs — mobile-first layout.
+
+SEO & Metadata suggestions
+
+Meta title (home): CribMatch Zimbabwe — WhatsApp Rental Assistant | Find Rentals & List Properties
+
+Meta description: CribMatch connects renters, landlords and agents across Zimbabwe via WhatsApp. Browse local rentals, list properties in minutes and schedule viewings — no forms, no fuss.
