@@ -113,23 +113,24 @@ export async function GET(request) {
   const token = url.searchParams.get("hub.verify_token") ?? "";
   const challenge = url.searchParams.get("hub.challenge") ?? "";
 
-  const expectedApiKey = process.env.WHATCHIMP_API_KEY ?? "";
-  if (expectedApiKey) {
-    const providedApiKey = extractApiKeyFromHeaders(request.headers);
-    if (!providedApiKey || !timingSafeEqualUtf8(providedApiKey, expectedApiKey)) {
+  if (mode === "subscribe") {
+    const expected = process.env.WHATCHIMP_API_KEY ?? "";
+    if (!expected) {
+      return Response.json({ error: "WHATCHIMP_API_KEY is not set" }, { status: 500 });
+    }
+
+    if (!challenge) {
+      return Response.json({ error: "Missing challenge" }, { status: 400 });
+    }
+
+    if (token !== expected) {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
-  }
 
-  if (mode === "subscribe" && challenge) {
     return new Response(challenge, {
       status: 200,
       headers: { "content-type": "text/plain; charset=utf-8" },
     });
-  }
-
-  if (mode === "subscribe" && token && !challenge) {
-    return Response.json({ error: "Missing challenge" }, { status: 400 });
   }
 
   return Response.json({ ok: true });
@@ -141,7 +142,12 @@ export async function POST(request) {
   const expectedApiKey = process.env.WHATCHIMP_API_KEY ?? "";
   if (expectedApiKey) {
     const providedApiKey = extractApiKeyFromHeaders(request.headers);
-    if (!providedApiKey || !timingSafeEqualUtf8(providedApiKey, expectedApiKey)) {
+    const signatureHeader = request.headers.get("x-hub-signature-256") ?? "";
+    const hasMetaSignature = Boolean(signatureHeader.trim());
+    const apiKeyMatches =
+      Boolean(providedApiKey) && timingSafeEqualUtf8(providedApiKey, expectedApiKey);
+
+    if (!apiKeyMatches && !hasMetaSignature) {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
   }
@@ -161,12 +167,9 @@ export async function POST(request) {
       "Hi! Welcome to CribMatch. Tell me your suburb, budget, and bedrooms.";
 
     for (const message of incoming) {
-      const normalized = normalizeHiMessage(message.textBody);
-      if (normalized === "hi" || normalized === "hello") {
-        try {
-          await sendWhatsAppText({ to: message.from, body: replyText });
-        } catch { }
-      }
+      try {
+        await sendWhatsAppText({ to: message.from, body: replyText });
+      } catch { }
     }
   }
 
