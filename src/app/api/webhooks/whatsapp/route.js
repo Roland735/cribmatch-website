@@ -5,37 +5,47 @@ import Message from "@/lib/Message";
 
 export const runtime = "nodejs";
 
-const WHATCHIMP_SEND_ENDPOINT = "https://app.whatchimp.com/api/v1/whatsapp/send";
-const WHATCHIMP_SUBSCRIBER_GET = "https://app.whatchimp.com/api/v1/whatsapp/subscriber/get";
-const WHATCHIMP_GET_CONVERSATION = "https://app.whatchimp.com/api/v1/whatsapp/get/conversation";
+// Graph API send endpoint (we post to /{PHONE_NUMBER_ID}/messages)
+// The code below will use the env var WHATSAPP_API_TOKEN and WHATSAPP_PHONE_NUMBER_ID
 
 function digitsOnly(v) {
   return String(v || "").replace(/\D/g, "");
 }
 
-async function whatChimpPost(url, formObj) {
-  const body = new URLSearchParams(formObj);
+async function whatsappPost(phone_number_id, token, bodyObj) {
+  const url = `https://graph.facebook.com/v22.0/${phone_number_id}/messages`;
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: body.toString(),
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(bodyObj),
   });
-  try { return await res.json(); } catch (e) { return { error: "invalid-json", status: res.status }; }
+  try {
+    return await res.json();
+  } catch (e) {
+    return { error: "invalid-json", status: res.status };
+  }
 }
 
 async function sendText(phoneNumber, message) {
-  const apiToken = process.env.WHATCHIMP_API_KEY;
-  const phone_number_id = process.env.WHATCHIMP_PHONE_ID;
+  // Accept both new env names and the old Whatchimp names for smooth migration
+  const apiToken = process.env.WHATSAPP_API_TOKEN || process.env.WHATCHIMP_API_KEY;
+  const phone_number_id = process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATCHIMP_PHONE_ID || process.env.WHATCHIMP_PHONE_NUMBER_ID;
   if (!apiToken || !phone_number_id) return { error: "missing-credentials" };
-  return whatChimpPost(WHATCHIMP_SEND_ENDPOINT, {
-    apiToken,
-    phone_number_id,
-    phone_number: digitsOnly(phoneNumber),
-    message,
-  });
+
+  const payload = {
+    messaging_product: "whatsapp",
+    to: digitsOnly(phoneNumber),
+    type: "text",
+    text: { body: message },
+  };
+
+  return whatsappPost(phone_number_id, apiToken, payload);
 }
 
-// tries a function fn up to attempts times with delay ms between attempts
+// simple retry helper
 async function retry(fn, attempts = 3, delay = 400) {
   let lastErr;
   for (let i = 0; i < attempts; i++) {
@@ -43,7 +53,7 @@ async function retry(fn, attempts = 3, delay = 400) {
       return await fn();
     } catch (e) {
       lastErr = e;
-      if (i < attempts - 1) await new Promise(r => setTimeout(r, delay));
+      if (i < attempts - 1) await new Promise((r) => setTimeout(r, delay));
     }
   }
   throw lastErr;
@@ -57,6 +67,12 @@ export async function GET(request) {
 
   const expectedToken =
     process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN ||
+    process.env.WHATSAPP_VERIFY_TOKEN ||
+    process.env.WHATSAPP_VERIFY ||
+    process.env.WHATSAPP_WEBHOOK_VERIFY ||
+    process.env.WHATSAPP_VERIFY_TOKEN ||
+    process.env.WHATSAPP_WEBHOOK_TOKEN ||
+    process.env.WHATSAPP_TOKEN ||
     process.env.META_WEBHOOK_VERIFY_TOKEN ||
     process.env.WEBHOOK_VERIFY_TOKEN ||
     "";
@@ -81,35 +97,82 @@ export async function GET(request) {
   });
 }
 
+function extractTimestamp(payload, messageBlock) {
+  // WhatsApp/Meta commonly provides timestamps as seconds since epoch (string or number) in
+  // entry[0].changes[0].value.messages[0].timestamp or in message objects as 'timestamp'.
+  // Also some providers use ISO strings. We'll try multiple locations and formats.
+  const candidates = [];
+  if (payload?.timestamp) candidates.push(payload.timestamp);
+  if (messageBlock?.timestamp) candidates.push(messageBlock.timestamp);
+  if (messageBlock?.conversation_time) candidates.push(messageBlock.conversation_time);
+  // try deep common WhatsApp structure
+  try {
+    const msg =
+      payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0] ||
+      payload?.messages?.[0] ||
+      messageBlock?.messages?.[0];
+    if (msg?.timestamp) candidates.push(msg.timestamp);
+  } catch (e) { }
+
+  for (const c of candidates) {
+    if (!c) continue;
+    // numeric (unix seconds)
+    if (/^\d+$/.test(String(c))) {
+      const n = Number(String(c));
+      // if it's seconds (10 digits) -> convert to ms
+      if (String(c).length <= 10) return n * 1000;
+      return n; // already ms
+    }
+    // ISO date
+    const d = new Date(String(c));
+    if (!Number.isNaN(d.getTime())) return d.getTime();
+  }
+  return null;
+}
+
 export async function POST(request) {
   console.log("[webhook] POST invoked");
-  try { await dbConnect(); } catch (err) {
+  try {
+    await dbConnect();
+  } catch (err) {
     console.error("[webhook] DB connect failed", err);
     return NextResponse.json({ ok: false, error: "DB connect failed" }, { status: 500 });
   }
 
   // parse body
   let payload = {};
-  try { payload = await request.json(); } catch (err) {
-    try { const t = await request.text(); payload = t ? JSON.parse(t) : {}; } catch (e) { payload = {}; }
+  try {
+    payload = await request.json();
+  } catch (err) {
+    try {
+      const t = await request.text();
+      payload = t ? JSON.parse(t) : {};
+    } catch (e) {
+      payload = {};
+    }
   }
   console.log("[webhook] payload keys:", Object.keys(payload));
 
   // persist raw event (best-effort)
   try {
     const headersObj = Object.fromEntries(request.headers.entries());
-    await WebhookEvent.create({ provider: "whatchimp", headers: headersObj, payload, receivedAt: new Date() });
-  } catch (e) { console.warn("[webhook] save raw event failed:", e); }
+    await WebhookEvent.create({ provider: "whatsapp", headers: headersObj, payload, receivedAt: new Date() });
+  } catch (e) {
+    console.warn("[webhook] save raw event failed:", e);
+  }
 
-  // Normalize messageBlock and phone candidates
+  // Normalize messageBlock and phone candidates (keep your original heuristics)
   let messageBlock = payload;
   if (payload.user_message) messageBlock = { text: payload.user_message };
   else if (payload.message_content && typeof payload.message_content === "string") {
-    try { messageBlock = JSON.parse(payload.message_content); } catch (e) { messageBlock = payload.message_content; }
+    try {
+      messageBlock = JSON.parse(payload.message_content);
+    } catch (e) {
+      messageBlock = payload.message_content;
+    }
   } else if (payload.message) messageBlock = payload.message;
   else if (payload.data) messageBlock = payload.data;
 
-  // Prefer chat_id, then left part of subscriber_id, then other known fields
   const rawCandidates = [
     payload.chat_id,
     payload.subscriber_id ? String(payload.subscriber_id).split("-")[0] : null,
@@ -118,16 +181,21 @@ export async function POST(request) {
     messageBlock?.to,
     messageBlock?.from,
     messageBlock?.recipient,
+    // try WhatsApp entries
+    payload?.entry?.[0]?.changes?.[0]?.value?.contacts?.[0]?.wa_id,
+    payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.from,
   ].filter(Boolean);
 
   const phone = digitsOnly(rawCandidates[0] || "");
 
   // Save the incoming message into your DB
-  const parsedText = payload.user_message || (messageBlock && (messageBlock.text || messageBlock.body?.text)) || "";
+  const parsedText =
+    payload.user_message || (messageBlock && (messageBlock.text || messageBlock.body?.text || messageBlock.body?.plain)) || "";
+
   const incoming = {
     phone,
-    from: payload.sender || payload.from || "user",
-    wa_message_id: payload.wa_message_id || messageBlock?.wa_message_id || payload.message_id || null,
+    from: payload.sender || payload.from || messageBlock?.from || "user",
+    wa_message_id: payload.wa_message_id || messageBlock?.wa_message_id || payload.message_id || (payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.id) || null,
     type: parsedText ? "text" : "unknown",
     text: parsedText,
     raw: payload,
@@ -136,87 +204,50 @@ export async function POST(request) {
     conversationId: payload.conversation_id || null,
   };
 
-  const savedMsg = await Message.create(incoming).catch(e => { console.error("[webhook] save message error", e); return null; });
+  const savedMsg = await Message.create(incoming).catch((e) => {
+    console.error("[webhook] save message error", e);
+    return null;
+  });
 
-  // helper to check WhatChimp subscriber and conversation (with retries to handle race)
-  const apiToken = process.env.WHATCHIMP_API_KEY;
-  const phone_number_id = process.env.WHATCHIMP_PHONE_ID;
-  if (!apiToken || !phone_number_id) {
-    console.error("[webhook] missing WHATCHIMP_API_KEY or WHATCHIMP_PHONE_ID in env");
-    return NextResponse.json({ ok: false, error: "missing-whatchimp-credentials" }, { status: 500 });
-  }
-
-  // Try subscriber/get and get/conversation with a few quick retries to avoid race condition
-  let subscriberResp = null;
-  try {
-    subscriberResp = await retry(() => whatChimpPost(WHATCHIMP_SUBSCRIBER_GET, {
-      apiToken, phone_number_id, phone_number: phone,
-    }), 3, 300);
-    console.log("[webhook] subscriber/get:", subscriberResp);
-  } catch (e) {
-    console.error("[webhook] subscriber/get failed after retries:", e);
-  }
-
-  // If subscriber exists, check conversation for last incoming message time
+  // Determine whether we are allowed to send free-text based on last user message timestamp
+  // Default policy window is 24 hours (WhatsApp messaging window). You can override with env WHATSAPP_FREE_WINDOW_MS
+  const windowMs = Number(process.env.WHATSAPP_FREE_WINDOW_MS) || 24 * 60 * 60 * 1000;
   let allowedToSend = false;
-  try {
-    const convResp = await retry(() => whatChimpPost(WHATCHIMP_GET_CONVERSATION, {
-      apiToken, phone_number_id, phone_number: phone, limit: 10, offset: 0,
-    }), 3, 300);
-    console.log("[webhook] get/conversation:", convResp);
 
-    if (convResp?.status === "1" && Array.isArray(convResp.message) && convResp.message.length > 0) {
-      // Try to find the latest incoming user message timestamp (conversation_time)
-      // The response message entries may be both bot and user; we consider timestamps.
-      const timestamps = convResp.message
-        .map(m => m.conversation_time)
-        .filter(Boolean)
-        .map(s => new Date(String(s).replace(" ", "T")))
-        .filter(d => !Number.isNaN(d.getTime()));
-
-      if (timestamps.length > 0) {
-        const latest = timestamps.sort((a, b) => b - a)[0];
-        const ageMs = Date.now() - latest.getTime();
-        console.log(`[webhook] latest conversation_time ageMs=${ageMs}ms`);
-        // allow free-text if incoming message was within this window (configurable)
-        const ALLOWED_WINDOW_MS = 5 * 60 * 1000; // 5 minutes (you can raise to 15m if you prefer)
-        if (ageMs <= ALLOWED_WINDOW_MS) allowedToSend = true;
-        else {
-          // often still OK if the webhook arrived at the same time but conv hasn't been written — keep a final short retry
-          console.log("[webhook] latest message older than ALLOWED_WINDOW_MS; not allowed to send free-text");
-          allowedToSend = false;
-        }
-      } else {
-        // no timestamps available — be conservative: don't send free-text
-        allowedToSend = false;
-      }
-    } else {
-      // No conversation data yet — possible race or subscriber not created — deny free-text
-      allowedToSend = false;
-      console.log("[webhook] no conversation found for subscriber (race or not yet created).");
-    }
-  } catch (e) {
-    console.error("[webhook] conversation check error:", e);
-    allowedToSend = false;
+  const ts = extractTimestamp(payload, messageBlock);
+  if (ts) {
+    const age = Date.now() - ts;
+    console.log(`[webhook] incoming message ageMs=${age}`);
+    if (age <= windowMs) allowedToSend = true;
+  } else {
+    // fallback: if we just saved a message (savedMsg) consider it fresh
+    if (savedMsg) allowedToSend = true;
   }
 
   console.log("[webhook] allowedToSend =", allowedToSend);
 
   if (!allowedToSend) {
     // Mark for follow-up and return 200 quickly
-    await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.needsFollowUp": true, "meta.subscriberResp": subscriberResp || null } }).catch(() => { });
+    await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.needsFollowUp": true } }).catch(() => { });
     return NextResponse.json({ ok: true, note: "not-allowed-to-send-free-text-yet" });
   }
 
-  // If allowed, attempt the free-text send
+  // If allowed, attempt the free-text send using Graph API
   const replyText = `Hi 👋 Welcome to CribMatch — tell me area and budget (eg. Borrowdale, $200) and I'll find matches.`;
   const sendResp = await sendText(phone, replyText);
   console.log("[webhook] sendText response:", sendResp);
 
-  // If send rejected due to 24-hour window, mark for template/manual follow-up
-  if (sendResp?.status === "0" && /24 hour/i.test(String(sendResp.message || ""))) {
-    await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.templateRequired": true, "meta.sendResp": sendResp } }).catch(() => { });
-    return NextResponse.json({ ok: true, note: "send-rejected-24-hour", sendResp });
+  // If Graph API returned an error about message template / 24-hour window it will be in sendResp.error
+  if (sendResp?.error) {
+    // Save error for manual follow-up
+    await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.sendError": sendResp } }).catch(() => { });
+    // If error indicates 24-hour policy, mark templateRequired
+    const msg = String(sendResp?.error?.message || sendResp?.error || "");
+    if (/24 hour|message template/i.test(msg)) {
+      await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.templateRequired": true, "meta.sendResp": sendResp } }).catch(() => { });
+      return NextResponse.json({ ok: true, note: "send-rejected-24-hour", sendResp });
+    }
+    return NextResponse.json({ ok: false, error: sendResp }, { status: 500 });
   }
 
   // Success path: record send result and return 200
