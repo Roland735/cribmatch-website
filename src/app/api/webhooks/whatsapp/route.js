@@ -1,5 +1,4 @@
-// pages/api/whatchimp/webhook.js
-// adjust if your dbConnect path differs
+
 import { dbConnect, WebhookEvent } from "@/lib/db"; // Your file that exported WebhookEvent (from your pasted code)
 import Message from "@/lib/Message";
 
