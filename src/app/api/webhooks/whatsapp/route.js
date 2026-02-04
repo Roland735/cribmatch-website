@@ -4,215 +4,188 @@ import { dbConnect, WebhookEvent } from "@/lib/db";
 import Message from "@/lib/Message";
 
 const WHATCHIMP_SEND_ENDPOINT = "https://app.whatchimp.com/api/v1/whatsapp/send";
+const WHATCHIMP_SUBSCRIBER_GET = "https://app.whatchimp.com/api/v1/whatsapp/subscriber/get";
+const WHATCHIMP_GET_CONVERSATION = "https://app.whatchimp.com/api/v1/whatsapp/get/conversation";
 
-async function saveWebhookEvent(provider, headers, payload) {
-  try {
-    return await WebhookEvent.create({
-      provider,
-      headers,
-      payload,
-      receivedAt: new Date(),
-    });
-  } catch (err) {
-    console.error("[webhook] saveWebhookEvent failed:", err);
-    return null;
-  }
+function digitsOnly(v) {
+  return String(v || "").replace(/\D/g, "");
 }
 
-async function upsertMessage(parsed) {
-  try {
-    if (parsed.wa_message_id) {
-      return await Message.findOneAndUpdate(
-        { wa_message_id: parsed.wa_message_id },
-        { $set: parsed },
-        { upsert: true, new: true }
-      );
-    } else {
-      return await Message.create(parsed);
-    }
-  } catch (err) {
-    console.error("[webhook] upsertMessage failed:", err);
-    return null;
-  }
-}
-
-async function sendAutoReply(phoneNumber, text) {
-  const apiToken = process.env.WHATCHIMP_API_KEY;
-  const phone_number_id = process.env.WHATCHIMP_PHONE_ID;
-  if (!apiToken || !phone_number_id) {
-    console.warn("[webhook] WHATCHIMP_API_KEY or WHATCHIMP_PHONE_ID not set — skipping auto-reply");
-    return { error: "missing-credentials" };
-  }
-
-  const body = new URLSearchParams({
-    apiToken: apiToken,
-    phone_number_id,
-    phone_number: String(phoneNumber).replace(/\D/g, ""),
-    message: text,
-  });
-
-  const res = await fetch(WHATCHIMP_SEND_ENDPOINT, {
+async function whatChimpPost(url, formObj) {
+  const body = new URLSearchParams(formObj);
+  const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: body.toString(),
   });
-
-  try {
-    const json = await res.json();
-    return json;
-  } catch (e) {
-    return { error: "invalid-json-response", status: res.status || "unknown" };
-  }
+  try { return await res.json(); } catch (e) { return { error: "invalid-json", status: res.status }; }
 }
 
-export async function GET() {
-  return NextResponse.json({ ok: true, msg: "WhatChimp webhook (App Router) is live" });
+async function sendText(phoneNumber, message) {
+  const apiToken = process.env.WHATCHIMP_API_KEY;
+  const phone_number_id = process.env.WHATCHIMP_PHONE_ID;
+  if (!apiToken || !phone_number_id) return { error: "missing-credentials" };
+  return whatChimpPost(WHATCHIMP_SEND_ENDPOINT, {
+    apiToken,
+    phone_number_id,
+    phone_number: digitsOnly(phoneNumber),
+    message,
+  });
+}
+
+// tries a function fn up to attempts times with delay ms between attempts
+async function retry(fn, attempts = 3, delay = 400) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      if (i < attempts - 1) await new Promise(r => setTimeout(r, delay));
+    }
+  }
+  throw lastErr;
 }
 
 export async function POST(request) {
   console.log("[webhook] POST invoked");
-  // connect DB
-  try {
-    await dbConnect();
-  } catch (err) {
-    console.error("[webhook] DB connect failed:", err);
-    return NextResponse.json({ ok: false, error: "DB connection failed" }, { status: 500 });
+  try { await dbConnect(); } catch (err) {
+    console.error("[webhook] DB connect failed", err);
+    return NextResponse.json({ ok: false, error: "DB connect failed" }, { status: 500 });
   }
 
-  // read body robustly
+  // parse body
   let payload = {};
-  try {
-    payload = await request.json();
-  } catch (err) {
-    try {
-      const txt = await request.text();
-      payload = txt ? JSON.parse(txt) : {};
-    } catch (e) {
-      payload = {};
-    }
+  try { payload = await request.json(); } catch (err) {
+    try { const t = await request.text(); payload = t ? JSON.parse(t) : {}; } catch (e) { payload = {}; }
   }
+  console.log("[webhook] payload keys:", Object.keys(payload));
 
-  // save raw event (best-effort)
+  // persist raw event (best-effort)
   try {
     const headersObj = Object.fromEntries(request.headers.entries());
-    await saveWebhookEvent("whatchimp", headersObj, payload);
-  } catch (e) {
-    console.warn("[webhook] saveWebhookEvent error (ignored):", e);
+    await WebhookEvent.create({ provider: "whatchimp", headers: headersObj, payload, receivedAt: new Date() });
+  } catch (e) { console.warn("[webhook] save raw event failed:", e); }
+
+  // Normalize messageBlock and phone candidates
+  let messageBlock = payload;
+  if (payload.user_message) messageBlock = { text: payload.user_message };
+  else if (payload.message_content && typeof payload.message_content === "string") {
+    try { messageBlock = JSON.parse(payload.message_content); } catch (e) { messageBlock = payload.message_content; }
+  } else if (payload.message) messageBlock = payload.message;
+  else if (payload.data) messageBlock = payload.data;
+
+  // Prefer chat_id, then left part of subscriber_id, then other known fields
+  const rawCandidates = [
+    payload.chat_id,
+    payload.subscriber_id ? String(payload.subscriber_id).split("-")[0] : null,
+    payload.phone_number,
+    payload.from,
+    messageBlock?.to,
+    messageBlock?.from,
+    messageBlock?.recipient,
+  ].filter(Boolean);
+
+  const phone = digitsOnly(rawCandidates[0] || "");
+
+  // Save the incoming message into your DB
+  const parsedText = payload.user_message || (messageBlock && (messageBlock.text || messageBlock.body?.text)) || "";
+  const incoming = {
+    phone,
+    from: payload.sender || payload.from || "user",
+    wa_message_id: payload.wa_message_id || messageBlock?.wa_message_id || payload.message_id || null,
+    type: parsedText ? "text" : "unknown",
+    text: parsedText,
+    raw: payload,
+    status: null,
+    meta: {},
+    conversationId: payload.conversation_id || null,
+  };
+
+  const savedMsg = await Message.create(incoming).catch(e => { console.error("[webhook] save message error", e); return null; });
+
+  // helper to check WhatChimp subscriber and conversation (with retries to handle race)
+  const apiToken = process.env.WHATCHIMP_API_KEY;
+  const phone_number_id = process.env.WHATCHIMP_PHONE_ID;
+  if (!apiToken || !phone_number_id) {
+    console.error("[webhook] missing WHATCHIMP_API_KEY or WHATCHIMP_PHONE_ID in env");
+    return NextResponse.json({ ok: false, error: "missing-whatchimp-credentials" }, { status: 500 });
   }
 
+  // Try subscriber/get and get/conversation with a few quick retries to avoid race condition
+  let subscriberResp = null;
   try {
-    // Prefer top-level WhatChimp fields when present
-    let messageBlock = payload;
-    if (payload.user_message) {
-      messageBlock = { text: payload.user_message };
-    } else if (payload.message_content && typeof payload.message_content === "string") {
-      try {
-        messageBlock = JSON.parse(payload.message_content);
-      } catch (e) {
-        messageBlock = payload.message_content;
-      }
-    } else if (payload.message) {
-      messageBlock = payload.message;
-    } else if (payload.data) {
-      messageBlock = payload.data;
-    }
-
-    // Normalize phone: chat_id -> subscriber_id left part -> other fallbacks
-    let rawPhone =
-      payload.chat_id ||
-      (payload.subscriber_id ? String(payload.subscriber_id).split("-")[0] : null) ||
-      payload.phone_number ||
-      payload.from ||
-      messageBlock.to ||
-      messageBlock.from ||
-      messageBlock.recipient ||
-      null;
-
-    const phone = rawPhone ? String(rawPhone).replace(/\D/g, "") : null;
-
-    const wa_message_id = payload.wa_message_id || messageBlock.wa_message_id || payload.message_id || null;
-    const message_status =
-      payload.message_status ||
-      payload.delivery_status ||
-      messageBlock.message_status ||
-      messageBlock.delivery_status ||
-      null;
-
-    // parse message type/text
-    let type = "unknown";
-    let text = "";
-    const meta = {};
-
-    if (messageBlock.interactive || messageBlock.type === "interactive") {
-      type = "interactive";
-      meta.interactive = messageBlock.interactive || null;
-      if (messageBlock.interactive?.button_reply?.title) {
-        text = messageBlock.interactive.button_reply.title;
-        meta.postback_id = messageBlock.interactive.button_reply.id || null;
-      } else if (messageBlock.interactive?.list_reply?.title) {
-        text = messageBlock.interactive.list_reply.title;
-        meta.postback_id = messageBlock.interactive.list_reply.id || null;
-      } else {
-        text = JSON.stringify(messageBlock.interactive || {}).slice(0, 2000);
-      }
-    } else if (
-      messageBlock.type === "text" ||
-      messageBlock.text ||
-      messageBlock.body?.text ||
-      payload.message_type === "text" ||
-      payload.user_message
-    ) {
-      type = "text";
-      text =
-        payload.user_message ||
-        (messageBlock.text && (messageBlock.text.body || messageBlock.text)) ||
-        messageBlock.body?.text ||
-        payload.message ||
-        "";
-      if (typeof text === "object") text = JSON.stringify(text).slice(0, 2000);
-    } else if (messageBlock.type === "image" || messageBlock.image || messageBlock.type === "audio" || messageBlock.video) {
-      type = "media";
-      meta.media = messageBlock.image || messageBlock.video || messageBlock.audio || null;
-      text = (messageBlock.caption && messageBlock.caption.text) || messageBlock.caption || "";
-    } else if (message_status) {
-      type = "status";
-      text = message_status;
-    } else {
-      type = "unknown";
-      text = JSON.stringify(payload).slice(0, 2000);
-    }
-
-    const parsed = {
-      phone,
-      from: payload.sender || payload.from || "user",
-      wa_message_id,
-      type,
-      text,
-      raw: payload,
-      status: message_status || null,
-      meta,
-      conversationId: payload.conversation_id || null,
-    };
-
-    const savedMsg = await upsertMessage(parsed);
-
-    // Auto reply: simple trigger for greetings or 'start'
-    const lc = (text || "").toString().toLowerCase();
-    if (type === "text" && (lc === "hi" || lc === "hello" || lc === "hey" || lc.includes("start"))) {
-      const replyText = `Hi 👋 Welcome to CribMatch — tell me area and budget (eg. Borrowdale, $200) and I'll find matches.`;
-      try {
-        const sendResp = await sendAutoReply(phone, replyText);
-        console.log("[webhook] Auto-reply sent:", sendResp);
-      } catch (e) {
-        console.error("[webhook] Auto-reply failed:", e);
-      }
-    } else {
-      console.log("[webhook] No auto-reply trigger matched. Incoming text:", text?.slice(0, 200));
-    }
-
-    return NextResponse.json({ ok: true, savedMessageId: savedMsg?._id || null });
-  } catch (err) {
-    console.error("[webhook] processing error:", err);
-    return NextResponse.json({ ok: false, error: String(err) }, { status: 500 });
+    subscriberResp = await retry(() => whatChimpPost(WHATCHIMP_SUBSCRIBER_GET, {
+      apiToken, phone_number_id, phone_number: phone,
+    }), 3, 300);
+    console.log("[webhook] subscriber/get:", subscriberResp);
+  } catch (e) {
+    console.error("[webhook] subscriber/get failed after retries:", e);
   }
+
+  // If subscriber exists, check conversation for last incoming message time
+  let allowedToSend = false;
+  try {
+    const convResp = await retry(() => whatChimpPost(WHATCHIMP_GET_CONVERSATION, {
+      apiToken, phone_number_id, phone_number: phone, limit: 10, offset: 0,
+    }), 3, 300);
+    console.log("[webhook] get/conversation:", convResp);
+
+    if (convResp?.status === "1" && Array.isArray(convResp.message) && convResp.message.length > 0) {
+      // Try to find the latest incoming user message timestamp (conversation_time)
+      // The response message entries may be both bot and user; we consider timestamps.
+      const timestamps = convResp.message
+        .map(m => m.conversation_time)
+        .filter(Boolean)
+        .map(s => new Date(String(s).replace(" ", "T")))
+        .filter(d => !Number.isNaN(d.getTime()));
+
+      if (timestamps.length > 0) {
+        const latest = timestamps.sort((a, b) => b - a)[0];
+        const ageMs = Date.now() - latest.getTime();
+        console.log(`[webhook] latest conversation_time ageMs=${ageMs}ms`);
+        // allow free-text if incoming message was within this window (configurable)
+        const ALLOWED_WINDOW_MS = 5 * 60 * 1000; // 5 minutes (you can raise to 15m if you prefer)
+        if (ageMs <= ALLOWED_WINDOW_MS) allowedToSend = true;
+        else {
+          // often still OK if the webhook arrived at the same time but conv hasn't been written — keep a final short retry
+          console.log("[webhook] latest message older than ALLOWED_WINDOW_MS; not allowed to send free-text");
+          allowedToSend = false;
+        }
+      } else {
+        // no timestamps available — be conservative: don't send free-text
+        allowedToSend = false;
+      }
+    } else {
+      // No conversation data yet — possible race or subscriber not created — deny free-text
+      allowedToSend = false;
+      console.log("[webhook] no conversation found for subscriber (race or not yet created).");
+    }
+  } catch (e) {
+    console.error("[webhook] conversation check error:", e);
+    allowedToSend = false;
+  }
+
+  console.log("[webhook] allowedToSend =", allowedToSend);
+
+  if (!allowedToSend) {
+    // Mark for follow-up and return 200 quickly
+    await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.needsFollowUp": true, "meta.subscriberResp": subscriberResp || null } }).catch(() => { });
+    return NextResponse.json({ ok: true, note: "not-allowed-to-send-free-text-yet" });
+  }
+
+  // If allowed, attempt the free-text send
+  const replyText = `Hi 👋 Welcome to CribMatch — tell me area and budget (eg. Borrowdale, $200) and I'll find matches.`;
+  const sendResp = await sendText(phone, replyText);
+  console.log("[webhook] sendText response:", sendResp);
+
+  // If send rejected due to 24-hour window, mark for template/manual follow-up
+  if (sendResp?.status === "0" && /24 hour/i.test(String(sendResp.message || ""))) {
+    await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.templateRequired": true, "meta.sendResp": sendResp } }).catch(() => { });
+    return NextResponse.json({ ok: true, note: "send-rejected-24-hour", sendResp });
+  }
+
+  // Success path: record send result and return 200
+  await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.sendResp": sendResp } }).catch(() => { });
+  return NextResponse.json({ ok: true, savedMessageId: savedMsg?._id || null, sendResp });
 }
