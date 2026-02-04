@@ -1,4 +1,5 @@
-// pages/api/webhooks/whatsapp.js
+// app/api/webhooks/whatsapp/route.js
+import { NextResponse } from "next/server";
 import { dbConnect, WebhookEvent } from "@/lib/db";
 import Message from "@/lib/Message";
 
@@ -13,22 +14,25 @@ async function saveWebhookEvent(provider, headers, payload) {
       receivedAt: new Date(),
     });
   } catch (err) {
-    console.error("Failed to save WebhookEvent:", err);
+    console.error("[webhook] saveWebhookEvent failed:", err);
     return null;
   }
 }
 
 async function upsertMessage(parsed) {
-  if (parsed.wa_message_id) {
-    const found = await Message.findOneAndUpdate(
-      { wa_message_id: parsed.wa_message_id },
-      { $set: parsed },
-      { upsert: true, new: true }
-    );
-    return found;
-  } else {
-    const created = await Message.create(parsed);
-    return created;
+  try {
+    if (parsed.wa_message_id) {
+      return await Message.findOneAndUpdate(
+        { wa_message_id: parsed.wa_message_id },
+        { $set: parsed },
+        { upsert: true, new: true }
+      );
+    } else {
+      return await Message.create(parsed);
+    }
+  } catch (err) {
+    console.error("[webhook] upsertMessage failed:", err);
+    return null;
   }
 }
 
@@ -36,14 +40,14 @@ async function sendAutoReply(phoneNumber, text) {
   const apiToken = process.env.WHATCHIMP_API_KEY;
   const phone_number_id = process.env.WHATCHIMP_PHONE_ID;
   if (!apiToken || !phone_number_id) {
-    console.warn("WHATCHIMP_API_KEY or WHATCHIMP_PHONE_ID not set — skipping auto-reply");
-    return null;
+    console.warn("[webhook] WHATCHIMP_API_KEY or WHATCHIMP_PHONE_ID not set — skipping auto-reply");
+    return { error: "missing-credentials" };
   }
 
   const body = new URLSearchParams({
     apiToken: apiToken,
     phone_number_id,
-    phone_number: String(phoneNumber).replace(/\D/g, ""), // digits only
+    phone_number: String(phoneNumber).replace(/\D/g, ""),
     message: text,
   });
 
@@ -57,50 +61,47 @@ async function sendAutoReply(phoneNumber, text) {
     const json = await res.json();
     return json;
   } catch (e) {
-    return { error: "invalid-json-response", status: res.status };
+    return { error: "invalid-json-response", status: res.status || "unknown" };
   }
 }
 
-export default async function handler(req, res) {
-  if (req.method === "GET") {
-    return res.status(200).json({ ok: true, msg: "WhatChimp webhook is live" });
-  }
-  if (req.method !== "POST") {
-    res.setHeader("Allow", "GET, POST");
-    return res.status(405).end("Method Not Allowed");
-  }
+export async function GET() {
+  return NextResponse.json({ ok: true, msg: "WhatChimp webhook (App Router) is live" });
+}
 
+export async function POST(request) {
+  console.log("[webhook] POST invoked");
   // connect DB
   try {
     await dbConnect();
   } catch (err) {
-    console.error("DB connect failed:", err);
-    return res.status(500).json({ ok: false, error: "DB connection failed" });
+    console.error("[webhook] DB connect failed:", err);
+    return NextResponse.json({ ok: false, error: "DB connection failed" }, { status: 500 });
   }
 
-  // parse body robustly
+  // read body robustly
   let payload = {};
   try {
-    payload = req.body && Object.keys(req.body).length ? req.body : await req.json();
+    payload = await request.json();
   } catch (err) {
     try {
-      const text = await req.text();
-      payload = text ? JSON.parse(text) : {};
+      const txt = await request.text();
+      payload = txt ? JSON.parse(txt) : {};
     } catch (e) {
       payload = {};
     }
   }
 
-  // store raw event (best effort)
+  // save raw event (best-effort)
   try {
-    await saveWebhookEvent("whatchimp", req.headers, payload);
+    const headersObj = Object.fromEntries(request.headers.entries());
+    await saveWebhookEvent("whatchimp", headersObj, payload);
   } catch (e) {
-    // ignore
+    console.warn("[webhook] saveWebhookEvent error (ignored):", e);
   }
 
   try {
-    // If WhatChimp uses top-level fields like "user_message" or "chat_id", prefer those.
-    // Otherwise fall back to deeper "message", "message_content", "data"
+    // Prefer top-level WhatChimp fields when present
     let messageBlock = payload;
     if (payload.user_message) {
       messageBlock = { text: payload.user_message };
@@ -116,7 +117,7 @@ export default async function handler(req, res) {
       messageBlock = payload.data;
     }
 
-    // Normalize phone: prefer explicit chat_id, then subscriber_id (left part), then other fields.
+    // Normalize phone: chat_id -> subscriber_id left part -> other fallbacks
     let rawPhone =
       payload.chat_id ||
       (payload.subscriber_id ? String(payload.subscriber_id).split("-")[0] : null) ||
@@ -129,7 +130,6 @@ export default async function handler(req, res) {
 
     const phone = rawPhone ? String(rawPhone).replace(/\D/g, "") : null;
 
-    // message id / status
     const wa_message_id = payload.wa_message_id || messageBlock.wa_message_id || payload.message_id || null;
     const message_status =
       payload.message_status ||
@@ -138,12 +138,11 @@ export default async function handler(req, res) {
       messageBlock.delivery_status ||
       null;
 
-    // parse type/text/meta
+    // parse message type/text
     let type = "unknown";
     let text = "";
     const meta = {};
 
-    // interactive (buttons / list)
     if (messageBlock.interactive || messageBlock.type === "interactive") {
       type = "interactive";
       meta.interactive = messageBlock.interactive || null;
@@ -156,9 +155,7 @@ export default async function handler(req, res) {
       } else {
         text = JSON.stringify(messageBlock.interactive || {}).slice(0, 2000);
       }
-    }
-    // text (include top-level user_message)
-    else if (
+    } else if (
       messageBlock.type === "text" ||
       messageBlock.text ||
       messageBlock.body?.text ||
@@ -173,15 +170,11 @@ export default async function handler(req, res) {
         payload.message ||
         "";
       if (typeof text === "object") text = JSON.stringify(text).slice(0, 2000);
-    }
-    // media
-    else if (messageBlock.type === "image" || messageBlock.image || messageBlock.type === "audio" || messageBlock.video) {
+    } else if (messageBlock.type === "image" || messageBlock.image || messageBlock.type === "audio" || messageBlock.video) {
       type = "media";
       meta.media = messageBlock.image || messageBlock.video || messageBlock.audio || null;
       text = (messageBlock.caption && messageBlock.caption.text) || messageBlock.caption || "";
-    }
-    // status update
-    else if (message_status) {
+    } else if (message_status) {
       type = "status";
       text = message_status;
     } else {
@@ -203,21 +196,23 @@ export default async function handler(req, res) {
 
     const savedMsg = await upsertMessage(parsed);
 
-    // Auto-reply triggers
+    // Auto reply: simple trigger for greetings or 'start'
     const lc = (text || "").toString().toLowerCase();
     if (type === "text" && (lc === "hi" || lc === "hello" || lc === "hey" || lc.includes("start"))) {
       const replyText = `Hi 👋 Welcome to CribMatch — tell me area and budget (eg. Borrowdale, $200) and I'll find matches.`;
       try {
         const sendResp = await sendAutoReply(phone, replyText);
-        console.log("Auto-reply sent:", sendResp);
+        console.log("[webhook] Auto-reply sent:", sendResp);
       } catch (e) {
-        console.error("Auto-reply failed:", e);
+        console.error("[webhook] Auto-reply failed:", e);
       }
+    } else {
+      console.log("[webhook] No auto-reply trigger matched. Incoming text:", text?.slice(0, 200));
     }
 
-    return res.status(200).json({ ok: true, savedMessageId: savedMsg?._id || null });
+    return NextResponse.json({ ok: true, savedMessageId: savedMsg?._id || null });
   } catch (err) {
-    console.error("Webhook processing error:", err);
-    return res.status(500).json({ ok: false, error: err.message || String(err) });
+    console.error("[webhook] processing error:", err);
+    return NextResponse.json({ ok: false, error: String(err) }, { status: 500 });
   }
 }
