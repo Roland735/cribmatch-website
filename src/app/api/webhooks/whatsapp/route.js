@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { dbConnect, WebhookEvent } from "@/lib/db";
 import Message from "@/lib/Message";
 
+export const runtime = "nodejs";
+
 const WHATCHIMP_SEND_ENDPOINT = "https://app.whatchimp.com/api/v1/whatsapp/send";
 const WHATCHIMP_SUBSCRIBER_GET = "https://app.whatchimp.com/api/v1/whatsapp/subscriber/get";
 const WHATCHIMP_GET_CONVERSATION = "https://app.whatchimp.com/api/v1/whatsapp/get/conversation";
@@ -45,6 +47,38 @@ async function retry(fn, attempts = 3, delay = 400) {
     }
   }
   throw lastErr;
+}
+
+export async function GET(request) {
+  const url = new URL(request.url);
+  const mode = url.searchParams.get("hub.mode");
+  const token = url.searchParams.get("hub.verify_token");
+  const challenge = url.searchParams.get("hub.challenge");
+
+  const expectedToken =
+    process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN ||
+    process.env.META_WEBHOOK_VERIFY_TOKEN ||
+    process.env.WEBHOOK_VERIFY_TOKEN ||
+    "";
+
+  if (!expectedToken) {
+    return new Response("Missing verify token", {
+      status: 500,
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
+
+  if (mode === "subscribe" && token && challenge && token === expectedToken) {
+    return new Response(challenge, {
+      status: 200,
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
+
+  return new Response("Forbidden", {
+    status: 403,
+    headers: { "Cache-Control": "no-store" },
+  });
 }
 
 export async function POST(request) {
