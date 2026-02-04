@@ -1,6 +1,6 @@
 // pages/api/whatchimp/webhook.js
-import dbConnect from "@/lib/dbConnect"; // adjust if your dbConnect path differs
-import { WebhookEvent } from "@/lib/db"; // Your file that exported WebhookEvent (from your pasted code)
+// adjust if your dbConnect path differs
+import { dbConnect, WebhookEvent } from "@/lib/db"; // Your file that exported WebhookEvent (from your pasted code)
 import Message from "@/lib/Message";
 
 const WHATCHIMP_SEND_ENDPOINT = "https://app.whatchimp.com/api/v1/whatsapp/send";
