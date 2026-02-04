@@ -1,193 +1,210 @@
-import crypto from "crypto";
-import { dbConnect, WebhookEvent } from "@/lib/db";
+// pages/api/whatchimp/webhook.js
+import dbConnect from "@/lib/dbConnect"; // adjust if your dbConnect path differs
+import { WebhookEvent } from "@/lib/db"; // Your file that exported WebhookEvent (from your pasted code)
+import Message from "@/lib/Message";
 
-export const runtime = "nodejs";
+const WHATCHIMP_SEND_ENDPOINT = "https://app.whatchimp.com/api/v1/whatsapp/send";
 
-function timingSafeEqualUtf8(a, b) {
-  if (typeof a !== "string" || typeof b !== "string") return false;
-  const left = Buffer.from(a, "utf8");
-  const right = Buffer.from(b, "utf8");
-  if (left.length !== right.length) return false;
-  return crypto.timingSafeEqual(left, right);
+async function saveWebhookEvent(provider, headers, payload) {
+  try {
+    return await WebhookEvent.create({
+      provider,
+      headers,
+      payload,
+      receivedAt: new Date(),
+    });
+  } catch (err) {
+    console.error("Failed to save WebhookEvent:", err);
+    // don't throw so webhook continues processing
+    return null;
+  }
 }
 
-function extractApiKeyFromHeaders(headers) {
-  const direct =
-    headers.get("x-whatchimp-api-key") ??
-    headers.get("whatchimp-api-key") ??
-    headers.get("x-api-key") ??
-    headers.get("api-key") ??
-    "";
-
-  if (direct) return direct.trim();
-
-  const auth = headers.get("authorization") ?? "";
-  if (!auth) return "";
-  const trimmed = auth.trim();
-  const lower = trimmed.toLowerCase();
-  if (lower.startsWith("bearer ")) return trimmed.slice(7).trim();
-  if (lower.startsWith("apikey ")) return trimmed.slice(6).trim();
-  return trimmed;
+async function upsertMessage(parsed) {
+  // if wa_message_id exists, do an upsert to avoid duplicates
+  if (parsed.wa_message_id) {
+    const found = await Message.findOneAndUpdate(
+      { wa_message_id: parsed.wa_message_id },
+      { $set: parsed },
+      { upsert: true, new: true }
+    );
+    return found;
+  } else {
+    const created = await Message.create(parsed);
+    return created;
+  }
 }
 
-function toSafeString(value) {
-  return typeof value === "string" ? value : "";
-}
-
-function normalizeHiMessage(value) {
-  const trimmed = toSafeString(value).trim().toLowerCase();
-  if (!trimmed) return "";
-  return trimmed.replace(/[^\p{L}\p{N}\s]/gu, "");
-}
-
-function extractIncomingTextMessages(payload) {
-  const results = [];
-
-  const directMessages = Array.isArray(payload?.messages) ? payload.messages : null;
-  if (directMessages) {
-    for (const msg of directMessages) {
-      const type = toSafeString(msg?.type);
-      const textBody = toSafeString(msg?.text?.body ?? msg?.text ?? msg?.body);
-      const from = toSafeString(msg?.from ?? msg?.wa_id ?? msg?.waId);
-      if (type === "text" && from && textBody) {
-        results.push({ from, textBody, id: toSafeString(msg?.id) });
-      }
-    }
+async function sendAutoReply(phoneNumber, text) {
+  const apiToken = process.env.WHATCHIMP_API_KEY;
+  const phone_number_id = process.env.WHATCHIMP_PHONE_ID;
+  if (!apiToken || !phone_number_id) {
+    console.warn("WHATCHIMP_API_KEY or WHATCHIMP_PHONE_ID not set — skipping auto-reply");
+    return null;
   }
 
-  const entries = Array.isArray(payload?.entry) ? payload.entry : null;
-  if (!entries) return results;
-
-  for (const entry of entries) {
-    const changes = Array.isArray(entry?.changes) ? entry.changes : null;
-    if (!changes) continue;
-    for (const change of changes) {
-      const value = change?.value;
-      const messages = Array.isArray(value?.messages) ? value.messages : null;
-      if (!messages) continue;
-      for (const msg of messages) {
-        const type = toSafeString(msg?.type);
-        const textBody = toSafeString(msg?.text?.body);
-        const from = toSafeString(msg?.from);
-        if (type === "text" && from && textBody) {
-          results.push({ from, textBody, id: toSafeString(msg?.id) });
-        }
-      }
-    }
-  }
-
-  return results;
-}
-
-async function sendWhatsAppText({ to, body }) {
-  const text = toSafeString(body).trim();
-  const recipient = toSafeString(to).trim();
-  if (!text || !recipient) return { ok: false, error: "Missing to/body" };
-
-  const whatchimpUrl = toSafeString(process.env.WHATCHIMP_SEND_MESSAGE_URL).trim();
-  const whatchimpKey = toSafeString(process.env.WHATCHIMP_API_KEY).trim();
-  if (!whatchimpUrl || !whatchimpKey) {
-    return { ok: false, error: "Missing WhatChimp send configuration" };
-  }
-
-  const res = await fetch(whatchimpUrl, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${whatchimpKey}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      to: recipient,
-      type: "text",
-      text: { body: text },
-    }),
+  const body = new URLSearchParams({
+    apiToken: apiToken,
+    phone_number_id,
+    phone_number: String(phoneNumber).replace(/\D/g, ""), // digits only
+    message: text,
   });
 
-  if (!res.ok) return { ok: false, error: `WhatChimp send failed: ${res.status}` };
-  return { ok: true };
-}
+  const res = await fetch(WHATCHIMP_SEND_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body.toString(),
+  });
 
-export async function GET(request) {
-  const url = new URL(request.url);
-  const mode = url.searchParams.get("hub.mode") ?? "";
-  const token = url.searchParams.get("hub.verify_token") ?? "";
-  const challenge = url.searchParams.get("hub.challenge") ?? "";
-
-  if (mode === "subscribe") {
-    const expected = process.env.WHATCHIMP_API_KEY ?? "";
-    if (!expected) {
-      return Response.json({ error: "WHATCHIMP_API_KEY is not set" }, { status: 500 });
-    }
-
-    if (!challenge) {
-      return Response.json({ error: "Missing challenge" }, { status: 400 });
-    }
-
-    if (token !== expected) {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    return new Response(challenge, {
-      status: 200,
-      headers: { "content-type": "text/plain; charset=utf-8" },
-    });
-  }
-
-  return Response.json({ ok: true });
-}
-
-export async function POST(request) {
-  const rawBody = await request.text();
-
-  const expectedApiKey = process.env.WHATCHIMP_API_KEY ?? "";
-  if (expectedApiKey) {
-    const providedApiKey = extractApiKeyFromHeaders(request.headers);
-    const signatureHeader = request.headers.get("x-hub-signature-256") ?? "";
-    const hasMetaSignature = Boolean(signatureHeader.trim());
-    const apiKeyMatches =
-      Boolean(providedApiKey) && timingSafeEqualUtf8(providedApiKey, expectedApiKey);
-
-    if (!apiKeyMatches && !hasMetaSignature) {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
-    }
-  }
-
-  if (!rawBody) return Response.json({ ok: true });
-
-  let payload;
   try {
-    payload = JSON.parse(rawBody);
-  } catch {
-    return Response.json({ error: "Invalid JSON" }, { status: 400 });
+    const json = await res.json();
+    return json;
+  } catch (e) {
+    return { error: "invalid-json-response", status: res.status };
+  }
+}
+
+export default async function handler(req, res) {
+  if (req.method === "GET") {
+    return res.status(200).json({ ok: true, msg: "WhatChimp webhook is live" });
+  }
+  if (req.method !== "POST") {
+    res.setHeader("Allow", "GET, POST");
+    return res.status(405).end("Method Not Allowed");
   }
 
-  const incoming = extractIncomingTextMessages(payload);
-  if (incoming.length) {
-    const replyText =
-      "Hi! Welcome to CribMatch. Tell me your suburb, budget, and bedrooms.";
+  // connect DB
+  try {
+    await dbConnect();
+  } catch (err) {
+    console.error("DB connect failed:", err);
+    return res.status(500).json({ ok: false, error: "DB connection failed" });
+  }
 
-    for (const message of incoming) {
-      try {
-        await sendWhatsAppText({ to: message.from, body: replyText });
-      } catch { }
+  // parse body robustly
+  let payload = {};
+  try {
+    payload = req.body && Object.keys(req.body).length ? req.body : await req.json();
+  } catch (err) {
+    try {
+      const text = await req.text();
+      payload = text ? JSON.parse(text) : {};
+    } catch (e) {
+      payload = {};
     }
   }
 
-  if (process.env.MONGODB_URI) {
-    try {
-      await dbConnect();
-      await WebhookEvent.create({
-        provider: "whatsapp",
-        headers: {
-          "x-hub-signature-256": request.headers.get("x-hub-signature-256") ?? "",
-          "user-agent": request.headers.get("user-agent") ?? "",
-          "x-api-key": request.headers.get("x-api-key") ?? "",
-          authorization: request.headers.get("authorization") ?? "",
-        },
-        payload,
-      });
-    } catch { }
+  // store raw event (best effort)
+  try {
+    await saveWebhookEvent("whatchimp", req.headers, payload);
+  } catch (e) {
+    // fallthrough
   }
 
-  return Response.json({ ok: true });
+  try {
+    // Heuristic: WhatChimp sometimes provides "message_content" (string JSON), or "message"
+    let messageBlock = payload;
+    if (payload.message_content && typeof payload.message_content === "string") {
+      try {
+        messageBlock = JSON.parse(payload.message_content);
+      } catch (e) {
+        messageBlock = payload.message_content;
+      }
+    } else if (payload.message) {
+      messageBlock = payload.message;
+    } else if (payload.data) {
+      messageBlock = payload.data;
+    }
+
+    // Normalize phone
+    const rawPhone =
+      payload.phone_number || payload.from || messageBlock.to || messageBlock.from || messageBlock.recipient;
+    const phone = rawPhone ? String(rawPhone).replace(/\D/g, "") : null;
+
+    // message id / status
+    const wa_message_id = payload.wa_message_id || messageBlock.wa_message_id || payload.message_id || null;
+    const message_status =
+      payload.message_status ||
+      payload.delivery_status ||
+      messageBlock.message_status ||
+      messageBlock.delivery_status ||
+      null;
+
+    // parse type/text/meta
+    let type = "unknown";
+    let text = "";
+    const meta = {};
+
+    // interactive (buttons / list)
+    if (messageBlock.interactive || messageBlock.type === "interactive") {
+      type = "interactive";
+      meta.interactive = messageBlock.interactive || null;
+      if (messageBlock.interactive?.button_reply?.title) {
+        text = messageBlock.interactive.button_reply.title;
+        meta.postback_id = messageBlock.interactive.button_reply.id || null;
+      } else if (messageBlock.interactive?.list_reply?.title) {
+        text = messageBlock.interactive.list_reply.title;
+        meta.postback_id = messageBlock.interactive.list_reply.id || null;
+      } else {
+        text = JSON.stringify(messageBlock.interactive || {}).slice(0, 2000);
+      }
+    }
+    // text
+    else if (
+      messageBlock.type === "text" ||
+      messageBlock.text ||
+      messageBlock.body?.text ||
+      payload.message_type === "text"
+    ) {
+      type = "text";
+      text =
+        (messageBlock.text && (messageBlock.text.body || messageBlock.text)) ||
+        messageBlock.body?.text ||
+        payload.message ||
+        "";
+      if (typeof text === "object") text = JSON.stringify(text).slice(0, 2000);
+    }
+    // media
+    else if (messageBlock.type === "image" || messageBlock.image || messageBlock.type === "audio" || messageBlock.video) {
+      type = "media";
+      meta.media = messageBlock.image || messageBlock.video || messageBlock.audio || null;
+      text = (messageBlock.caption && messageBlock.caption.text) || messageBlock.caption || "";
+    }
+    // status update
+    else if (message_status) {
+      type = "status";
+      text = message_status;
+    } else {
+      type = "unknown";
+      text = JSON.stringify(payload).slice(0, 2000);
+    }
+
+    const parsed = {
+      phone,
+      from: payload.sender || payload.from || "user",
+      wa_message_id,
+      type,
+      text,
+      raw: payload,
+      status: message_status || null,
+      meta,
+      conversationId: payload.conversation_id || null,
+    };
+
+    const savedMsg = await upsertMessage(parsed);
+
+    // Optional auto-reply triggers (simple)
+    const lc = (text || "").toString().toLowerCase();
+    if (type === "text" && (lc === "hi" || lc === "hello" || lc === "hey" || lc.includes("start"))) {
+      const replyText = `Hi 👋 Welcome to CribMatch — tell me area and budget (eg. Borrowdale, $200) and I'll find matches.`;
+      const sendResp = await sendAutoReply(phone, replyText);
+      console.log("Auto-reply sent:", sendResp);
+    }
+
+    // Respond 200
+    return res.status(200).json({ ok: true, savedMessageId: savedMsg?._id || null });
+  } catch (err) {
+    console.error("Webhook processing error:", err);
+    return res.status(500).json({ ok: false, error: err.message || String(err) });
+  }
 }

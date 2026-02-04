@@ -101,7 +101,7 @@ export default async function Home({ searchParams }) {
                 CribMatch connects tenants with landlords and agents. Tell us
                 your suburb, budget, and bedrooms, and we match you with
                 suitable places, coordinate viewings, and keep the process
-                simple and safe.
+                simple and safe
               </p>
             </div>
 
