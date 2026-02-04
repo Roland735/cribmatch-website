@@ -8,7 +8,7 @@ const MessageSchema = new mongoose.Schema(
         wa_message_id: { type: String, index: true }, // WhatsApp/WhatChimp message id
         type: { type: String },                       // text / interactive / media / status
         text: { type: String, default: "" },          // parsed short text content
-        raw: { type: mongoose.Schema.Types.Mixed },   // raw payload
+        raw: { type: mongoose.Schema.Types.Mixed },
         status: { type: String },                     // delivered / read / failed etc.
         meta: { type: mongoose.Schema.Types.Mixed },  // extra fields (buttons, postback id, media)
         conversationId: { type: String, index: true } // optional conversation grouping
