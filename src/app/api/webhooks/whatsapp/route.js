@@ -1,5 +1,5 @@
-
-import { dbConnect, WebhookEvent } from "@/lib/db"; // Your file that exported WebhookEvent (from your pasted code)
+// pages/api/webhooks/whatsapp.js
+import { dbConnect, WebhookEvent } from "@/lib/db";
 import Message from "@/lib/Message";
 
 const WHATCHIMP_SEND_ENDPOINT = "https://app.whatchimp.com/api/v1/whatsapp/send";
@@ -14,13 +14,11 @@ async function saveWebhookEvent(provider, headers, payload) {
     });
   } catch (err) {
     console.error("Failed to save WebhookEvent:", err);
-    // don't throw so webhook continues processing
     return null;
   }
 }
 
 async function upsertMessage(parsed) {
-  // if wa_message_id exists, do an upsert to avoid duplicates
   if (parsed.wa_message_id) {
     const found = await Message.findOneAndUpdate(
       { wa_message_id: parsed.wa_message_id },
@@ -97,13 +95,16 @@ export default async function handler(req, res) {
   try {
     await saveWebhookEvent("whatchimp", req.headers, payload);
   } catch (e) {
-    // fallthrough
+    // ignore
   }
 
   try {
-    // Heuristic: WhatChimp sometimes provides "message_content" (string JSON), or "message"
+    // If WhatChimp uses top-level fields like "user_message" or "chat_id", prefer those.
+    // Otherwise fall back to deeper "message", "message_content", "data"
     let messageBlock = payload;
-    if (payload.message_content && typeof payload.message_content === "string") {
+    if (payload.user_message) {
+      messageBlock = { text: payload.user_message };
+    } else if (payload.message_content && typeof payload.message_content === "string") {
       try {
         messageBlock = JSON.parse(payload.message_content);
       } catch (e) {
@@ -115,9 +116,17 @@ export default async function handler(req, res) {
       messageBlock = payload.data;
     }
 
-    // Normalize phone
-    const rawPhone =
-      payload.phone_number || payload.from || messageBlock.to || messageBlock.from || messageBlock.recipient;
+    // Normalize phone: prefer explicit chat_id, then subscriber_id (left part), then other fields.
+    let rawPhone =
+      payload.chat_id ||
+      (payload.subscriber_id ? String(payload.subscriber_id).split("-")[0] : null) ||
+      payload.phone_number ||
+      payload.from ||
+      messageBlock.to ||
+      messageBlock.from ||
+      messageBlock.recipient ||
+      null;
+
     const phone = rawPhone ? String(rawPhone).replace(/\D/g, "") : null;
 
     // message id / status
@@ -148,15 +157,17 @@ export default async function handler(req, res) {
         text = JSON.stringify(messageBlock.interactive || {}).slice(0, 2000);
       }
     }
-    // text
+    // text (include top-level user_message)
     else if (
       messageBlock.type === "text" ||
       messageBlock.text ||
       messageBlock.body?.text ||
-      payload.message_type === "text"
+      payload.message_type === "text" ||
+      payload.user_message
     ) {
       type = "text";
       text =
+        payload.user_message ||
         (messageBlock.text && (messageBlock.text.body || messageBlock.text)) ||
         messageBlock.body?.text ||
         payload.message ||
@@ -192,15 +203,18 @@ export default async function handler(req, res) {
 
     const savedMsg = await upsertMessage(parsed);
 
-    // Optional auto-reply triggers (simple)
+    // Auto-reply triggers
     const lc = (text || "").toString().toLowerCase();
     if (type === "text" && (lc === "hi" || lc === "hello" || lc === "hey" || lc.includes("start"))) {
       const replyText = `Hi 👋 Welcome to CribMatch — tell me area and budget (eg. Borrowdale, $200) and I'll find matches.`;
-      const sendResp = await sendAutoReply(phone, replyText);
-      console.log("Auto-reply sent:", sendResp);
+      try {
+        const sendResp = await sendAutoReply(phone, replyText);
+        console.log("Auto-reply sent:", sendResp);
+      } catch (e) {
+        console.error("Auto-reply failed:", e);
+      }
     }
 
-    // Respond 200
     return res.status(200).json({ ok: true, savedMessageId: savedMsg?._id || null });
   } catch (err) {
     console.error("Webhook processing error:", err);
