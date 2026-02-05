@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { dbConnect, WebhookEvent, Listing } from "@/lib/db";
 import Message from "@/lib/Message";
-import { getListingById, searchPublishedListings } from "@/lib/listings";
+import seedListings from "@/lib/seedListings.json";
+import { searchListings } from "@/lib/getListings";
 
 export const runtime = "nodejs";
 
@@ -57,6 +58,30 @@ async function retry(fn, attempts = 3, delay = 400) {
     }
   }
   throw lastErr;
+}
+
+async function getListingById(listingId) {
+  const id = String(listingId || "").trim();
+  if (!id) return null;
+
+  if (!process.env.MONGODB_URI) {
+    return seedListings.find((l) => String(l?._id) === id) || null;
+  }
+
+  await dbConnect();
+  const doc = await Listing.findById(id).lean().exec().catch(() => null);
+  return doc || null;
+}
+
+async function searchPublishedListings({ q = "", minPrice = null, maxPrice = null, perPage = 6 } = {}) {
+  return searchListings({
+    status: "published",
+    q,
+    minPrice,
+    maxPrice,
+    page: 1,
+    perPage,
+  });
 }
 
 // ================= Conversation / Menu helpers =================
