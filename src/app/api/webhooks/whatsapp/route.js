@@ -136,14 +136,49 @@ async function getLastConversationState(phone) {
   return doc?.meta || null;
 }
 
+function getWhatsappIncomingMessage(payload, messageBlock) {
+  return (
+    payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0] ||
+    payload?.messages?.[0] ||
+    messageBlock?.messages?.[0] ||
+    null
+  );
+}
+
+function extractIncomingText(payload, messageBlock) {
+  if (payload?.user_message) return String(payload.user_message);
+
+  const direct =
+    messageBlock && (messageBlock.text || messageBlock.body?.text || messageBlock.body?.plain || messageBlock.body);
+  if (typeof direct === "string" && direct.trim()) return direct;
+
+  const waMsg = getWhatsappIncomingMessage(payload, messageBlock);
+  if (waMsg?.type === "text" && typeof waMsg?.text?.body === "string") return waMsg.text.body;
+
+  const interactive = waMsg?.interactive || messageBlock?.interactive;
+  if (interactive?.type === "button_reply") {
+    return String(interactive?.button_reply?.id || interactive?.button_reply?.title || "").trim();
+  }
+  if (interactive?.type === "list_reply") {
+    return String(interactive?.list_reply?.id || interactive?.list_reply?.title || "").trim();
+  }
+
+  if (waMsg?.type === "button") {
+    return String(waMsg?.button?.payload || waMsg?.button?.text || "").trim();
+  }
+
+  return "";
+}
+
 function interpretMenuChoice(text) {
   if (!text) return null;
   const t = String(text || "").trim().toLowerCase();
+  const digit = (t.match(/[123]/) || [])[0] || "";
 
   // handle numeric, word, and button ids
-  if (/^\s*1\s*$/.test(t) || t.startsWith("list") || t.includes("list a") || t === "menu_list") return "LIST";
-  if (/^\s*2\s*$/.test(t) || t.startsWith("search") || t.includes("search") || t === "menu_search") return "SEARCH";
-  if (/^\s*3\s*$/.test(t) || t.startsWith("purchase") || t.includes("purchase") || t.includes("orders") || t === "menu_purchases") return "PURCHASES";
+  if (digit === "1" || t.startsWith("list") || t.includes("list a") || t === "menu_list") return "LIST";
+  if (digit === "2" || t.startsWith("search") || t.includes("search") || t === "menu_search") return "SEARCH";
+  if (digit === "3" || t.startsWith("purchase") || t.includes("purchase") || t.includes("orders") || t === "menu_purchases") return "PURCHASES";
   return null;
 }
 
@@ -281,35 +316,30 @@ export async function POST(request) {
   } else if (payload.message) messageBlock = payload.message;
   else if (payload.data) messageBlock = payload.data;
 
+  const waIncomingMsg = getWhatsappIncomingMessage(payload, messageBlock);
+
   const rawCandidates = [
+    payload?.entry?.[0]?.changes?.[0]?.value?.contacts?.[0]?.wa_id,
+    payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.from,
+    waIncomingMsg?.from,
+    messageBlock?.from,
+    payload.from,
     payload.chat_id,
     payload.subscriber_id ? String(payload.subscriber_id).split("-")[0] : null,
     payload.phone_number,
-    payload.from,
-    messageBlock?.to,
-    messageBlock?.from,
     messageBlock?.recipient,
-    payload?.entry?.[0]?.changes?.[0]?.value?.contacts?.[0]?.wa_id,
-    payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.from,
   ].filter(Boolean);
 
   const phone = digitsOnly(rawCandidates[0] || "");
 
   // Parse text and also handle interactive button replies
-  let parsedText =
-    payload.user_message || (messageBlock && (messageBlock.text || messageBlock.body?.text || messageBlock.body?.plain)) || "";
-
-  // If incoming payload contains interactive button reply, prefer its id/title
-  try {
-    const incomingInteractive =
-      payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.interactive ||
-      messageBlock?.interactive;
-    if (incomingInteractive && incomingInteractive.type === "button_reply") {
-      parsedText = incomingInteractive?.button_reply?.id || incomingInteractive?.button_reply?.title || parsedText;
-      console.log("[webhook] parsed interactive.button_reply:", parsedText);
-    }
-  } catch (e) {
-    // ignore
+  let parsedText = extractIncomingText(payload, messageBlock);
+  if (waIncomingMsg?.type || parsedText) {
+    console.log("[webhook] incoming parsed", {
+      type: waIncomingMsg?.type || null,
+      interactiveType: waIncomingMsg?.interactive?.type || messageBlock?.interactive?.type || null,
+      textPreview: String(parsedText || "").slice(0, 64),
+    });
   }
 
   const incoming = {
@@ -345,6 +375,11 @@ export async function POST(request) {
     if (lastMeta.state === "AWAITING_MENU_CHOICE") {
       const choice = interpretMenuChoice(parsedText);
       if (!choice) {
+        console.log("[webhook] menu choice not understood", {
+          textPreview: String(parsedText || "").slice(0, 64),
+          waType: waIncomingMsg?.type || null,
+          interactiveType: waIncomingMsg?.interactive?.type || messageBlock?.interactive?.type || null,
+        });
         await sendText(phone, "Sorry, I didn't understand. Reply with 1 (List), 2 (Search) or 3 (Purchases), or tap a button.");
         return NextResponse.json({ ok: true, note: "menu-repeat" });
       }
