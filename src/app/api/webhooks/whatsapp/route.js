@@ -2,7 +2,8 @@
 import { NextResponse } from "next/server";
 import { dbConnect, WebhookEvent, Listing } from "@/lib/db";
 import Message from "@/lib/Message";
-import { getListingById, searchPublishedListings } from "@/lib/listings";
+import { getListingById, searchPublishedListings } from "@/lib/getListings";
+
 
 export const runtime = "nodejs";
 
