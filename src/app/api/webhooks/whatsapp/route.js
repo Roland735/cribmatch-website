@@ -1,3 +1,4 @@
+// app/api/webhooks/whatsapp/route.js
 import { NextResponse } from "next/server";
 import { dbConnect, WebhookEvent, Listing } from "@/lib/db";
 import Message from "@/lib/Message";
@@ -6,13 +7,12 @@ import { searchListings } from "@/lib/getListings";
 
 export const runtime = "nodejs";
 
-// Graph API send endpoint (we post to /{PHONE_NUMBER_ID}/messages)
-// The code below will use the env var WHATSAPP_API_TOKEN and WHATSAPP_PHONE_NUMBER_ID
-
+// helper: digits only
 function digitsOnly(v) {
   return String(v || "").replace(/\D/g, "");
 }
 
+// low-level Graph API POST
 async function whatsappPost(phone_number_id, token, bodyObj) {
   const url = `https://graph.facebook.com/v24.0/${phone_number_id}/messages`;
   const res = await fetch(url, {
@@ -30,6 +30,7 @@ async function whatsappPost(phone_number_id, token, bodyObj) {
   }
 }
 
+// text send
 async function sendText(phoneNumber, message) {
   const apiToken = process.env.WHATSAPP_API_TOKEN || process.env.WHATCHIMP_API_KEY;
   const phone_number_id =
@@ -44,6 +45,47 @@ async function sendText(phoneNumber, message) {
   };
 
   return whatsappPost(phone_number_id, apiToken, payload);
+}
+
+/**
+ * Send interactive reply buttons.
+ * buttons: [{ id: 'menu_list', title: 'List a property' }, ...]
+ * If interactive fail (e.g. outside 24h), fallback to plain text menu.
+ */
+async function sendInteractiveButtons(phoneNumber, bodyText, buttons = []) {
+  const apiToken = process.env.WHATSAPP_API_TOKEN || process.env.WHATCHIMP_API_KEY;
+  const phone_number_id =
+    process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATCHIMP_PHONE_ID || process.env.WHATCHIMP_PHONE_NUMBER_ID;
+  if (!apiToken || !phone_number_id) return { error: "missing-credentials" };
+
+  const interactivePayload = {
+    messaging_product: "whatsapp",
+    to: digitsOnly(phoneNumber),
+    type: "interactive",
+    interactive: {
+      type: "button",
+      body: { text: bodyText },
+      action: {
+        buttons: buttons.slice(0, 3).map((b) => ({ type: "reply", reply: { id: b.id, title: b.title } })),
+      },
+    },
+  };
+
+  const res = await whatsappPost(phone_number_id, apiToken, interactivePayload);
+
+  // fallback to text (friendly) if interactive rejected
+  if (res?.error) {
+    const fallback = [
+      bodyText,
+      "",
+      ...buttons.map((b, i) => `${i + 1}) ${b.title}`),
+      "",
+      "Reply with the number (e.g. 1) or the word (e.g. 'list').",
+    ].join("\n");
+    await sendText(phoneNumber, fallback);
+  }
+
+  return res;
 }
 
 // simple retry helper
@@ -86,26 +128,25 @@ async function searchPublishedListings({ q = "", minPrice = null, maxPrice = nul
 
 // ================= Conversation / Menu helpers =================
 async function sendMenu(phone) {
-  const text = [
-    "Welcome to CribMatch 👋 — choose an option:",
-    "1) List a property",
-    "2) Search properties",
-    "3) View my purchases",
-    "",
-    "Reply with the number (e.g. 1) or the word (e.g. 'list').",
-  ].join("\n");
+  const text = "Welcome to CribMatch 👋 — choose an option:";
+  const buttons = [
+    { id: "menu_list", title: "List a property" },
+    { id: "menu_search", title: "Search properties" },
+    { id: "menu_purchases", title: "View my purchases" },
+  ];
 
-  const sys = await Message.create({
+  // record menu state in DB (so routing can pick it up)
+  await Message.create({
     phone: digitsOnly(phone),
     from: "system",
     type: "text",
-    text,
+    text: `${text}\n1) List a property\n2) Search properties\n3) View my purchases\n\nReply with the number (e.g. 1) or the word (e.g. 'list').`,
     raw: null,
     meta: { state: "AWAITING_MENU_CHOICE" },
   }).catch(() => null);
 
-  await sendText(phone, text);
-  return sys;
+  // try interactive first; internally handles fallback to text
+  await sendInteractiveButtons(phone, `${text}\nReply with a button or reply with a number`, buttons);
 }
 
 async function getLastConversationState(phone) {
@@ -119,13 +160,13 @@ async function getLastConversationState(phone) {
 function interpretMenuChoice(text) {
   if (!text) return null;
   const t = String(text || "").trim().toLowerCase();
-  if (/^\s*1\s*$/.test(t) || t.startsWith("list") || t.includes("list a")) return "LIST";
-  if (/^\s*2\s*$/.test(t) || t.startsWith("search") || t.includes("search")) return "SEARCH";
-  if (/^\s*3\s*$/.test(t) || t.startsWith("purchase") || t.includes("purchase") || t.includes("orders")) return "PURCHASES";
+  if (/^\s*1\s*$/.test(t) || t.startsWith("list") || t.includes("list a") || t === "menu_list") return "LIST";
+  if (/^\s*2\s*$/.test(t) || t.startsWith("search") || t.includes("search") || t === "menu_search") return "SEARCH";
+  if (/^\s*3\s*$/.test(t) || t.startsWith("purchase") || t.includes("purchase") || t.includes("orders") || t === "menu_purchases") return "PURCHASES";
   return null;
 }
 
-// Minimal payment link creator placeholder (replace with Stripe/Payfast)
+// Minimal payment link creator (placeholder)
 async function createPaymentLink(phone, amountCents, description = "Contact details") {
   const fakeId = Date.now().toString(36);
   return {
@@ -270,8 +311,17 @@ export async function POST(request) {
 
   const phone = digitsOnly(rawCandidates[0] || "");
 
-  const parsedText =
+  // Parse text and also accept interactive button replies
+  let parsedText =
     payload.user_message || (messageBlock && (messageBlock.text || messageBlock.body?.text || messageBlock.body?.plain)) || "";
+
+  // If incoming payload contains interactive button reply, prefer its id/title
+  try {
+    const incomingInteractive = payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.interactive || messageBlock?.interactive;
+    if (incomingInteractive && incomingInteractive.type === "button_reply") {
+      parsedText = (incomingInteractive?.button_reply?.id) || (incomingInteractive?.button_reply?.title) || parsedText;
+    }
+  } catch (e) { /* ignore */ }
 
   const incoming = {
     phone,
@@ -304,7 +354,7 @@ export async function POST(request) {
     if (lastMeta.state === "AWAITING_MENU_CHOICE") {
       const choice = interpretMenuChoice(parsedText);
       if (!choice) {
-        await sendText(phone, "Sorry, I didn't understand. Reply with 1 (List), 2 (Search) or 3 (Purchases).");
+        await sendText(phone, "Sorry, I didn't understand. Reply with 1 (List), 2 (Search) or 3 (Purchases), or tap a button.");
         return NextResponse.json({ ok: true, note: "menu-repeat" });
       }
 
@@ -335,7 +385,7 @@ export async function POST(request) {
       }
     }
 
-    // Listing flow states
+    // Listing flow states (same as your existing logic)
     if (lastMeta.state && lastMeta.state.startsWith("LISTING_WAIT_")) {
       const draftContainer = await Message.findOne({ phone: digitsOnly(phone), "meta.draft": { $exists: true } }).sort({ createdAt: -1 }).exec();
       let draft = draftContainer?.meta?.draft || {};
@@ -398,7 +448,7 @@ export async function POST(request) {
         });
 
         if (newListing) {
-          const confirm = `Listing created: "${newListing.title}" — ID: ${newListing._id}\nTo add contact details or images, reply with \"edit ${newListing._id}\"`;
+          const confirm = `Listing created: "${newListing.title}" — ID: ${newListing._id}\nTo add contact details or images, reply with "edit ${newListing._id}"`;
           await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: confirm, meta: { state: "LISTING_CREATED", listingId: newListing._id } }).catch(() => { });
           await sendText(phone, confirm);
         } else {
@@ -440,7 +490,7 @@ export async function POST(request) {
       return NextResponse.json({ ok: true, note: "contact-payment-requested" });
     }
 
-    // PAID fallback (rudimentary)
+    // PAID fallback
     if (/^paid\s+/i.test(parsedText || "")) {
       const paymentId = (parsedText || "").split(/\s+/)[1];
       if (!paymentId) {
@@ -457,10 +507,9 @@ export async function POST(request) {
       await sendText(phone, "Could not find a pending payment / listing. Please try again.");
       return NextResponse.json({ ok: false, note: "payment-not-found" });
     }
-
   } catch (e) {
     console.warn("[webhook] conversation routing error:", e);
-    // continue to existing free-text/send logic below
+    // fall through
   }
 
   // Determine whether we are allowed to send free-text based on last user message timestamp
