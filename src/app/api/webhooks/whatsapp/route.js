@@ -3,9 +3,208 @@ import { NextResponse } from "next/server";
 import { dbConnect, WebhookEvent, Listing } from "@/lib/db";
 import Message from "@/lib/Message";
 import { getListingById, searchPublishedListings } from "@/lib/getListings";
-
+import crypto from "crypto";
+import fs from "fs";
 
 export const runtime = "nodejs";
+
+// -------------------- Flow (encrypted) helpers --------------------
+function loadPrivateKey() {
+  // Prefer private key string in env (Vercel friendly). If that's not set, read file path.
+  if (process.env.FLOW_PRIVATE_KEY && String(process.env.FLOW_PRIVATE_KEY).trim()) {
+    // Replace literal \n sequences with real newlines if pasted escaped
+    return String(process.env.FLOW_PRIVATE_KEY).replace(/\\n/g, "\n");
+  }
+  if (process.env.FLOW_PRIVATE_KEY_PATH && fs.existsSync(process.env.FLOW_PRIVATE_KEY_PATH)) {
+    return fs.readFileSync(process.env.FLOW_PRIVATE_KEY_PATH, "utf8");
+  }
+  return null;
+}
+
+function rsaDecryptAesKey(encryptedAesKeyB64, privateKeyPem) {
+  try {
+    const encryptedBuf = Buffer.from(encryptedAesKeyB64, "base64");
+    const aesKey = crypto.privateDecrypt(
+      {
+        key: privateKeyPem,
+        padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+        oaepHash: "sha256",
+      },
+      encryptedBuf
+    );
+    return aesKey; // Buffer
+  } catch (e) {
+    throw new Error("rsa_decrypt_failed: " + (e.message || e));
+  }
+}
+
+function aesGcmDecrypt(encryptedFlowDataB64, aesKeyBuf, ivB64) {
+  try {
+    const dataBuf = Buffer.from(encryptedFlowDataB64, "base64");
+    // Tag is last 16 bytes
+    if (dataBuf.length < 16) throw new Error("ciphertext_too_short");
+    const tag = dataBuf.slice(dataBuf.length - 16);
+    const ciphertext = dataBuf.slice(0, dataBuf.length - 16);
+    const iv = Buffer.from(ivB64, "base64");
+
+    const decipher = crypto.createDecipheriv("aes-128-gcm", aesKeyBuf, iv);
+    decipher.setAuthTag(tag);
+    const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+    return decrypted.toString("utf8");
+  } catch (e) {
+    throw new Error("aes_decrypt_failed: " + (e.message || e));
+  }
+}
+
+function aesGcmEncryptAndPack(plaintextBufOrStr, aesKeyBuf, ivBuf) {
+  const iv = Buffer.isBuffer(ivBuf) ? ivBuf : Buffer.from(ivBuf, "base64");
+  const cipher = crypto.createCipheriv("aes-128-gcm", aesKeyBuf, iv);
+  const plaintextBuf = Buffer.isBuffer(plaintextBufOrStr) ? plaintextBufOrStr : Buffer.from(String(plaintextBufOrStr), "utf8");
+  const encrypted = Buffer.concat([cipher.update(plaintextBuf), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  const combined = Buffer.concat([encrypted, tag]).toString("base64");
+  return combined;
+}
+
+// Flip IV for outgoing response (Meta Flow expects flipped IV)
+function flipIv(ivBuf) {
+  return Buffer.from(ivBuf).reverse();
+}
+
+async function handleFlowRequest(payload) {
+  // payload contains encrypted_flow_data, encrypted_aes_key, initialization_vector
+  const privateKey = loadPrivateKey();
+  if (!privateKey) {
+    console.error("[flow] missing private key");
+    return { error: true, status: 500, body: { success: false, reason: "missing_flow_private_key" } };
+  }
+
+  const { encrypted_flow_data, encrypted_aes_key, initialization_vector } = payload || {};
+
+  if (!encrypted_flow_data || !encrypted_aes_key || !initialization_vector) {
+    return { error: true, status: 400, body: { success: false, reason: "missing_flow_fields" } };
+  }
+
+  let aesKeyBuf;
+  try {
+    aesKeyBuf = rsaDecryptAesKey(encrypted_aes_key, privateKey); // Buffer
+  } catch (e) {
+    console.error("[flow] rsa decrypt failed:", e.message || e);
+    return { error: true, status: 400, body: { success: false, reason: "flow_rsa_decrypt_failed" } };
+  }
+
+  let decryptedJson;
+  try {
+    const plaintext = aesGcmDecrypt(encrypted_flow_data, aesKeyBuf, initialization_vector);
+    decryptedJson = JSON.parse(plaintext);
+  } catch (e) {
+    console.error("[flow] aes decrypt or json parse failed:", e.message || e);
+    return { error: true, status: 400, body: { success: false, reason: "flow_aes_decrypt_failed" } };
+  }
+
+  // Log decrypted Flow payload for visibility (avoid secrets)
+  console.log("[flow] decrypted payload action:", decryptedJson?.action || null);
+
+  // Now handle the decrypted flow message
+  try {
+    const action = (decryptedJson?.action || "").toString().toUpperCase();
+
+    if (action === "INIT") {
+      // Build dropdowns from Listing collection
+      const suburbs = (await Listing.distinct("suburb")) || [];
+      const propertyTypes = (await Listing.distinct("propertyType")) || [];
+      const bedrooms = (await Listing.distinct("bedrooms")) || [];
+
+      const responseScreen = {
+        screen: "SEARCH",
+        data: {
+          suburbs: suburbs.filter(Boolean).slice(0, 200),
+          propertyTypes: propertyTypes.filter(Boolean).slice(0, 200),
+          bedrooms: bedrooms
+            .filter((b) => b !== undefined && b !== null)
+            .map((b) => String(b))
+            .slice(0, 200),
+        },
+      };
+
+      // Encrypt response using same aesKey but flipped IV
+      const incomingIvBuf = Buffer.from(initialization_vector, "base64");
+      const outgoingIvBuf = flipIv(incomingIvBuf);
+
+      const encrypted_flow_data_resp = aesGcmEncryptAndPack(JSON.stringify(responseScreen), aesKeyBuf, outgoingIvBuf);
+      return {
+        error: false,
+        status: 200,
+        body: {
+          encrypted_flow_data: encrypted_flow_data_resp,
+          initialization_vector: outgoingIvBuf.toString("base64"),
+        },
+      };
+    }
+
+    if (action === "DATA_EXCHANGE" || action === "DATAEXCHANGE" || action === "DATA_EXCHANGE") {
+      // decryptedJson.payload expected to contain search params
+      const params = decryptedJson.payload || {};
+      // Map to your search API
+      const q = params.q || params.search || "";
+      const suburb = params.suburb || params.suburbs || params.city || "";
+      const min_price = Number(params.min_price ?? params.minPrice ?? params.minPriceCents ?? 0) || 0;
+      const max_price = Number(params.max_price ?? params.maxPrice ?? params.maxPriceCents ?? 0) || null;
+      const bedrooms = params.bedrooms ?? null;
+
+      // Use your helper to search
+      const results = await searchPublishedListings({
+        q: suburb || q,
+        minPrice: min_price || null,
+        maxPrice: max_price || null,
+        perPage: 6,
+      });
+
+      // Build results in the shape Flow UI expects (text0..2)
+      const hits = (results?.listings || []).slice(0, 6).map((l) => ({
+        text0: `${l.title || "Untitled"} — ${l.suburb || "N/A"} — $${l.pricePerMonth || 0}`,
+        text1: `${l.bedrooms || 0} beds — ${l.propertyType || "Unknown"}`,
+        text2: `ID:${l._id}`,
+      }));
+
+      const responsePayload = { results: hits };
+
+      // Encrypt response with flipped IV
+      const incomingIvBuf = Buffer.from(initialization_vector, "base64");
+      const outgoingIvBuf = flipIv(incomingIvBuf);
+      const encrypted_flow_data_resp = aesGcmEncryptAndPack(JSON.stringify(responsePayload), aesKeyBuf, outgoingIvBuf);
+
+      return {
+        error: false,
+        status: 200,
+        body: {
+          encrypted_flow_data: encrypted_flow_data_resp,
+          initialization_vector: outgoingIvBuf.toString("base64"),
+        },
+      };
+    }
+
+    // unknown action — respond with empty SEARCH screen
+    const fallback = { screen: "SEARCH", data: { suburbs: [], propertyTypes: [], bedrooms: [] } };
+    const incomingIvBuf = Buffer.from(initialization_vector, "base64");
+    const outgoingIvBuf = flipIv(incomingIvBuf);
+    const encrypted_flow_data_resp = aesGcmEncryptAndPack(JSON.stringify(fallback), aesKeyBuf, outgoingIvBuf);
+
+    return {
+      error: false,
+      status: 200,
+      body: {
+        encrypted_flow_data: encrypted_flow_data_resp,
+        initialization_vector: outgoingIvBuf.toString("base64"),
+      },
+    };
+  } catch (e) {
+    console.error("[flow] processing error:", e);
+    return { error: true, status: 500, body: { success: false, reason: "flow_processing_error" } };
+  }
+}
+
+// -------------------- End Flow helpers --------------------
 
 // helpers
 function digitsOnly(v) {
@@ -188,11 +387,6 @@ function getWhatsappIncomingMessage(payload, messageBlock) {
 
 /**
  * Parse incoming text including interactive replies (button/list).
- * Supports a wide range of payload shapes:
- * - payload.entry[0].changes[0].value.messages[0].interactive.list_reply
- * - payload.entry[0].changes[0].value.messages[0].interactive.button_reply
- * - payload.entry[0].changes[0].value.messages[0].text.body
- * - webhook wrappers with user_message / message_content
  */
 function extractIncomingText(payload, messageBlock) {
   if (payload?.user_message) return String(payload.user_message);
@@ -210,14 +404,12 @@ function extractIncomingText(payload, messageBlock) {
   // new interactive formats
   const interactive = waMsg?.interactive || messageBlock?.interactive || waMsg;
   if (interactive?.type === "button_reply" || interactive?.type === "button") {
-    // many providers: interactive.button_reply.id / .title  OR messages[0].button.payload / .text
     return String(interactive?.button_reply?.id || interactive?.button_reply?.title || waMsg?.button?.payload || waMsg?.button?.text || "").trim();
   }
   if (interactive?.type === "list_reply") {
     return String(interactive?.list_reply?.id || interactive?.list_reply?.title || "").trim();
   }
 
-  // some payloads put interactive object at messages[0].interactive
   if (waMsg.interactive?.type === "button_reply") {
     return String(waMsg.interactive.button_reply.id || waMsg.interactive.button_reply.title || "").trim();
   }
@@ -225,7 +417,6 @@ function extractIncomingText(payload, messageBlock) {
     return String(waMsg.interactive.list_reply.id || waMsg.interactive.list_reply.title || "").trim();
   }
 
-  // fallback: if there's a text-like body field
   if (typeof waMsg?.body === "string" && waMsg.body.trim()) return waMsg.body.trim();
 
   return "";
@@ -363,6 +554,23 @@ export async function POST(request) {
     }
   }
   console.log("[webhook] payload keys:", Object.keys(payload));
+
+  // Quick: if this is an encrypted Flow payload, handle and return encrypted response
+  if (payload?.encrypted_flow_data || payload?.encrypted_aes_key || payload?.initialization_vector) {
+    console.log("[webhook] detected encrypted Flow payload — attempting to decrypt");
+    try {
+      const flowResp = await handleFlowRequest(payload);
+      if (flowResp.error) {
+        console.warn("[webhook] flow handling failed", flowResp.body);
+        return NextResponse.json(flowResp.body, { status: flowResp.status || 400 });
+      }
+      // success — return encrypted payload directly
+      return NextResponse.json(flowResp.body, { status: 200 });
+    } catch (e) {
+      console.error("[webhook] flow handler threw:", e);
+      return NextResponse.json({ success: false, reason: "flow_handler_exception" }, { status: 500 });
+    }
+  }
 
   // persist raw event (best-effort)
   try {
@@ -617,7 +825,7 @@ export async function POST(request) {
   const ts = extractTimestamp(payload, messageBlock);
   if (ts) {
     const age = Date.now() - ts;
-    console.log(`[webhook] incoming message ageMs=${age}`);
+    console.log("[webhook] incoming message ageMs=", age);
     if (age <= windowMs) allowedToSend = true;
   } else {
     if (savedMsg) allowedToSend = true;

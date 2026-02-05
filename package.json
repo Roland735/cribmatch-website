@@ -10,7 +10,9 @@
     "seed": "node scripts/seed.mjs"
   },
   "dependencies": {
+    "crypto": "^1.0.1",
     "firebase": "^12.8.0",
+    "fs": "^0.0.1-security",
     "mongodb": "^7.0.0",
     "mongoose": "^9.1.5",
     "next": "16.1.2",
