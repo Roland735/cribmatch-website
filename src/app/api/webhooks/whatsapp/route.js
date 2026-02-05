@@ -89,6 +89,48 @@ async function sendInteractiveButtons(phoneNumber, bodyText, buttons = []) {
   return res;
 }
 
+async function sendInteractiveList(phoneNumber, { headerText, bodyText, footerText, buttonText, sections = [] }) {
+  const apiToken = process.env.WHATSAPP_API_TOKEN || process.env.WHATCHIMP_API_KEY;
+  const phone_number_id =
+    process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATCHIMP_PHONE_ID || process.env.WHATCHIMP_PHONE_NUMBER_ID;
+  if (!apiToken || !phone_number_id) return { error: "missing-credentials" };
+
+  const payload = {
+    messaging_product: "whatsapp",
+    to: digitsOnly(phoneNumber),
+    type: "interactive",
+    interactive: {
+      type: "list",
+      body: { text: String(bodyText || "") },
+      action: {
+        button: String(buttonText || "Menu"),
+        sections,
+      },
+    },
+  };
+
+  if (headerText) payload.interactive.header = { type: "text", text: String(headerText) };
+  if (footerText) payload.interactive.footer = { text: String(footerText) };
+
+  const res = await whatsappPost(phone_number_id, apiToken, payload);
+
+  if (res?.error) {
+    const rows = (sections || []).flatMap((s) => s?.rows || []);
+    const fallback = [
+      bodyText,
+      "",
+      ...rows.map((r, i) => `${i + 1}) ${r.title}`),
+      "",
+      "Reply with the number (e.g. 1) or the word (e.g. 'list').",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    await sendText(phoneNumber, fallback);
+  }
+
+  return res;
+}
+
 // simple retry helper
 async function retry(fn, attempts = 3, delay = 400) {
   let lastErr;
@@ -107,11 +149,10 @@ async function retry(fn, attempts = 3, delay = 400) {
 async function sendMenu(phone) {
   // core message text
   const bodyText = "Welcome to CribMatch 👋 — choose an option:";
-  // three reply buttons (Cloud API reply buttons)
-  const buttons = [
-    { id: "menu_list", title: "List a property" },
-    { id: "menu_search", title: "Search properties" },
-    { id: "menu_purchases", title: "View my purchases" },
+  const rows = [
+    { id: "menu_list", title: "List a property", description: "Post a rental listing" },
+    { id: "menu_search", title: "Search properties", description: "Find rentals by area and budget" },
+    { id: "menu_purchases", title: "View my purchases", description: "See paid contact unlocks" },
   ];
 
   // ensure we have a DB record marking the menu state (so routing knows what to expect)
@@ -124,8 +165,13 @@ async function sendMenu(phone) {
     meta: { state: "AWAITING_MENU_CHOICE" },
   }).catch(() => null);
 
-  // attempt to send interactive buttons (will fallback to text if interactive not allowed)
-  await sendInteractiveButtons(phone, `${bodyText}\nTap a button or reply with a number`, buttons);
+  await sendInteractiveList(phone, {
+    headerText: "CribMatch",
+    bodyText,
+    footerText: "Tap an option or reply with 1, 2, or 3.",
+    buttonText: "Choose",
+    sections: [{ title: "Options", rows }],
+  });
 }
 
 async function getLastConversationState(phone) {
