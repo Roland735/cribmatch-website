@@ -2,17 +2,17 @@
 import { NextResponse } from "next/server";
 import { dbConnect, WebhookEvent, Listing } from "@/lib/db";
 import Message from "@/lib/Message";
-import seedListings from "@/lib/seedListings.json";
-import { searchListings } from "@/lib/getListings";
+import { getListingById, searchPublishedListings } from "@/lib/listings";
 
 export const runtime = "nodejs";
 
-// helper: digits only
+// Graph API send endpoint (we post to /{PHONE_NUMBER_ID}/messages)
+// The code below will use the env var WHATSAPP_API_TOKEN and WHATSAPP_PHONE_NUMBER_ID
+
 function digitsOnly(v) {
   return String(v || "").replace(/\D/g, "");
 }
 
-// low-level Graph API POST
 async function whatsappPost(phone_number_id, token, bodyObj) {
   const url = `https://graph.facebook.com/v24.0/${phone_number_id}/messages`;
   const res = await fetch(url, {
@@ -30,7 +30,6 @@ async function whatsappPost(phone_number_id, token, bodyObj) {
   }
 }
 
-// text send
 async function sendText(phoneNumber, message) {
   const apiToken = process.env.WHATSAPP_API_TOKEN || process.env.WHATCHIMP_API_KEY;
   const phone_number_id =
@@ -48,9 +47,10 @@ async function sendText(phoneNumber, message) {
 }
 
 /**
- * Send interactive reply buttons.
+ * Send reply-buttons (interactive). If Graph API rejects interactive (e.g. 24h restriction),
+ * we automatically fall back to sending a plain-text menu so user still sees options.
+ *
  * buttons: [{ id: 'menu_list', title: 'List a property' }, ...]
- * If interactive fail (e.g. outside 24h), fallback to plain text menu.
  */
 async function sendInteractiveButtons(phoneNumber, bodyText, buttons = []) {
   const apiToken = process.env.WHATSAPP_API_TOKEN || process.env.WHATCHIMP_API_KEY;
@@ -73,7 +73,7 @@ async function sendInteractiveButtons(phoneNumber, bodyText, buttons = []) {
 
   const res = await whatsappPost(phone_number_id, apiToken, interactivePayload);
 
-  // fallback to text (friendly) if interactive rejected
+  // If interactive failed, fallback to text menu
   if (res?.error) {
     const fallback = [
       bodyText,
@@ -102,51 +102,29 @@ async function retry(fn, attempts = 3, delay = 400) {
   throw lastErr;
 }
 
-async function getListingById(listingId) {
-  const id = String(listingId || "").trim();
-  if (!id) return null;
-
-  if (!process.env.MONGODB_URI) {
-    return seedListings.find((l) => String(l?._id) === id) || null;
-  }
-
-  await dbConnect();
-  const doc = await Listing.findById(id).lean().exec().catch(() => null);
-  return doc || null;
-}
-
-async function searchPublishedListings({ q = "", minPrice = null, maxPrice = null, perPage = 6 } = {}) {
-  return searchListings({
-    status: "published",
-    q,
-    minPrice,
-    maxPrice,
-    page: 1,
-    perPage,
-  });
-}
-
 // ================= Conversation / Menu helpers =================
 async function sendMenu(phone) {
-  const text = "Welcome to CribMatch 👋 — choose an option:";
+  // core message text
+  const bodyText = "Welcome to CribMatch 👋 — choose an option:";
+  // three reply buttons (Cloud API reply buttons)
   const buttons = [
     { id: "menu_list", title: "List a property" },
     { id: "menu_search", title: "Search properties" },
     { id: "menu_purchases", title: "View my purchases" },
   ];
 
-  // record menu state in DB (so routing can pick it up)
+  // ensure we have a DB record marking the menu state (so routing knows what to expect)
   await Message.create({
     phone: digitsOnly(phone),
     from: "system",
     type: "text",
-    text: `${text}\n1) List a property\n2) Search properties\n3) View my purchases\n\nReply with the number (e.g. 1) or the word (e.g. 'list').`,
+    text: `${bodyText}\n1) List a property\n2) Search properties\n3) View my purchases\n\nReply with the number (e.g. 1) or the word (e.g. 'list').`,
     raw: null,
     meta: { state: "AWAITING_MENU_CHOICE" },
   }).catch(() => null);
 
-  // try interactive first; internally handles fallback to text
-  await sendInteractiveButtons(phone, `${text}\nReply with a button or reply with a number`, buttons);
+  // attempt to send interactive buttons (will fallback to text if interactive not allowed)
+  await sendInteractiveButtons(phone, `${bodyText}\nTap a button or reply with a number`, buttons);
 }
 
 async function getLastConversationState(phone) {
@@ -160,13 +138,15 @@ async function getLastConversationState(phone) {
 function interpretMenuChoice(text) {
   if (!text) return null;
   const t = String(text || "").trim().toLowerCase();
+
+  // handle numeric, word, and button ids
   if (/^\s*1\s*$/.test(t) || t.startsWith("list") || t.includes("list a") || t === "menu_list") return "LIST";
   if (/^\s*2\s*$/.test(t) || t.startsWith("search") || t.includes("search") || t === "menu_search") return "SEARCH";
   if (/^\s*3\s*$/.test(t) || t.startsWith("purchase") || t.includes("purchase") || t.includes("orders") || t === "menu_purchases") return "PURCHASES";
   return null;
 }
 
-// Minimal payment link creator (placeholder)
+// Minimal payment link creator placeholder (replace with Stripe/Payfast)
 async function createPaymentLink(phone, amountCents, description = "Contact details") {
   const fakeId = Date.now().toString(36);
   return {
@@ -266,6 +246,7 @@ export async function POST(request) {
     return NextResponse.json({ ok: false, error: "DB connect failed" }, { status: 500 });
   }
 
+  // parse body
   let payload = {};
   try {
     payload = await request.json();
@@ -279,6 +260,7 @@ export async function POST(request) {
   }
   console.log("[webhook] payload keys:", Object.keys(payload));
 
+  // persist raw event (best-effort)
   try {
     const headersObj = Object.fromEntries(request.headers.entries());
     await WebhookEvent.create({ provider: "whatsapp", headers: headersObj, payload, receivedAt: new Date() });
@@ -286,6 +268,7 @@ export async function POST(request) {
     console.warn("[webhook] save raw event failed:", e);
   }
 
+  // Normalize messageBlock and phone candidates
   let messageBlock = payload;
   if (payload.user_message) messageBlock = { text: payload.user_message };
   else if (payload.message_content && typeof payload.message_content === "string") {
@@ -311,17 +294,22 @@ export async function POST(request) {
 
   const phone = digitsOnly(rawCandidates[0] || "");
 
-  // Parse text and also accept interactive button replies
+  // Parse text and also handle interactive button replies
   let parsedText =
     payload.user_message || (messageBlock && (messageBlock.text || messageBlock.body?.text || messageBlock.body?.plain)) || "";
 
   // If incoming payload contains interactive button reply, prefer its id/title
   try {
-    const incomingInteractive = payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.interactive || messageBlock?.interactive;
+    const incomingInteractive =
+      payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.interactive ||
+      messageBlock?.interactive;
     if (incomingInteractive && incomingInteractive.type === "button_reply") {
-      parsedText = (incomingInteractive?.button_reply?.id) || (incomingInteractive?.button_reply?.title) || parsedText;
+      parsedText = incomingInteractive?.button_reply?.id || incomingInteractive?.button_reply?.title || parsedText;
+      console.log("[webhook] parsed interactive.button_reply:", parsedText);
     }
-  } catch (e) { /* ignore */ }
+  } catch (e) {
+    // ignore
+  }
 
   const incoming = {
     phone,
@@ -345,12 +333,14 @@ export async function POST(request) {
   try {
     const lastMeta = await getLastConversationState(phone);
 
+    // If there's no state yet, show menu
     if (!lastMeta) {
       await sendMenu(phone);
       await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.triggeredMenu": true } }).catch(() => { });
       return NextResponse.json({ ok: true, note: "menu-sent" });
     }
 
+    // If waiting for menu choice, interpret the user's reply or button id
     if (lastMeta.state === "AWAITING_MENU_CHOICE") {
       const choice = interpretMenuChoice(parsedText);
       if (!choice) {
@@ -358,73 +348,88 @@ export async function POST(request) {
         return NextResponse.json({ ok: true, note: "menu-repeat" });
       }
 
+      // To avoid race/loop: create a system message that updates the conversation state
       if (choice === "LIST") {
-        await Message.create({
+        const sys = await Message.create({
           phone: digitsOnly(phone),
           from: "system",
           type: "text",
           text: "Okay — let's list a property. What's the property title?",
           meta: { state: "LISTING_WAIT_TITLE", draft: {} },
-        }).catch(() => { });
-        await sendText(phone, "Okay — let's list a property. What's the property title?");
+        }).catch(() => null);
+
+        // mark the incoming user message as handled so getLastConversationState won't return it again
         await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.handledMenu": true } }).catch(() => { });
-        return NextResponse.json({ ok: true, note: "start-listing" });
+
+        // send prompt to user
+        await sendText(phone, "Okay — let's list a property. What's the property title?");
+        return NextResponse.json({ ok: true, note: "start-listing", sysId: sys?._id || null });
       }
 
       if (choice === "SEARCH") {
-        await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "Tell me area and budget (eg: Borrowdale, $200).", meta: { state: "SEARCH_WAIT_AREA_BUDGET" } }).catch(() => { });
+        const sys = await Message.create({
+          phone: digitsOnly(phone),
+          from: "system",
+          type: "text",
+          text: "Tell me area and budget (eg: Borrowdale, $200).",
+          meta: { state: "SEARCH_WAIT_AREA_BUDGET" },
+        }).catch(() => null);
+
+        await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.handledMenu": true } }).catch(() => { });
         await sendText(phone, "Tell me area and budget (eg: Borrowdale, $200).");
-        return NextResponse.json({ ok: true, note: "start-search" });
+        return NextResponse.json({ ok: true, note: "start-search", sysId: sys?._id || null });
       }
 
       if (choice === "PURCHASES") {
         const purchasesPlaceholder = "You have 0 purchases. (This is a placeholder — wire your purchases DB.)";
-        await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: purchasesPlaceholder, meta: { state: "SHOW_PURCHASES" } }).catch(() => { });
+        const sys = await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: purchasesPlaceholder, meta: { state: "SHOW_PURCHASES" } }).catch(() => null);
+        await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.handledMenu": true } }).catch(() => { });
         await sendText(phone, purchasesPlaceholder);
-        return NextResponse.json({ ok: true, note: "show-purchases" });
+        return NextResponse.json({ ok: true, note: "show-purchases", sysId: sys?._id || null });
       }
     }
 
-    // Listing flow states (same as your existing logic)
+    // Listing flow (states)
     if (lastMeta.state && lastMeta.state.startsWith("LISTING_WAIT_")) {
+      // find latest draft container (system message that holds draft)
       const draftContainer = await Message.findOne({ phone: digitsOnly(phone), "meta.draft": { $exists: true } }).sort({ createdAt: -1 }).exec();
       let draft = draftContainer?.meta?.draft || {};
 
       if (lastMeta.state === "LISTING_WAIT_TITLE") {
         draft.title = parsedText;
-        await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "Got it. What suburb is it in?", meta: { state: "LISTING_WAIT_SUBURB", draft } }).catch(() => { });
+        const sys = await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "Got it. What suburb is it in?", meta: { state: "LISTING_WAIT_SUBURB", draft } }).catch(() => null);
         await sendText(phone, "Got it. What suburb is it in?");
-        return NextResponse.json({ ok: true, note: "listing-title-saved" });
+        return NextResponse.json({ ok: true, note: "listing-title-saved", sysId: sys?._id || null });
       }
 
       if (lastMeta.state === "LISTING_WAIT_SUBURB") {
         draft.suburb = parsedText;
-        await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "Property type (e.g. House, Apartment)?", meta: { state: "LISTING_WAIT_TYPE", draft } }).catch(() => { });
+        const sys = await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "Property type (e.g. House, Apartment)?", meta: { state: "LISTING_WAIT_TYPE", draft } }).catch(() => null);
         await sendText(phone, "Property type (e.g. House, Apartment)?");
-        return NextResponse.json({ ok: true, note: "listing-suburb-saved" });
+        return NextResponse.json({ ok: true, note: "listing-suburb-saved", sysId: sys?._id || null });
       }
 
       if (lastMeta.state === "LISTING_WAIT_TYPE") {
         draft.propertyType = parsedText;
-        await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "Monthly price (numbers only)?", meta: { state: "LISTING_WAIT_PRICE", draft } }).catch(() => { });
+        const sys = await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "Monthly price (numbers only)?", meta: { state: "LISTING_WAIT_PRICE", draft } }).catch(() => null);
         await sendText(phone, "Monthly price (numbers only)?");
-        return NextResponse.json({ ok: true, note: "listing-type-saved" });
+        return NextResponse.json({ ok: true, note: "listing-type-saved", sysId: sys?._id || null });
       }
 
       if (lastMeta.state === "LISTING_WAIT_PRICE") {
         const price = Number(parsedText.replace(/[^\d.]/g, "")) || 0;
         draft.pricePerMonth = price;
-        await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "How many bedrooms?", meta: { state: "LISTING_WAIT_BEDS", draft } }).catch(() => { });
+        const sys = await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "How many bedrooms?", meta: { state: "LISTING_WAIT_BEDS", draft } }).catch(() => null);
         await sendText(phone, "How many bedrooms?");
-        return NextResponse.json({ ok: true, note: "listing-price-saved" });
+        return NextResponse.json({ ok: true, note: "listing-price-saved", sysId: sys?._id || null });
       }
 
       if (lastMeta.state === "LISTING_WAIT_BEDS") {
         const beds = Math.max(0, parseInt(parsedText, 10) || 0);
         draft.bedrooms = beds;
-        await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "Add a short description or send 'skip'.", meta: { state: "LISTING_WAIT_DESC", draft } }).catch(() => { });
+        const sys = await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "Add a short description or send 'skip'.", meta: { state: "LISTING_WAIT_DESC", draft } }).catch(() => null);
         await sendText(phone, "Add a short description or send 'skip'.");
-        return NextResponse.json({ ok: true, note: "listing-beds-saved" });
+        return NextResponse.json({ ok: true, note: "listing-beds-saved", sysId: sys?._id || null });
       }
 
       if (lastMeta.state === "LISTING_WAIT_DESC") {
@@ -490,7 +495,7 @@ export async function POST(request) {
       return NextResponse.json({ ok: true, note: "contact-payment-requested" });
     }
 
-    // PAID fallback
+    // PAID fallback (rudimentary)
     if (/^paid\s+/i.test(parsedText || "")) {
       const paymentId = (parsedText || "").split(/\s+/)[1];
       if (!paymentId) {
@@ -509,7 +514,7 @@ export async function POST(request) {
     }
   } catch (e) {
     console.warn("[webhook] conversation routing error:", e);
-    // fall through
+    // continue to existing free-text/send logic below
   }
 
   // Determine whether we are allowed to send free-text based on last user message timestamp
