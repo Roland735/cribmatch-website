@@ -120,7 +120,7 @@ function aesGcmDecrypt(encryptedFlowDataB64, aesKeyBuffer, ivB64) {
   if (flowBuf.length < TAG_LENGTH) throw new Error("encrypted flow data too short");
   const ciphertext = flowBuf.slice(0, flowBuf.length - TAG_LENGTH);
   const tag = flowBuf.slice(flowBuf.length - TAG_LENGTH);
-  const decipher = crypto.createDecipheriv("aes-128-gcm", aesKeyBuffer, iv);
+  const decipher = crypto.createDecipheriv(`aes-${aesKeyBuffer.length * 8}-gcm`, aesKeyBuffer, iv);
   decipher.setAuthTag(tag);
   const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
   return { plaintext: plaintext.toString("utf8"), aesIv: iv };
@@ -131,12 +131,250 @@ function aesGcmEncryptAndEncode(responseObj, aesKeyBuffer, requestIvBuffer) {
   const flippedIv = Buffer.alloc(requestIvBuffer.length);
   for (let i = 0; i < requestIvBuffer.length; i++) flippedIv[i] = (~requestIvBuffer[i]) & 0xff;
 
-  const cipher = crypto.createCipheriv("aes-128-gcm", aesKeyBuffer, flippedIv);
+  const cipher = crypto.createCipheriv(`aes-${aesKeyBuffer.length * 8}-gcm`, aesKeyBuffer, flippedIv);
   const plainBuf = Buffer.from(JSON.stringify(responseObj), "utf8");
   const encrypted = Buffer.concat([cipher.update(plainBuf), cipher.final()]);
   const tag = cipher.getAuthTag();
   const out = Buffer.concat([encrypted, tag]);
   return out.toString("base64");
+}
+
+// ================= Helper to build Flow responses =================
+function buildResultsFlowResponse(screen = "RESULTS", incoming = {}) {
+  return {
+    version: "3.0",
+    screen: screen,
+    data: {
+      resultsCount: 0,
+      listings: [],
+      querySummary: "",
+      listingText0: "",
+      listingText1: "",
+      listingText2: "",
+      hasResult0: false,
+      hasResult1: false,
+      hasResult2: false,
+      city: incoming.city || "",
+      suburb: incoming.suburb || "",
+      property_category: incoming.property_category || "",
+      property_type: incoming.property_type || "",
+      bedrooms: incoming.bedrooms || "",
+      min_price: Number(incoming.min_price || 0),
+      max_price: Number(incoming.max_price || 0),
+      q: incoming.q || "",
+      cities: [],
+      suburbs: [],
+      propertyCategories: [],
+      propertyTypes: [],
+      bedrooms_list: [],
+      min_price_default: 0,
+      max_price_default: 0,
+      query: "",
+      refine: false,
+    },
+  };
+}
+
+// The richer schema you pasted (returns entire screens schema) - used for SEARCH screen
+function buildSearchSchemaFlowResponse() {
+  // NOTE: this object is exactly the long JSON schema you provided (trimmed/kept as-is).
+  // You can edit the images / example arrays below as needed.
+  return {
+    version: "7.3",
+    data_api_version: "3.0",
+    routing_model: {
+      SEARCH: ["RESULTS"],
+      RESULTS: ["COMPLETE"],
+      COMPLETE: [],
+    },
+    screens: [
+      {
+        id: "SEARCH",
+        title: "Find rentals near you",
+        data: {
+          cities: { type: "array", items: { type: "object", properties: { id: { type: "string" }, title: { type: "string" } } }, "__example__": [] },
+          suburbs: { type: "array", items: { type: "object", properties: { id: { type: "string" }, title: { type: "string" } } }, "__example__": [] },
+          propertyCategories: { type: "array", items: { type: "object", properties: { id: { type: "string" }, title: { type: "string" } } }, "__example__": [] },
+          propertyTypes: { type: "array", items: { type: "object", properties: { id: { type: "string" }, title: { type: "string" } } }, "__example__": [] },
+          bedrooms: { type: "array", items: { type: "object", properties: { id: { type: "string" }, title: { type: "string" } } }, "__example__": [] },
+          min_price: { type: "number", "__example__": 0 },
+          max_price: { type: "number", "__example__": 0 },
+          query: { type: "string", "__example__": "" },
+          selected_city: { type: "string", "__example__": "" },
+          selected_suburb: { type: "string", "__example__": "" },
+          selected_category: { type: "string", "__example__": "" },
+          selected_type: { type: "string", "__example__": "" },
+          selected_bedrooms: { type: "string", "__example__": "" },
+        },
+        layout: {
+          type: "SingleColumnLayout",
+          children: [
+            {
+              type: "Form",
+              name: "search_form",
+              "init-values": {
+                city: "${data.selected_city}",
+                suburb: "${data.selected_suburb}",
+                property_category: "${data.selected_category}",
+                property_type: "${data.selected_type}",
+                bedrooms: "${data.selected_bedrooms}",
+                min_price: "${data.min_price}",
+                max_price: "${data.max_price}",
+                q: "${data.query}",
+              },
+              children: [
+                {
+                  type: "Image",
+                  src: "/9j/4AAQSkZJRgABAQAAAQABAAD...search-hero-base64...==",
+                  height: 108,
+                  "scale-type": "cover",
+                },
+                { type: "TextSubheading", text: "Find rentals fast" },
+                { type: "TextBody", text: "Tell us where and what you want — tap fields or type keywords (eg: Borrowdale, $200)." },
+                {
+                  type: "Dropdown",
+                  label: "City",
+                  required: true,
+                  name: "city",
+                  "data-source": "${data.cities}",
+                  "on-select-action": { name: "data_exchange", payload: { selected_city: "${form.city}" } },
+                },
+                {
+                  type: "Dropdown",
+                  label: "Suburb (optional)",
+                  required: false,
+                  name: "suburb",
+                  "data-source": "${data.suburbs}",
+                  "on-select-action": { name: "data_exchange", payload: { selected_suburb: "${form.suburb}" } },
+                },
+                {
+                  type: "Dropdown",
+                  label: "Category",
+                  required: false,
+                  name: "property_category",
+                  "data-source": "${data.propertyCategories}",
+                  "on-select-action": { name: "data_exchange", payload: { selected_category: "${form.property_category}" } },
+                },
+                {
+                  type: "Dropdown",
+                  label: "Property type",
+                  required: false,
+                  name: "property_type",
+                  "data-source": "${data.propertyTypes}",
+                  "on-select-action": { name: "data_exchange", payload: { selected_type: "${form.property_type}" } },
+                },
+                {
+                  type: "Dropdown",
+                  label: "Bedrooms",
+                  required: false,
+                  name: "bedrooms",
+                  "data-source": "${data.bedrooms}",
+                  "on-select-action": { name: "data_exchange", payload: { selected_bedrooms: "${form.bedrooms}" } },
+                },
+                { type: "TextInput", label: "Min monthly rent (numbers only)", name: "min_price", required: false, "input-type": "number" },
+                { type: "TextInput", label: "Max monthly rent (numbers only)", name: "max_price", required: false, "input-type": "number" },
+                { type: "TextInput", label: "Keywords (optional)", name: "q", required: false, "input-type": "text" },
+                {
+                  type: "Footer",
+                  label: "Search",
+                  "on-click-action": {
+                    name: "data_exchange",
+                    payload: {
+                      city: "${form.city}",
+                      suburb: "${form.suburb}",
+                      property_category: "${form.property_category}",
+                      property_type: "${form.property_type}",
+                      bedrooms: "${form.bedrooms}",
+                      min_price: "${form.min_price}",
+                      max_price: "${form.max_price}",
+                      q: "${form.q}",
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+      {
+        id: "RESULTS",
+        title: "Search results",
+        data: {
+          resultsCount: { type: "number", "__example__": 0 },
+          listings: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "string" },
+                title: { type: "string" },
+                suburb: { type: "string" },
+                pricePerMonth: { type: "number" },
+                bedrooms: { type: "string" },
+              },
+            },
+            "__example__": [],
+          },
+          querySummary: { type: "string", "__example__": "" },
+          listingText0: { type: "string", "__example__": "" },
+          listingText1: { type: "string", "__example__": "" },
+          listingText2: { type: "string", "__example__": "" },
+          hasResult0: { type: "boolean", "__example__": false },
+          hasResult1: { type: "boolean", "__example__": false },
+          hasResult2: { type: "boolean", "__example__": false },
+        },
+        layout: {
+          type: "SingleColumnLayout",
+          children: [
+            {
+              type: "Form",
+              name: "results_view",
+              children: [
+                { type: "TextSubheading", text: "Results" },
+                { type: "TextBody", text: "Found ${data.resultsCount} matching listings." },
+                { type: "TextBody", text: "${data.querySummary}" },
+                { type: "TextBody", text: "${data.listingText0}", visible: "${data.hasResult0}" },
+                { type: "TextBody", text: "${data.listingText1}", visible: "${data.hasResult1}" },
+                { type: "TextBody", text: "${data.listingText2}", visible: "${data.hasResult2}" },
+                {
+                  type: "TextBody",
+                  text: "To view contact details for any listing, reply with: CONTACT <LISTING_ID> in the chat or use the chat to request more details.",
+                },
+                {
+                  type: "Footer",
+                  label: "Refine search",
+                  "on-click-action": { name: "data_exchange", payload: { refine: "true" } },
+                },
+              ],
+            },
+          ],
+        },
+      },
+      {
+        id: "COMPLETE",
+        title: "Search sent",
+        data: {},
+        terminal: true,
+        layout: {
+          type: "SingleColumnLayout",
+          children: [
+            {
+              type: "Form",
+              name: "flow_complete",
+              children: [
+                { type: "TextSubheading", text: "All set!" },
+                {
+                  type: "TextBody",
+                  text: "We've run the search and sent the results. Reply with a listing ID to view contact details or start a new search any time.",
+                },
+                { type: "Footer", label: "Done", "on-click-action": { name: "complete", payload: {} } },
+              ],
+            },
+          ],
+        },
+      },
+    ],
+  };
 }
 
 // ================= Conversation / Menu helpers =================
@@ -361,46 +599,26 @@ export async function POST(request) {
             decryptedPayload = { data: {} };
           }
 
-          // Build response object (customize to your flow). Here we echo RESULTS with safe defaults.
-          const flowResponse = {
-            version: "3.0",
-            screen: decryptedPayload?.screen || "RESULTS",
-            data: {
-              resultsCount: 0,
-              listings: [],
-              querySummary: "",
-              listingText0: "",
-              listingText1: "",
-              listingText2: "",
-              hasResult0: false,
-              hasResult1: false,
-              hasResult2: false,
-              city: decryptedPayload?.data?.city || "",
-              suburb: decryptedPayload?.data?.suburb || "",
-              property_category: decryptedPayload?.data?.property_category || "",
-              property_type: decryptedPayload?.data?.property_type || "",
-              bedrooms: decryptedPayload?.data?.bedrooms || "",
-              min_price: Number(decryptedPayload?.data?.min_price || 0),
-              max_price: Number(decryptedPayload?.data?.max_price || 0),
-              q: decryptedPayload?.data?.q || "",
-              cities: [],
-              suburbs: [],
-              propertyCategories: [],
-              propertyTypes: [],
-              bedrooms_list: [],
-              min_price_default: 0,
-              max_price_default: 0,
-              query: "",
-              refine: false,
-            },
-          };
+          // Decide which response to return
+          const requestedScreen = decryptedPayload?.screen || decryptedPayload?.data?.screen || "RESULTS";
 
-          // 3) Encrypt response with AES-GCM using flipped IV and return Base64 plain text
-          const encryptedRespBase64 = aesGcmEncryptAndEncode(flowResponse, aesKeyBuffer, aesIv);
-          return new Response(encryptedRespBase64, {
-            status: 200,
-            headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
-          });
+          if ((requestedScreen || "").toUpperCase() === "SEARCH") {
+            // return the rich SEARCH schema (version 7.3)
+            const flowResponse = buildSearchSchemaFlowResponse();
+            const encryptedRespBase64 = aesGcmEncryptAndEncode(flowResponse, aesKeyBuffer, aesIv);
+            return new Response(encryptedRespBase64, {
+              status: 200,
+              headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
+            });
+          } else {
+            // default: RESULTS response (simple)
+            const flowResponse = buildResultsFlowResponse("RESULTS", decryptedPayload?.data || {});
+            const encryptedRespBase64 = aesGcmEncryptAndEncode(flowResponse, aesKeyBuffer, aesIv);
+            return new Response(encryptedRespBase64, {
+              status: 200,
+              headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
+            });
+          }
         } catch (e) {
           console.error("[webhook] flow encrypted handling error:", e);
           // return 500 (Meta will mark endpoint unhealthy until fixed)
@@ -414,49 +632,31 @@ export async function POST(request) {
         const screenFromRequest = (payload?.data_exchange?.screen || payload?.flow?.screen || payload?.screen || "RESULTS");
         const incomingData = payload?.data_exchange?.data || payload?.data || {};
 
-        const flowResponse = {
-          version: "3.0",
-          screen: screenFromRequest,
-          data: {
-            resultsCount: 0,
-            listings: [],
-            querySummary: "",
-            listingText0: "",
-            listingText1: "",
-            listingText2: "",
-            hasResult0: false,
-            hasResult1: false,
-            hasResult2: false,
-            city: incomingData.city || "",
-            suburb: incomingData.suburb || "",
-            property_category: incomingData.property_category || "",
-            property_type: incomingData.property_type || "",
-            bedrooms: incomingData.bedrooms || "",
-            min_price: Number(incomingData.min_price || 0),
-            max_price: Number(incomingData.max_price || 0),
-            q: incomingData.q || "",
-            cities: incomingData.cities || [],
-            suburbs: incomingData.suburbs || [],
-            propertyCategories: incomingData.propertyCategories || [],
-            propertyTypes: incomingData.propertyTypes || [],
-            bedrooms_list: incomingData.bedrooms || [],
-            min_price_default: 0,
-            max_price_default: 0,
-            query: "",
-            refine: false,
-          },
-        };
-
-        const flowResponseJson = JSON.stringify(flowResponse);
-        const flowResponseBase64 = Buffer.from(flowResponseJson, "utf8").toString("base64");
-        return new Response(flowResponseBase64, {
-          status: 200,
-          headers: {
-            "Content-Type": "application/octet-stream",
-            "Content-Transfer-Encoding": "base64",
-            "Cache-Control": "no-store",
-          },
-        });
+        if ((screenFromRequest || "").toUpperCase() === "SEARCH") {
+          const flowResponse = buildSearchSchemaFlowResponse();
+          const flowResponseJson = JSON.stringify(flowResponse);
+          const flowResponseBase64 = Buffer.from(flowResponseJson, "utf8").toString("base64");
+          return new Response(flowResponseBase64, {
+            status: 200,
+            headers: {
+              "Content-Type": "application/octet-stream",
+              "Content-Transfer-Encoding": "base64",
+              "Cache-Control": "no-store",
+            },
+          });
+        } else {
+          const flowResponse = buildResultsFlowResponse(screenFromRequest, incomingData);
+          const flowResponseJson = JSON.stringify(flowResponse);
+          const flowResponseBase64 = Buffer.from(flowResponseJson, "utf8").toString("base64");
+          return new Response(flowResponseBase64, {
+            status: 200,
+            headers: {
+              "Content-Type": "application/octet-stream",
+              "Content-Transfer-Encoding": "base64",
+              "Cache-Control": "no-store",
+            },
+          });
+        }
       }
     }
   } catch (e) {
