@@ -44,12 +44,6 @@ async function sendText(phoneNumber, message) {
   return whatsappPost(phone_number_id, apiToken, payload);
 }
 
-/**
- * Send reply-buttons (interactive). If Graph API rejects interactive (e.g. 24h restriction),
- * we automatically fall back to sending a plain-text menu so user still sees options.
- *
- * buttons: [{ id: 'menu_list', title: 'List a property' }, ...]
- */
 async function sendInteractiveButtons(phoneNumber, bodyText, buttons = []) {
   const apiToken = process.env.WHATSAPP_API_TOKEN || process.env.WHATCHIMP_API_KEY;
   const phone_number_id =
@@ -249,7 +243,7 @@ export async function POST(request) {
   console.log("[webhook] payload keys:", Object.keys(payload));
 
   // ------------------------------
-  // Flow detection & fast-response
+  // Flow detection & fast-response (Base64-encoded body)
   // ------------------------------
   try {
     // Detect common Flow/data_exchange shapes:
@@ -263,7 +257,7 @@ export async function POST(request) {
     const isFlowRequest = hasDataExchange || hasFlowWrapper || hasActionFlow || mayBeFlowViaEntry;
 
     if (isFlowRequest) {
-      console.log("[webhook] detected flow request - returning minimal flow response for healthcheck");
+      console.log("[webhook] detected flow request - returning Base64-encoded flow response for healthcheck");
 
       // attempt to extract the requested/next screen name from the incoming payload
       const screenFromRequest =
@@ -296,7 +290,7 @@ export async function POST(request) {
           max_price: Number(payload?.data_exchange?.data?.max_price || 0),
           q: (payload?.data_exchange?.data?.q || "") + "",
 
-          // data expected by SEARCH screen (drop-down lists, selections)
+          // data expected by SEARCH screen (drop-down lists, selections) - safe defaults
           cities: payload?.data?.cities || payload?.data_exchange?.data?.cities || [],
           suburbs: payload?.data?.suburbs || payload?.data_exchange?.data?.suburbs || [],
           propertyCategories: payload?.data?.propertyCategories || payload?.data_exchange?.data?.propertyCategories || [],
@@ -311,8 +305,19 @@ export async function POST(request) {
         },
       };
 
-      // Return 200 and the response body Meta expects for Flow endpoints
-      return NextResponse.json(flowResponse, { status: 200 });
+      // encode to Base64 string (Meta expects Base64 when using public-key/encryption)
+      const flowResponseJson = JSON.stringify(flowResponse);
+      const flowResponseBase64 = Buffer.from(flowResponseJson, "utf8").toString("base64");
+
+      // return raw base64 body with appropriate headers (200)
+      return new Response(flowResponseBase64, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "Content-Transfer-Encoding": "base64",
+          "Cache-Control": "no-store",
+        },
+      });
     }
   } catch (e) {
     console.error("[webhook] flow-detect error", e);
