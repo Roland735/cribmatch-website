@@ -97,8 +97,8 @@ async function retry(fn, attempts = 3, delay = 400) {
 
 // ================= Crypto helpers for Flow encryption =================
 //
-// Decrypt RSA-encrypted AES key (RSA-OAEP SHA256), then decrypt AES-GCM payload.
-// Encrypt response using AES-GCM with flipped IV (bitwise NOT).
+// RSA-OAEP SHA-256 to decrypt AES key, AES-GCM to decrypt/encrypt payload.
+// Response encryption: AES-GCM using the bitwise-NOT (flipped) IV per docs.
 //
 function rsaDecryptAesKey(encryptedAesKeyB64, privateKeyPem) {
   const encryptedKeyBuf = Buffer.from(encryptedAesKeyB64, "base64");
@@ -110,7 +110,7 @@ function rsaDecryptAesKey(encryptedAesKeyB64, privateKeyPem) {
     },
     encryptedKeyBuf
   );
-  return aesKey; // Buffer (should be 16 bytes for AES-128)
+  return aesKey; // Buffer
 }
 
 function aesGcmDecrypt(encryptedFlowDataB64, aesKeyBuffer, ivB64) {
@@ -120,7 +120,9 @@ function aesGcmDecrypt(encryptedFlowDataB64, aesKeyBuffer, ivB64) {
   if (flowBuf.length < TAG_LENGTH) throw new Error("encrypted flow data too short");
   const ciphertext = flowBuf.slice(0, flowBuf.length - TAG_LENGTH);
   const tag = flowBuf.slice(flowBuf.length - TAG_LENGTH);
-  const decipher = crypto.createDecipheriv(`aes-${aesKeyBuffer.length * 8}-gcm`, aesKeyBuffer, iv);
+
+  const alg = `aes-${aesKeyBuffer.length * 8}-gcm`;
+  const decipher = crypto.createDecipheriv(alg, aesKeyBuffer, iv);
   decipher.setAuthTag(tag);
   const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
   return { plaintext: plaintext.toString("utf8"), aesIv: iv };
@@ -131,7 +133,8 @@ function aesGcmEncryptAndEncode(responseObj, aesKeyBuffer, requestIvBuffer) {
   const flippedIv = Buffer.alloc(requestIvBuffer.length);
   for (let i = 0; i < requestIvBuffer.length; i++) flippedIv[i] = (~requestIvBuffer[i]) & 0xff;
 
-  const cipher = crypto.createCipheriv(`aes-${aesKeyBuffer.length * 8}-gcm`, aesKeyBuffer, flippedIv);
+  const alg = `aes-${aesKeyBuffer.length * 8}-gcm`;
+  const cipher = crypto.createCipheriv(alg, aesKeyBuffer, flippedIv);
   const plainBuf = Buffer.from(JSON.stringify(responseObj), "utf8");
   const encrypted = Buffer.concat([cipher.update(plainBuf), cipher.final()]);
   const tag = cipher.getAuthTag();
@@ -139,7 +142,8 @@ function aesGcmEncryptAndEncode(responseObj, aesKeyBuffer, requestIvBuffer) {
   return out.toString("base64");
 }
 
-// ================= Helper to build Flow responses =================
+// ================= Flow response builders =================
+
 function buildResultsFlowResponse(screen = "RESULTS", incoming = {}) {
   return {
     version: "3.0",
@@ -175,10 +179,7 @@ function buildResultsFlowResponse(screen = "RESULTS", incoming = {}) {
   };
 }
 
-// The richer schema you pasted (returns entire screens schema) - used for SEARCH screen
 function buildSearchSchemaFlowResponse() {
-  // NOTE: this object is exactly the long JSON schema you provided (trimmed/kept as-is).
-  // You can edit the images / example arrays below as needed.
   return {
     version: "7.3",
     data_api_version: "3.0",
@@ -223,74 +224,18 @@ function buildSearchSchemaFlowResponse() {
                 q: "${data.query}",
               },
               children: [
-                {
-                  type: "Image",
-                  src: "/9j/4AAQSkZJRgABAQAAAQABAAD...search-hero-base64...==",
-                  height: 108,
-                  "scale-type": "cover",
-                },
+                { type: "Image", src: "/9j/4AAQSkZJRgABAQAAAQABAAD...search-hero-base64...==", height: 108, "scale-type": "cover" },
                 { type: "TextSubheading", text: "Find rentals fast" },
                 { type: "TextBody", text: "Tell us where and what you want — tap fields or type keywords (eg: Borrowdale, $200)." },
-                {
-                  type: "Dropdown",
-                  label: "City",
-                  required: true,
-                  name: "city",
-                  "data-source": "${data.cities}",
-                  "on-select-action": { name: "data_exchange", payload: { selected_city: "${form.city}" } },
-                },
-                {
-                  type: "Dropdown",
-                  label: "Suburb (optional)",
-                  required: false,
-                  name: "suburb",
-                  "data-source": "${data.suburbs}",
-                  "on-select-action": { name: "data_exchange", payload: { selected_suburb: "${form.suburb}" } },
-                },
-                {
-                  type: "Dropdown",
-                  label: "Category",
-                  required: false,
-                  name: "property_category",
-                  "data-source": "${data.propertyCategories}",
-                  "on-select-action": { name: "data_exchange", payload: { selected_category: "${form.property_category}" } },
-                },
-                {
-                  type: "Dropdown",
-                  label: "Property type",
-                  required: false,
-                  name: "property_type",
-                  "data-source": "${data.propertyTypes}",
-                  "on-select-action": { name: "data_exchange", payload: { selected_type: "${form.property_type}" } },
-                },
-                {
-                  type: "Dropdown",
-                  label: "Bedrooms",
-                  required: false,
-                  name: "bedrooms",
-                  "data-source": "${data.bedrooms}",
-                  "on-select-action": { name: "data_exchange", payload: { selected_bedrooms: "${form.bedrooms}" } },
-                },
+                { type: "Dropdown", label: "City", required: true, name: "city", "data-source": "${data.cities}", "on-select-action": { name: "data_exchange", payload: { selected_city: "${form.city}" } } },
+                { type: "Dropdown", label: "Suburb (optional)", required: false, name: "suburb", "data-source": "${data.suburbs}", "on-select-action": { name: "data_exchange", payload: { selected_suburb: "${form.suburb}" } } },
+                { type: "Dropdown", label: "Category", required: false, name: "property_category", "data-source": "${data.propertyCategories}", "on-select-action": { name: "data_exchange", payload: { selected_category: "${form.property_category}" } } },
+                { type: "Dropdown", label: "Property type", required: false, name: "property_type", "data-source": "${data.propertyTypes}", "on-select-action": { name: "data_exchange", payload: { selected_type: "${form.property_type}" } } },
+                { type: "Dropdown", label: "Bedrooms", required: false, name: "bedrooms", "data-source": "${data.bedrooms}", "on-select-action": { name: "data_exchange", payload: { selected_bedrooms: "${form.bedrooms}" } } },
                 { type: "TextInput", label: "Min monthly rent (numbers only)", name: "min_price", required: false, "input-type": "number" },
                 { type: "TextInput", label: "Max monthly rent (numbers only)", name: "max_price", required: false, "input-type": "number" },
                 { type: "TextInput", label: "Keywords (optional)", name: "q", required: false, "input-type": "text" },
-                {
-                  type: "Footer",
-                  label: "Search",
-                  "on-click-action": {
-                    name: "data_exchange",
-                    payload: {
-                      city: "${form.city}",
-                      suburb: "${form.suburb}",
-                      property_category: "${form.property_category}",
-                      property_type: "${form.property_type}",
-                      bedrooms: "${form.bedrooms}",
-                      min_price: "${form.min_price}",
-                      max_price: "${form.max_price}",
-                      q: "${form.q}",
-                    },
-                  },
-                },
+                { type: "Footer", label: "Search", "on-click-action": { name: "data_exchange", payload: { city: "${form.city}", suburb: "${form.suburb}", property_category: "${form.property_category}", property_type: "${form.property_type}", bedrooms: "${form.bedrooms}", min_price: "${form.min_price}", max_price: "${form.max_price}", q: "${form.q}" } } },
               ],
             },
           ],
@@ -301,20 +246,7 @@ function buildSearchSchemaFlowResponse() {
         title: "Search results",
         data: {
           resultsCount: { type: "number", "__example__": 0 },
-          listings: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                id: { type: "string" },
-                title: { type: "string" },
-                suburb: { type: "string" },
-                pricePerMonth: { type: "number" },
-                bedrooms: { type: "string" },
-              },
-            },
-            "__example__": [],
-          },
+          listings: { type: "array", items: { type: "object", properties: { id: { type: "string" }, title: { type: "string" }, suburb: { type: "string" }, pricePerMonth: { type: "number" }, bedrooms: { type: "string" } } }, "__example__": [] },
           querySummary: { type: "string", "__example__": "" },
           listingText0: { type: "string", "__example__": "" },
           listingText1: { type: "string", "__example__": "" },
@@ -336,15 +268,8 @@ function buildSearchSchemaFlowResponse() {
                 { type: "TextBody", text: "${data.listingText0}", visible: "${data.hasResult0}" },
                 { type: "TextBody", text: "${data.listingText1}", visible: "${data.hasResult1}" },
                 { type: "TextBody", text: "${data.listingText2}", visible: "${data.hasResult2}" },
-                {
-                  type: "TextBody",
-                  text: "To view contact details for any listing, reply with: CONTACT <LISTING_ID> in the chat or use the chat to request more details.",
-                },
-                {
-                  type: "Footer",
-                  label: "Refine search",
-                  "on-click-action": { name: "data_exchange", payload: { refine: "true" } },
-                },
+                { type: "TextBody", text: "To view contact details for any listing, reply with: CONTACT <LISTING_ID> in the chat or use the chat to request more details." },
+                { type: "Footer", label: "Refine search", "on-click-action": { name: "data_exchange", payload: { refine: "true" } } },
               ],
             },
           ],
@@ -363,10 +288,7 @@ function buildSearchSchemaFlowResponse() {
               name: "flow_complete",
               children: [
                 { type: "TextSubheading", text: "All set!" },
-                {
-                  type: "TextBody",
-                  text: "We've run the search and sent the results. Reply with a listing ID to view contact details or start a new search any time.",
-                },
+                { type: "TextBody", text: "We've run the search and sent the results. Reply with a listing ID to view contact details or start a new search any time." },
                 { type: "Footer", label: "Done", "on-click-action": { name: "complete", payload: {} } },
               ],
             },
@@ -375,6 +297,35 @@ function buildSearchSchemaFlowResponse() {
       },
     ],
   };
+}
+
+// Robust helper to determine the requested flow screen from either raw payload or decrypted payload
+function detectRequestedScreen(rawPayload = {}, decryptedPayload = {}) {
+  const checks = [
+    rawPayload?.data_exchange?.screen,
+    rawPayload?.flow?.screen,
+    rawPayload?.screen,
+    rawPayload?.action,
+    rawPayload?.action?.payload?.screen,
+    rawPayload?.entry?.[0]?.changes?.[0]?.value?.data_exchange?.screen,
+    rawPayload?.entry?.[0]?.changes?.[0]?.value?.flow?.screen,
+    decryptedPayload?.screen,
+    decryptedPayload?.flow?.screen,
+    decryptedPayload?.data?.screen,
+    decryptedPayload?.data_exchange?.screen,
+    decryptedPayload?.action?.payload?.screen,
+    decryptedPayload?.data?.selected_screen,
+  ];
+  for (const c of checks) {
+    if (!c) continue;
+    try {
+      const s = String(c).trim();
+      if (s) return s.toUpperCase();
+    } catch (e) {
+      // ignore
+    }
+  }
+  return null;
 }
 
 // ================= Conversation / Menu helpers =================
@@ -529,7 +480,6 @@ export async function POST(request) {
   // Flow detection & fast-response (handle encrypted and unencrypted data exchange)
   // ------------------------------
   try {
-    // Consider both plain data_exchange and encrypted payloads
     const hasDataExchange = Boolean(payload?.data_exchange);
     const hasEncrypted = Boolean(payload?.encrypted_flow_data && payload?.encrypted_aes_key && payload?.initial_vector);
     const hasFlowWrapper = Boolean(payload?.flow);
@@ -543,9 +493,8 @@ export async function POST(request) {
     if (isFlowRequest) {
       console.log("[webhook] detected flow request - handling data exchange / healthcheck");
 
-      // Health check ping (unencrypted) support
+      // Health check ping
       if (payload?.action === "ping" || payload?.action === "PING") {
-        // If encrypted, respond encrypted; otherwise return plain JSON (but Meta often expects base64/plain)
         const healthResp = { data: { status: "active" } };
         if (hasEncrypted) {
           try {
@@ -566,7 +515,6 @@ export async function POST(request) {
             return NextResponse.json({ error: "health encrypt failed" }, { status: 500 });
           }
         } else {
-          // Return base64 encoded JSON (Meta may accept plain base64 too)
           const respJson = JSON.stringify({ version: "3.0", screen: "RESULTS", data: healthResp.data });
           const respBase64 = Buffer.from(respJson, "utf8").toString("base64");
           return new Response(respBase64, {
@@ -576,7 +524,7 @@ export async function POST(request) {
         }
       }
 
-      // If encrypted request -> decrypt, process, encrypt response
+      // Encrypted path
       if (hasEncrypted) {
         try {
           const privateKeyPem = process.env.FLOW_PRIVATE_KEY || process.env.PRIVATE_KEY;
@@ -585,10 +533,7 @@ export async function POST(request) {
             return NextResponse.json({ error: "private key missing" }, { status: 500 });
           }
 
-          // 1) Decrypt AES key
           const aesKeyBuffer = rsaDecryptAesKey(payload.encrypted_aes_key, privateKeyPem);
-
-          // 2) Decrypt Flow payload (AES-GCM)
           const { plaintext: decryptedText, aesIv } = aesGcmDecrypt(payload.encrypted_flow_data, aesKeyBuffer, payload.initial_vector);
 
           console.log("[webhook] decrypted flow payload:", decryptedText);
@@ -599,11 +544,10 @@ export async function POST(request) {
             decryptedPayload = { data: {} };
           }
 
-          // Decide which response to return
-          const requestedScreen = decryptedPayload?.screen || decryptedPayload?.data?.screen || "RESULTS";
+          const requestedScreen = detectRequestedScreen(payload, decryptedPayload) || "RESULTS";
+          console.log("[webhook] detected requestedScreen:", requestedScreen);
 
-          if ((requestedScreen || "").toUpperCase() === "SEARCH") {
-            // return the rich SEARCH schema (version 7.3)
+          if (requestedScreen === "SEARCH") {
             const flowResponse = buildSearchSchemaFlowResponse();
             const encryptedRespBase64 = aesGcmEncryptAndEncode(flowResponse, aesKeyBuffer, aesIv);
             return new Response(encryptedRespBase64, {
@@ -611,7 +555,6 @@ export async function POST(request) {
               headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
             });
           } else {
-            // default: RESULTS response (simple)
             const flowResponse = buildResultsFlowResponse("RESULTS", decryptedPayload?.data || {});
             const encryptedRespBase64 = aesGcmEncryptAndEncode(flowResponse, aesKeyBuffer, aesIv);
             return new Response(encryptedRespBase64, {
@@ -621,18 +564,19 @@ export async function POST(request) {
           }
         } catch (e) {
           console.error("[webhook] flow encrypted handling error:", e);
-          // return 500 (Meta will mark endpoint unhealthy until fixed)
           return NextResponse.json({ ok: false, error: "flow-encrypt-handling-failed" }, { status: 500 });
         }
       }
 
-      // Unencrypted data_exchange or flow request (existing handler) -> respond with base64 JSON as before
+      // Unencrypted flow / data_exchange path
       if (hasDataExchange || hasFlowWrapper || mayBeFlowViaEntry) {
-        // Extract screen and incoming data if present
         const screenFromRequest = (payload?.data_exchange?.screen || payload?.flow?.screen || payload?.screen || "RESULTS");
         const incomingData = payload?.data_exchange?.data || payload?.data || {};
 
-        if ((screenFromRequest || "").toUpperCase() === "SEARCH") {
+        const requestedScreen = detectRequestedScreen(payload, {}) || String(screenFromRequest || "RESULTS").toUpperCase();
+        console.log("[webhook] unencrypted requestedScreen:", requestedScreen);
+
+        if (requestedScreen === "SEARCH") {
           const flowResponse = buildSearchSchemaFlowResponse();
           const flowResponseJson = JSON.stringify(flowResponse);
           const flowResponseBase64 = Buffer.from(flowResponseJson, "utf8").toString("base64");
