@@ -1,5 +1,6 @@
 // app/api/webhooks/whatsapp/route.js
 import { NextResponse } from "next/server";
+import crypto from "crypto";
 import { dbConnect, WebhookEvent, Listing } from "@/lib/db";
 import Message from "@/lib/Message";
 import { getListingById, searchPublishedListings } from "@/lib/getListings";
@@ -92,6 +93,50 @@ async function retry(fn, attempts = 3, delay = 400) {
     }
   }
   throw lastErr;
+}
+
+// ================= Crypto helpers for Flow encryption =================
+//
+// Decrypt RSA-encrypted AES key (RSA-OAEP SHA256), then decrypt AES-GCM payload.
+// Encrypt response using AES-GCM with flipped IV (bitwise NOT).
+//
+function rsaDecryptAesKey(encryptedAesKeyB64, privateKeyPem) {
+  const encryptedKeyBuf = Buffer.from(encryptedAesKeyB64, "base64");
+  const aesKey = crypto.privateDecrypt(
+    {
+      key: privateKeyPem,
+      padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+      oaepHash: "sha256",
+    },
+    encryptedKeyBuf
+  );
+  return aesKey; // Buffer (should be 16 bytes for AES-128)
+}
+
+function aesGcmDecrypt(encryptedFlowDataB64, aesKeyBuffer, ivB64) {
+  const flowBuf = Buffer.from(encryptedFlowDataB64, "base64");
+  const iv = Buffer.from(ivB64, "base64");
+  const TAG_LENGTH = 16;
+  if (flowBuf.length < TAG_LENGTH) throw new Error("encrypted flow data too short");
+  const ciphertext = flowBuf.slice(0, flowBuf.length - TAG_LENGTH);
+  const tag = flowBuf.slice(flowBuf.length - TAG_LENGTH);
+  const decipher = crypto.createDecipheriv("aes-128-gcm", aesKeyBuffer, iv);
+  decipher.setAuthTag(tag);
+  const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  return { plaintext: plaintext.toString("utf8"), aesIv: iv };
+}
+
+function aesGcmEncryptAndEncode(responseObj, aesKeyBuffer, requestIvBuffer) {
+  // flip IV bits (bitwise NOT) as required by docs
+  const flippedIv = Buffer.alloc(requestIvBuffer.length);
+  for (let i = 0; i < requestIvBuffer.length; i++) flippedIv[i] = (~requestIvBuffer[i]) & 0xff;
+
+  const cipher = crypto.createCipheriv("aes-128-gcm", aesKeyBuffer, flippedIv);
+  const plainBuf = Buffer.from(JSON.stringify(responseObj), "utf8");
+  const encrypted = Buffer.concat([cipher.update(plainBuf), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  const out = Buffer.concat([encrypted, tag]);
+  return out.toString("base64");
 }
 
 // ================= Conversation / Menu helpers =================
@@ -243,84 +288,179 @@ export async function POST(request) {
   console.log("[webhook] payload keys:", Object.keys(payload));
 
   // ------------------------------
-  // Flow detection & fast-response (Base64-encoded body)
+  // Flow detection & fast-response (handle encrypted and unencrypted data exchange)
   // ------------------------------
   try {
-    // Detect common Flow/data_exchange shapes:
+    // Consider both plain data_exchange and encrypted payloads
     const hasDataExchange = Boolean(payload?.data_exchange);
+    const hasEncrypted = Boolean(payload?.encrypted_flow_data && payload?.encrypted_aes_key && payload?.initial_vector);
     const hasFlowWrapper = Boolean(payload?.flow);
-    const hasActionFlow = Boolean(payload?.action && (payload.action.name === "flow" || payload.action?.type === "flow"));
     const mayBeFlowViaEntry =
       Boolean(payload?.entry?.[0]?.changes?.[0]?.value?.flow) ||
       Boolean(payload?.entry?.[0]?.changes?.[0]?.value?.data_exchange) ||
       Boolean(payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.type === "flow");
-    const isFlowRequest = hasDataExchange || hasFlowWrapper || hasActionFlow || mayBeFlowViaEntry;
+
+    const isFlowRequest = hasDataExchange || hasEncrypted || hasFlowWrapper || mayBeFlowViaEntry;
 
     if (isFlowRequest) {
-      console.log("[webhook] detected flow request - returning Base64-encoded flow response for healthcheck");
+      console.log("[webhook] detected flow request - handling data exchange / healthcheck");
 
-      // attempt to extract the requested/next screen name from the incoming payload
-      const screenFromRequest =
-        payload?.data_exchange?.screen || payload?.flow?.screen || payload?.screen || payload?.action?.payload?.screen || "RESULTS";
+      // Health check ping (unencrypted) support
+      if (payload?.action === "ping" || payload?.action === "PING") {
+        // If encrypted, respond encrypted; otherwise return plain JSON (but Meta often expects base64/plain)
+        const healthResp = { data: { status: "active" } };
+        if (hasEncrypted) {
+          try {
+            const privateKeyPem = process.env.FLOW_PRIVATE_KEY || process.env.PRIVATE_KEY;
+            if (!privateKeyPem) {
+              console.error("[webhook] FLOW_PRIVATE_KEY missing for encrypted healthcheck");
+              return NextResponse.json({ error: "private key missing" }, { status: 500 });
+            }
+            const aesKeyBuffer = rsaDecryptAesKey(payload.encrypted_aes_key, privateKeyPem);
+            const ivBuf = Buffer.from(payload.initial_vector, "base64");
+            const encryptedRespBase64 = aesGcmEncryptAndEncode(healthResp, aesKeyBuffer, ivBuf);
+            return new Response(encryptedRespBase64, {
+              status: 200,
+              headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
+            });
+          } catch (e) {
+            console.error("[webhook] healthcheck encrypted response error", e);
+            return NextResponse.json({ error: "health encrypt failed" }, { status: 500 });
+          }
+        } else {
+          // Return base64 encoded JSON (Meta may accept plain base64 too)
+          const respJson = JSON.stringify({ version: "3.0", screen: "RESULTS", data: healthResp.data });
+          const respBase64 = Buffer.from(respJson, "utf8").toString("base64");
+          return new Response(respBase64, {
+            status: 200,
+            headers: { "Content-Type": "application/octet-stream", "Content-Transfer-Encoding": "base64", "Cache-Control": "no-store" },
+          });
+        }
+      }
 
-      // Build a minimal safe 'data' object that matches your Flow screens (SEARCH, RESULTS)
-      // Make sure all keys expected by the Flow validator are present with safe defaults.
-      const flowResponse = {
-        version: "3.0",
-        screen: screenFromRequest,
-        data: {
-          // data expected by RESULTS screen
-          resultsCount: 0,
-          listings: [],
-          querySummary: "",
-          listingText0: "",
-          listingText1: "",
-          listingText2: "",
-          hasResult0: false,
-          hasResult1: false,
-          hasResult2: false,
+      // If encrypted request -> decrypt, process, encrypt response
+      if (hasEncrypted) {
+        try {
+          const privateKeyPem = process.env.FLOW_PRIVATE_KEY || process.env.PRIVATE_KEY;
+          if (!privateKeyPem) {
+            console.error("[webhook] FLOW_PRIVATE_KEY env var not set");
+            return NextResponse.json({ error: "private key missing" }, { status: 500 });
+          }
 
-          // echo search inputs if present
-          city: (payload?.data_exchange?.data?.city || payload?.form?.city || "") + "",
-          suburb: (payload?.data_exchange?.data?.suburb || payload?.form?.suburb || "") + "",
-          property_category: (payload?.data_exchange?.data?.property_category || "") + "",
-          property_type: (payload?.data_exchange?.data?.property_type || "") + "",
-          bedrooms: (payload?.data_exchange?.data?.bedrooms || "") + "",
-          min_price: Number(payload?.data_exchange?.data?.min_price || 0),
-          max_price: Number(payload?.data_exchange?.data?.max_price || 0),
-          q: (payload?.data_exchange?.data?.q || "") + "",
+          // 1) Decrypt AES key
+          const aesKeyBuffer = rsaDecryptAesKey(payload.encrypted_aes_key, privateKeyPem);
 
-          // data expected by SEARCH screen (drop-down lists, selections) - safe defaults
-          cities: payload?.data?.cities || payload?.data_exchange?.data?.cities || [],
-          suburbs: payload?.data?.suburbs || payload?.data_exchange?.data?.suburbs || [],
-          propertyCategories: payload?.data?.propertyCategories || payload?.data_exchange?.data?.propertyCategories || [],
-          propertyTypes: payload?.data?.propertyTypes || payload?.data_exchange?.data?.propertyTypes || [],
-          bedrooms_list: payload?.data?.bedrooms || payload?.data_exchange?.data?.bedrooms || [],
-          min_price_default: payload?.data?.min_price || 0,
-          max_price_default: payload?.data?.max_price || 0,
-          query: payload?.data?.query || "",
+          // 2) Decrypt Flow payload (AES-GCM)
+          const { plaintext: decryptedText, aesIv } = aesGcmDecrypt(payload.encrypted_flow_data, aesKeyBuffer, payload.initial_vector);
 
-          // navigation/refine flag
-          refine: false,
-        },
-      };
+          console.log("[webhook] decrypted flow payload:", decryptedText);
+          let decryptedPayload;
+          try {
+            decryptedPayload = JSON.parse(decryptedText);
+          } catch (e) {
+            decryptedPayload = { data: {} };
+          }
 
-      // encode to Base64 string (Meta expects Base64 when using public-key/encryption)
-      const flowResponseJson = JSON.stringify(flowResponse);
-      const flowResponseBase64 = Buffer.from(flowResponseJson, "utf8").toString("base64");
+          // Build response object (customize to your flow). Here we echo RESULTS with safe defaults.
+          const flowResponse = {
+            version: "3.0",
+            screen: decryptedPayload?.screen || "RESULTS",
+            data: {
+              resultsCount: 0,
+              listings: [],
+              querySummary: "",
+              listingText0: "",
+              listingText1: "",
+              listingText2: "",
+              hasResult0: false,
+              hasResult1: false,
+              hasResult2: false,
+              city: decryptedPayload?.data?.city || "",
+              suburb: decryptedPayload?.data?.suburb || "",
+              property_category: decryptedPayload?.data?.property_category || "",
+              property_type: decryptedPayload?.data?.property_type || "",
+              bedrooms: decryptedPayload?.data?.bedrooms || "",
+              min_price: Number(decryptedPayload?.data?.min_price || 0),
+              max_price: Number(decryptedPayload?.data?.max_price || 0),
+              q: decryptedPayload?.data?.q || "",
+              cities: [],
+              suburbs: [],
+              propertyCategories: [],
+              propertyTypes: [],
+              bedrooms_list: [],
+              min_price_default: 0,
+              max_price_default: 0,
+              query: "",
+              refine: false,
+            },
+          };
 
-      // return raw base64 body with appropriate headers (200)
-      return new Response(flowResponseBase64, {
-        status: 200,
-        headers: {
-          "Content-Type": "application/octet-stream",
-          "Content-Transfer-Encoding": "base64",
-          "Cache-Control": "no-store",
-        },
-      });
+          // 3) Encrypt response with AES-GCM using flipped IV and return Base64 plain text
+          const encryptedRespBase64 = aesGcmEncryptAndEncode(flowResponse, aesKeyBuffer, aesIv);
+          return new Response(encryptedRespBase64, {
+            status: 200,
+            headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
+          });
+        } catch (e) {
+          console.error("[webhook] flow encrypted handling error:", e);
+          // return 500 (Meta will mark endpoint unhealthy until fixed)
+          return NextResponse.json({ ok: false, error: "flow-encrypt-handling-failed" }, { status: 500 });
+        }
+      }
+
+      // Unencrypted data_exchange or flow request (existing handler) -> respond with base64 JSON as before
+      if (hasDataExchange || hasFlowWrapper || mayBeFlowViaEntry) {
+        // Extract screen and incoming data if present
+        const screenFromRequest = (payload?.data_exchange?.screen || payload?.flow?.screen || payload?.screen || "RESULTS");
+        const incomingData = payload?.data_exchange?.data || payload?.data || {};
+
+        const flowResponse = {
+          version: "3.0",
+          screen: screenFromRequest,
+          data: {
+            resultsCount: 0,
+            listings: [],
+            querySummary: "",
+            listingText0: "",
+            listingText1: "",
+            listingText2: "",
+            hasResult0: false,
+            hasResult1: false,
+            hasResult2: false,
+            city: incomingData.city || "",
+            suburb: incomingData.suburb || "",
+            property_category: incomingData.property_category || "",
+            property_type: incomingData.property_type || "",
+            bedrooms: incomingData.bedrooms || "",
+            min_price: Number(incomingData.min_price || 0),
+            max_price: Number(incomingData.max_price || 0),
+            q: incomingData.q || "",
+            cities: incomingData.cities || [],
+            suburbs: incomingData.suburbs || [],
+            propertyCategories: incomingData.propertyCategories || [],
+            propertyTypes: incomingData.propertyTypes || [],
+            bedrooms_list: incomingData.bedrooms || [],
+            min_price_default: 0,
+            max_price_default: 0,
+            query: "",
+            refine: false,
+          },
+        };
+
+        const flowResponseJson = JSON.stringify(flowResponse);
+        const flowResponseBase64 = Buffer.from(flowResponseJson, "utf8").toString("base64");
+        return new Response(flowResponseBase64, {
+          status: 200,
+          headers: {
+            "Content-Type": "application/octet-stream",
+            "Content-Transfer-Encoding": "base64",
+            "Cache-Control": "no-store",
+          },
+        });
+      }
     }
   } catch (e) {
-    console.error("[webhook] flow-detect error", e);
+    console.error("[webhook] flow-detect/response error", e);
     // fall through to normal processing if detection fails
   }
 
