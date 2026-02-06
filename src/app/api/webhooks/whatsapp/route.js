@@ -7,7 +7,9 @@ import { getListingById, searchPublishedListings } from "@/lib/getListings";
 
 export const runtime = "nodejs";
 
-// helpers
+/* -------------------------
+   Helpers
+   ------------------------- */
 function digitsOnly(v) {
   return String(v || "").replace(/\D/g, "");
 }
@@ -66,7 +68,7 @@ async function sendInteractiveButtons(phoneNumber, bodyText, buttons = []) {
 
   const res = await whatsappPost(phone_number_id, apiToken, interactivePayload);
 
-  // If interactive failed, fallback to text menu
+  // fallback to text menu
   if (res?.error) {
     const fallback = [
       bodyText,
@@ -81,7 +83,6 @@ async function sendInteractiveButtons(phoneNumber, bodyText, buttons = []) {
   return res;
 }
 
-// simple retry helper
 async function retry(fn, attempts = 3, delay = 400) {
   let lastErr;
   for (let i = 0; i < attempts; i++) {
@@ -95,11 +96,9 @@ async function retry(fn, attempts = 3, delay = 400) {
   throw lastErr;
 }
 
-// ================= Crypto helpers for Flow encryption =================
-//
-// RSA-OAEP SHA-256 to decrypt AES key, AES-GCM to decrypt/encrypt payload.
-// Response encryption: AES-GCM using the bitwise-NOT (flipped) IV per docs.
-//
+/* -------------------------
+   Crypto helpers (RSA-OAEP SHA256 + AES-GCM)
+   ------------------------- */
 function rsaDecryptAesKey(encryptedAesKeyB64, privateKeyPem) {
   const encryptedKeyBuf = Buffer.from(encryptedAesKeyB64, "base64");
   const aesKey = crypto.privateDecrypt(
@@ -128,8 +127,8 @@ function aesGcmDecrypt(encryptedFlowDataB64, aesKeyBuffer, ivB64) {
   return { plaintext: plaintext.toString("utf8"), aesIv: iv };
 }
 
+// flip IV bytes (bitwise NOT) and encrypt response JSON, return base64
 function aesGcmEncryptAndEncode(responseObj, aesKeyBuffer, requestIvBuffer) {
-  // flip IV bits (bitwise NOT) as required by docs
   const flippedIv = Buffer.alloc(requestIvBuffer.length);
   for (let i = 0; i < requestIvBuffer.length; i++) flippedIv[i] = (~requestIvBuffer[i]) & 0xff;
 
@@ -142,8 +141,9 @@ function aesGcmEncryptAndEncode(responseObj, aesKeyBuffer, requestIvBuffer) {
   return out.toString("base64");
 }
 
-// ================= Flow response builders ================
-
+/* -------------------------
+   Flow response builders
+   ------------------------- */
 function buildResultsFlowResponse(screen = "RESULTS", incoming = {}) {
   return {
     version: "3.0",
@@ -180,6 +180,7 @@ function buildResultsFlowResponse(screen = "RESULTS", incoming = {}) {
 }
 
 function buildSearchSchemaFlowResponse() {
+  // EXACT search flow JSON (version 7.3 + data_api_version 3.0)
   return {
     version: "7.3",
     data_api_version: "3.0",
@@ -299,7 +300,9 @@ function buildSearchSchemaFlowResponse() {
   };
 }
 
-// Robust helper to determine the requested flow screen from either raw payload or decrypted payload
+/* -------------------------
+   Helper: detect requested screen in raw or decrypted payload
+   ------------------------- */
 function detectRequestedScreen(rawPayload = {}, decryptedPayload = {}) {
   const checks = [
     rawPayload?.data_exchange?.screen,
@@ -328,7 +331,9 @@ function detectRequestedScreen(rawPayload = {}, decryptedPayload = {}) {
   return null;
 }
 
-// ================= Conversation / Menu helpers =================
+/* -------------------------
+   Conversation helpers (unchanged)
+   ------------------------- */
 async function sendMenu(phone) {
   const bodyText = "Welcome to CribMatch 👋 — choose an option:";
   const buttons = [
@@ -360,14 +365,12 @@ async function getLastConversationState(phone) {
 function interpretMenuChoice(text) {
   if (!text) return null;
   const t = String(text || "").trim().toLowerCase();
-
   if (/^\s*1\s*$/.test(t) || t.startsWith("list") || t.includes("list a") || t === "menu_list") return "LIST";
   if (/^\s*2\s*$/.test(t) || t.startsWith("search") || t.includes("search") || t === "menu_search") return "SEARCH";
   if (/^\s*3\s*$/.test(t) || t.startsWith("purchase") || t.includes("purchase") || t.includes("orders") || t === "menu_purchases") return "PURCHASES";
   return null;
 }
 
-// Minimal payment link creator placeholder (replace with Stripe/Payfast)
 async function createPaymentLink(phone, amountCents, description = "Contact details") {
   const fakeId = Date.now().toString(36);
   return {
@@ -405,7 +408,9 @@ async function revealContactDetails(listingId, phone) {
   await sendText(phone, contactMessage);
 }
 
-// ================= Timestamp extraction helper =================
+/* -------------------------
+   Timestamp extraction helper
+   ------------------------- */
 function extractTimestamp(payload, messageBlock) {
   const candidates = [];
   if (payload?.timestamp) candidates.push(payload.timestamp);
@@ -430,7 +435,9 @@ function extractTimestamp(payload, messageBlock) {
   return null;
 }
 
-// ================= Webhook handlers =================
+/* -------------------------
+   GET handler (verify webhook)
+   ------------------------- */
 export async function GET(request) {
   const url = new URL(request.url);
   const mode = url.searchParams.get("hub.mode");
@@ -458,27 +465,51 @@ export async function GET(request) {
   return new Response("Forbidden", { status: 403, headers: { "Cache-Control": "no-store" } });
 }
 
+/* -------------------------
+   POST handler (full)
+   ------------------------- */
 export async function POST(request) {
   console.log("[webhook] POST invoked");
 
-  // parse body (robust)
-  let payload = {};
+  // Read raw body text (used for signature validation if APP_SECRET is set)
+  let rawText = "";
   try {
-    payload = await request.json();
-  } catch (err) {
+    rawText = await request.text();
+  } catch (e) {
+    rawText = "";
+  }
+
+  let payload = {};
+  if (rawText) {
     try {
-      const t = await request.text();
-      payload = t ? JSON.parse(t) : {};
+      payload = JSON.parse(rawText);
     } catch (e) {
+      // not JSON - leave as {}
       payload = {};
     }
+  } else {
+    payload = {};
+  }
+
+  // Optional X-Hub-Signature-256 validation using APP_SECRET
+  try {
+    const appSecret = process.env.APP_SECRET;
+    const sigHeader = request.headers.get("x-hub-signature-256") || request.headers.get("X-Hub-Signature-256");
+    if (appSecret && sigHeader) {
+      const expectedSig = sigHeader.startsWith("sha256=") ? sigHeader.slice(7) : sigHeader;
+      const hmac = crypto.createHmac("sha256", appSecret).update(rawText).digest("hex");
+      if (!crypto.timingSafeEqual(Buffer.from(expectedSig, "hex"), Buffer.from(hmac, "hex"))) {
+        console.warn("[webhook] signature validation failed");
+        return new Response("Invalid signature", { status: 403 });
+      }
+    }
+  } catch (e) {
+    console.warn("[webhook] signature validation error:", e);
   }
 
   console.log("[webhook] payload keys:", Object.keys(payload));
 
-  // ------------------------------
-  // Flow detection & fast-response (handle encrypted and unencrypted data exchange)
-  // ------------------------------
+  // Flow detection & handling (healthcheck + encrypted/unencrypted flows)
   try {
     const hasDataExchange = Boolean(payload?.data_exchange);
     const hasEncrypted = Boolean(payload?.encrypted_flow_data && payload?.encrypted_aes_key && payload?.initial_vector);
@@ -491,40 +522,39 @@ export async function POST(request) {
     const isFlowRequest = hasDataExchange || hasEncrypted || hasFlowWrapper || mayBeFlowViaEntry;
 
     if (isFlowRequest) {
-      console.log("[webhook] detected flow request - handling data exchange / healthcheck");
+      console.log("[webhook] detected flow request");
 
-      // Health check ping
-      if (payload?.action === "ping" || payload?.action === "PING") {
-        const healthResp = { data: { status: "active" } };
+      // --- HEALTH CHECK: payload.action === "ping" ---
+      const actionVal = (payload?.action || "").toString().toLowerCase();
+      if (actionVal === "ping") {
+        const healthBody = { data: { status: "active" } };
+
         if (hasEncrypted) {
+          // encrypt healthBody using RSA-decrypted AES key and flipped IV
           try {
             const privateKeyPem = process.env.FLOW_PRIVATE_KEY || process.env.PRIVATE_KEY;
             if (!privateKeyPem) {
-              console.error("[webhook] FLOW_PRIVATE_KEY missing for encrypted healthcheck");
+              console.error("[webhook] FLOW_PRIVATE_KEY missing");
               return NextResponse.json({ error: "private key missing" }, { status: 500 });
             }
             const aesKeyBuffer = rsaDecryptAesKey(payload.encrypted_aes_key, privateKeyPem);
             const ivBuf = Buffer.from(payload.initial_vector, "base64");
-            const encryptedRespBase64 = aesGcmEncryptAndEncode(healthResp, aesKeyBuffer, ivBuf);
+            const encryptedRespBase64 = aesGcmEncryptAndEncode(healthBody, aesKeyBuffer, ivBuf);
             return new Response(encryptedRespBase64, {
               status: 200,
               headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
             });
           } catch (e) {
-            console.error("[webhook] healthcheck encrypted response error", e);
+            console.error("[webhook] health encrypted response error:", e);
             return NextResponse.json({ error: "health encrypt failed" }, { status: 500 });
           }
         } else {
-          const respJson = JSON.stringify({ version: "3.0", screen: "RESULTS", data: healthResp.data });
-          const respBase64 = Buffer.from(respJson, "utf8").toString("base64");
-          return new Response(respBase64, {
-            status: 200,
-            headers: { "Content-Type": "application/octet-stream", "Content-Transfer-Encoding": "base64", "Cache-Control": "no-store" },
-          });
+          // UNENCRYPTED healthcheck -> return plain JSON exactly { data: { status: "active" } }
+          return NextResponse.json(healthBody, { status: 200 });
         }
       }
 
-      // Encrypted path
+      // --- ENCRYPTED FLOW REQUEST ---
       if (hasEncrypted) {
         try {
           const privateKeyPem = process.env.FLOW_PRIVATE_KEY || process.env.PRIVATE_KEY;
@@ -533,30 +563,44 @@ export async function POST(request) {
             return NextResponse.json({ error: "private key missing" }, { status: 500 });
           }
 
+          // 1) decrypt AES key
           const aesKeyBuffer = rsaDecryptAesKey(payload.encrypted_aes_key, privateKeyPem);
-          const { plaintext: decryptedText, aesIv } = aesGcmDecrypt(payload.encrypted_flow_data, aesKeyBuffer, payload.initial_vector);
 
-          console.log("[webhook] decrypted flow payload:", decryptedText);
-          let decryptedPayload;
-          try {
-            decryptedPayload = JSON.parse(decryptedText);
-          } catch (e) {
-            decryptedPayload = { data: {} };
-          }
+          // 2) if encrypted_flow_data present, decrypt it (some health-checks may not include encrypted_flow_data)
+          let decryptedPayload = {};
+          if (payload.encrypted_flow_data) {
+            const { plaintext: decryptedText, aesIv } = aesGcmDecrypt(payload.encrypted_flow_data, aesKeyBuffer, payload.initial_vector);
+            console.log("[webhook] decrypted flow payload:", decryptedText);
+            try {
+              decryptedPayload = JSON.parse(decryptedText);
+            } catch (e) {
+              decryptedPayload = { data: {} };
+            }
 
-          const requestedScreen = detectRequestedScreen(payload, decryptedPayload) || "RESULTS";
-          console.log("[webhook] detected requestedScreen:", requestedScreen);
+            // detect requested screen robustly
+            const requestedScreen = detectRequestedScreen(payload, decryptedPayload) || "RESULTS";
+            console.log("[webhook] detected requestedScreen:", requestedScreen);
 
-          if (requestedScreen === "SEARCH") {
-            const flowResponse = buildSearchSchemaFlowResponse();
-            const encryptedRespBase64 = aesGcmEncryptAndEncode(flowResponse, aesKeyBuffer, aesIv);
-            return new Response(encryptedRespBase64, {
-              status: 200,
-              headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
-            });
+            if (requestedScreen === "SEARCH") {
+              const flowResponse = buildSearchSchemaFlowResponse();
+              const encryptedRespBase64 = aesGcmEncryptAndEncode(flowResponse, aesKeyBuffer, aesIv);
+              return new Response(encryptedRespBase64, {
+                status: 200,
+                headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
+              });
+            } else {
+              const flowResponse = buildResultsFlowResponse("RESULTS", decryptedPayload?.data || {});
+              const encryptedRespBase64 = aesGcmEncryptAndEncode(flowResponse, aesKeyBuffer, aesIv);
+              return new Response(encryptedRespBase64, {
+                status: 200,
+                headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
+              });
+            }
           } else {
-            const flowResponse = buildResultsFlowResponse("RESULTS", decryptedPayload?.data || {});
-            const encryptedRespBase64 = aesGcmEncryptAndEncode(flowResponse, aesKeyBuffer, aesIv);
+            // encrypted request with no encrypted_flow_data (rare) - respond with default encrypted RESULTS
+            const ivBuf = Buffer.from(payload.initial_vector, "base64");
+            const flowResponse = buildResultsFlowResponse("RESULTS", {});
+            const encryptedRespBase64 = aesGcmEncryptAndEncode(flowResponse, aesKeyBuffer, ivBuf);
             return new Response(encryptedRespBase64, {
               status: 200,
               headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
@@ -568,7 +612,7 @@ export async function POST(request) {
         }
       }
 
-      // Unencrypted flow / data_exchange path
+      // --- UNENCRYPTED flow / data_exchange route ---
       if (hasDataExchange || hasFlowWrapper || mayBeFlowViaEntry) {
         const screenFromRequest = (payload?.data_exchange?.screen || payload?.flow?.screen || payload?.screen || "RESULTS");
         const incomingData = payload?.data_exchange?.data || payload?.data || {};
@@ -608,9 +652,9 @@ export async function POST(request) {
     // fall through to normal processing if detection fails
   }
 
-  // ------------------------------
-  // Non-flow processing (normal webhook)
-  // ------------------------------
+  /* -------------------------
+     Non-flow processing: regular conversation routing (unchanged logic)
+     ------------------------- */
   try {
     await dbConnect();
   } catch (err) {
@@ -626,7 +670,7 @@ export async function POST(request) {
     console.warn("[webhook] save raw event failed:", e);
   }
 
-  // Normalize messageBlock and phone candidates
+  // Normalize messageBlock and phone candidates (same as your original)
   let messageBlock = payload;
   if (payload.user_message) messageBlock = { text: payload.user_message };
   else if (payload.message_content && typeof payload.message_content === "string") {
@@ -652,11 +696,9 @@ export async function POST(request) {
 
   const phone = digitsOnly(rawCandidates[0] || "");
 
-  // Parse text and also handle interactive button replies
   let parsedText =
     payload.user_message || (messageBlock && (messageBlock.text || messageBlock.body?.text || messageBlock.body?.plain)) || "";
 
-  // If incoming payload contains interactive button reply, prefer its id/title
   try {
     const incomingInteractive =
       payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.interactive ||
@@ -665,9 +707,7 @@ export async function POST(request) {
       parsedText = incomingInteractive?.button_reply?.id || incomingInteractive?.button_reply?.title || parsedText;
       console.log("[webhook] parsed interactive.button_reply:", parsedText);
     }
-  } catch (e) {
-    // ignore
-  }
+  } catch (e) { }
 
   const incoming = {
     phone,
@@ -687,18 +727,16 @@ export async function POST(request) {
     return null;
   });
 
-  // Conversation routing
+  // Conversation routing: full listing/search/contact flows (kept as your original)
   try {
     const lastMeta = await getLastConversationState(phone);
 
-    // If there's no state yet, show menu
     if (!lastMeta) {
       await sendMenu(phone);
       await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.triggeredMenu": true } }).catch(() => { });
       return NextResponse.json({ ok: true, note: "menu-sent" });
     }
 
-    // If waiting for menu choice, interpret the user's reply or button id
     if (lastMeta.state === "AWAITING_MENU_CHOICE") {
       const choice = interpretMenuChoice(parsedText);
       if (!choice) {
@@ -743,7 +781,7 @@ export async function POST(request) {
       }
     }
 
-    // Listing flow (states)
+    // Listing flow (full implementation as before)
     if (lastMeta.state && lastMeta.state.startsWith("LISTING_WAIT_")) {
       const draftContainer = await Message.findOne({ phone: digitsOnly(phone), "meta.draft": { $exists: true } }).sort({ createdAt: -1 }).exec();
       let draft = draftContainer?.meta?.draft || {};
@@ -816,7 +854,7 @@ export async function POST(request) {
       }
     }
 
-    // Search flow
+    // Search flow (AWAITING_MENU_CHOICE was handled above)
     if (lastMeta.state === "SEARCH_WAIT_AREA_BUDGET") {
       const parts = parsedText.split(/[ ,\n]/).map((s) => s.trim()).filter(Boolean);
       const area = parts[0] || "";
@@ -848,7 +886,7 @@ export async function POST(request) {
       return NextResponse.json({ ok: true, note: "contact-payment-requested" });
     }
 
-    // PAID fallback (rudimentary)
+    // PAID fallback
     if (/^paid\s+/i.test(parsedText || "")) {
       const paymentId = (parsedText || "").split(/\s+/)[1];
       if (!paymentId) {
@@ -867,33 +905,26 @@ export async function POST(request) {
     }
   } catch (e) {
     console.warn("[webhook] conversation routing error:", e);
-    // continue to existing free-text/send logic below
   }
 
-  // Determine whether we are allowed to send free-text based on last user message timestamp
+  // Free text reply window logic
   const windowMs = Number(process.env.WHATSAPP_FREE_WINDOW_MS) || 24 * 60 * 60 * 1000;
   let allowedToSend = false;
-
   const ts = extractTimestamp(payload, messageBlock);
   if (ts) {
     const age = Date.now() - ts;
-    console.log(`[webhook] incoming message ageMs=${age}`);
     if (age <= windowMs) allowedToSend = true;
   } else {
     if (savedMsg) allowedToSend = true;
   }
-
-  console.log("[webhook] allowedToSend =", allowedToSend);
 
   if (!allowedToSend) {
     await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.needsFollowUp": true } }).catch(() => { });
     return NextResponse.json({ ok: true, note: "not-allowed-to-send-free-text-yet" });
   }
 
-  // If allowed, attempt the free-text send using Graph API
   const replyText = `Hi 👋 Welcome to CribMatch — tell me area and budget (eg. Borrowdale, $200) and I'll find matches.`;
   const sendResp = await sendText(phone, replyText);
-  console.log("[webhook] sendText response:", sendResp);
 
   if (sendResp?.error) {
     await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.sendError": sendResp } }).catch(() => { });
