@@ -3,208 +3,8 @@ import { NextResponse } from "next/server";
 import { dbConnect, WebhookEvent, Listing } from "@/lib/db";
 import Message from "@/lib/Message";
 import { getListingById, searchPublishedListings } from "@/lib/getListings";
-import crypto from "crypto";
-import fs from "fs";
 
 export const runtime = "nodejs";
-
-// -------------------- Flow (encrypted) helpers --------------------
-function loadPrivateKey() {
-  // Prefer private key string in env (Vercel friendly). If that's not set, read file path.
-  if (process.env.FLOW_PRIVATE_KEY && String(process.env.FLOW_PRIVATE_KEY).trim()) {
-    // Replace literal \n sequences with real newlines if pasted escaped
-    return String(process.env.FLOW_PRIVATE_KEY).replace(/\\n/g, "\n");
-  }
-  if (process.env.FLOW_PRIVATE_KEY_PATH && fs.existsSync(process.env.FLOW_PRIVATE_KEY_PATH)) {
-    return fs.readFileSync(process.env.FLOW_PRIVATE_KEY_PATH, "utf8");
-  }
-  return null;
-}
-
-function rsaDecryptAesKey(encryptedAesKeyB64, privateKeyPem) {
-  try {
-    const encryptedBuf = Buffer.from(encryptedAesKeyB64, "base64");
-    const aesKey = crypto.privateDecrypt(
-      {
-        key: privateKeyPem,
-        padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
-        oaepHash: "sha256",
-      },
-      encryptedBuf
-    );
-    return aesKey; // Buffer
-  } catch (e) {
-    throw new Error("rsa_decrypt_failed: " + (e.message || e));
-  }
-}
-
-function aesGcmDecrypt(encryptedFlowDataB64, aesKeyBuf, ivB64) {
-  try {
-    const dataBuf = Buffer.from(encryptedFlowDataB64, "base64");
-    // Tag is last 16 bytes
-    if (dataBuf.length < 16) throw new Error("ciphertext_too_short");
-    const tag = dataBuf.slice(dataBuf.length - 16);
-    const ciphertext = dataBuf.slice(0, dataBuf.length - 16);
-    const iv = Buffer.from(ivB64, "base64");
-
-    const decipher = crypto.createDecipheriv("aes-128-gcm", aesKeyBuf, iv);
-    decipher.setAuthTag(tag);
-    const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
-    return decrypted.toString("utf8");
-  } catch (e) {
-    throw new Error("aes_decrypt_failed: " + (e.message || e));
-  }
-}
-
-function aesGcmEncryptAndPack(plaintextBufOrStr, aesKeyBuf, ivBuf) {
-  const iv = Buffer.isBuffer(ivBuf) ? ivBuf : Buffer.from(ivBuf, "base64");
-  const cipher = crypto.createCipheriv("aes-128-gcm", aesKeyBuf, iv);
-  const plaintextBuf = Buffer.isBuffer(plaintextBufOrStr) ? plaintextBufOrStr : Buffer.from(String(plaintextBufOrStr), "utf8");
-  const encrypted = Buffer.concat([cipher.update(plaintextBuf), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  const combined = Buffer.concat([encrypted, tag]).toString("base64");
-  return combined;
-}
-
-// Flip IV for outgoing response (Meta Flow expects flipped IV)
-function flipIv(ivBuf) {
-  return Buffer.from(ivBuf).reverse();
-}
-
-async function handleFlowRequest(payload) {
-  // payload contains encrypted_flow_data, encrypted_aes_key, initialization_vector
-  const privateKey = loadPrivateKey();
-  if (!privateKey) {
-    console.error("[flow] missing private key");
-    return { error: true, status: 500, body: { success: false, reason: "missing_flow_private_key" } };
-  }
-
-  const { encrypted_flow_data, encrypted_aes_key, initialization_vector } = payload || {};
-
-  if (!encrypted_flow_data || !encrypted_aes_key || !initialization_vector) {
-    return { error: true, status: 400, body: { success: false, reason: "missing_flow_fields" } };
-  }
-
-  let aesKeyBuf;
-  try {
-    aesKeyBuf = rsaDecryptAesKey(encrypted_aes_key, privateKey); // Buffer
-  } catch (e) {
-    console.error("[flow] rsa decrypt failed:", e.message || e);
-    return { error: true, status: 400, body: { success: false, reason: "flow_rsa_decrypt_failed" } };
-  }
-
-  let decryptedJson;
-  try {
-    const plaintext = aesGcmDecrypt(encrypted_flow_data, aesKeyBuf, initialization_vector);
-    decryptedJson = JSON.parse(plaintext);
-  } catch (e) {
-    console.error("[flow] aes decrypt or json parse failed:", e.message || e);
-    return { error: true, status: 400, body: { success: false, reason: "flow_aes_decrypt_failed" } };
-  }
-
-  // Log decrypted Flow payload for visibility (avoid secrets)
-  console.log("[flow] decrypted payload action:", decryptedJson?.action || null);
-
-  // Now handle the decrypted flow message
-  try {
-    const action = (decryptedJson?.action || "").toString().toUpperCase();
-
-    if (action === "INIT") {
-      // Build dropdowns from Listing collection
-      const suburbs = (await Listing.distinct("suburb")) || [];
-      const propertyTypes = (await Listing.distinct("propertyType")) || [];
-      const bedrooms = (await Listing.distinct("bedrooms")) || [];
-
-      const responseScreen = {
-        screen: "SEARCH",
-        data: {
-          suburbs: suburbs.filter(Boolean).slice(0, 200),
-          propertyTypes: propertyTypes.filter(Boolean).slice(0, 200),
-          bedrooms: bedrooms
-            .filter((b) => b !== undefined && b !== null)
-            .map((b) => String(b))
-            .slice(0, 200),
-        },
-      };
-
-      // Encrypt response using same aesKey but flipped IV
-      const incomingIvBuf = Buffer.from(initialization_vector, "base64");
-      const outgoingIvBuf = flipIv(incomingIvBuf);
-
-      const encrypted_flow_data_resp = aesGcmEncryptAndPack(JSON.stringify(responseScreen), aesKeyBuf, outgoingIvBuf);
-      return {
-        error: false,
-        status: 200,
-        body: {
-          encrypted_flow_data: encrypted_flow_data_resp,
-          initialization_vector: outgoingIvBuf.toString("base64"),
-        },
-      };
-    }
-
-    if (action === "DATA_EXCHANGE" || action === "DATAEXCHANGE" || action === "DATA_EXCHANGE") {
-      // decryptedJson.payload expected to contain search params
-      const params = decryptedJson.payload || {};
-      // Map to your search API
-      const q = params.q || params.search || "";
-      const suburb = params.suburb || params.suburbs || params.city || "";
-      const min_price = Number(params.min_price ?? params.minPrice ?? params.minPriceCents ?? 0) || 0;
-      const max_price = Number(params.max_price ?? params.maxPrice ?? params.maxPriceCents ?? 0) || null;
-      const bedrooms = params.bedrooms ?? null;
-
-      // Use your helper to search
-      const results = await searchPublishedListings({
-        q: suburb || q,
-        minPrice: min_price || null,
-        maxPrice: max_price || null,
-        perPage: 6,
-      });
-
-      // Build results in the shape Flow UI expects (text0..2)
-      const hits = (results?.listings || []).slice(0, 6).map((l) => ({
-        text0: `${l.title || "Untitled"} — ${l.suburb || "N/A"} — $${l.pricePerMonth || 0}`,
-        text1: `${l.bedrooms || 0} beds — ${l.propertyType || "Unknown"}`,
-        text2: `ID:${l._id}`,
-      }));
-
-      const responsePayload = { results: hits };
-
-      // Encrypt response with flipped IV
-      const incomingIvBuf = Buffer.from(initialization_vector, "base64");
-      const outgoingIvBuf = flipIv(incomingIvBuf);
-      const encrypted_flow_data_resp = aesGcmEncryptAndPack(JSON.stringify(responsePayload), aesKeyBuf, outgoingIvBuf);
-
-      return {
-        error: false,
-        status: 200,
-        body: {
-          encrypted_flow_data: encrypted_flow_data_resp,
-          initialization_vector: outgoingIvBuf.toString("base64"),
-        },
-      };
-    }
-
-    // unknown action — respond with empty SEARCH screen
-    const fallback = { screen: "SEARCH", data: { suburbs: [], propertyTypes: [], bedrooms: [] } };
-    const incomingIvBuf = Buffer.from(initialization_vector, "base64");
-    const outgoingIvBuf = flipIv(incomingIvBuf);
-    const encrypted_flow_data_resp = aesGcmEncryptAndPack(JSON.stringify(fallback), aesKeyBuf, outgoingIvBuf);
-
-    return {
-      error: false,
-      status: 200,
-      body: {
-        encrypted_flow_data: encrypted_flow_data_resp,
-        initialization_vector: outgoingIvBuf.toString("base64"),
-      },
-    };
-  } catch (e) {
-    console.error("[flow] processing error:", e);
-    return { error: true, status: 500, body: { success: false, reason: "flow_processing_error" } };
-  }
-}
-
-// -------------------- End Flow helpers --------------------
 
 // helpers
 function digitsOnly(v) {
@@ -244,50 +44,12 @@ async function sendText(phoneNumber, message) {
   return whatsappPost(phone_number_id, apiToken, payload);
 }
 
-// interactive helpers (list and buttons)
-async function sendInteractiveList(phoneNumber, { headerText, bodyText, footerText, buttonText, sections = [] }) {
-  const apiToken = process.env.WHATSAPP_API_TOKEN || process.env.WHATCHIMP_API_KEY;
-  const phone_number_id =
-    process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATCHIMP_PHONE_ID || process.env.WHATCHIMP_PHONE_NUMBER_ID;
-  if (!apiToken || !phone_number_id) return { error: "missing-credentials" };
-
-  const payload = {
-    messaging_product: "whatsapp",
-    to: digitsOnly(phoneNumber),
-    type: "interactive",
-    interactive: {
-      type: "list",
-      body: { text: String(bodyText || "") },
-      action: {
-        button: String(buttonText || "Choose"),
-        sections,
-      },
-    },
-  };
-
-  if (headerText) payload.interactive.header = { type: "text", text: String(headerText) };
-  if (footerText) payload.interactive.footer = { text: String(footerText) };
-
-  const res = await whatsappPost(phone_number_id, apiToken, payload);
-
-  if (res?.error) {
-    // fallback to plain text menu
-    const rows = (sections || []).flatMap((s) => s?.rows || []);
-    const fallback = [
-      bodyText,
-      "",
-      ...rows.map((r, i) => `${i + 1}) ${r.title}`),
-      "",
-      "Reply with the number (e.g. 1) or the word (e.g. 'list').",
-    ]
-      .filter(Boolean)
-      .join("\n");
-    await sendText(phoneNumber, fallback);
-  }
-
-  return res;
-}
-
+/**
+ * Send reply-buttons (interactive). If Graph API rejects interactive (e.g. 24h restriction),
+ * we automatically fall back to sending a plain-text menu so user still sees options.
+ *
+ * buttons: [{ id: 'menu_list', title: 'List a property' }, ...]
+ */
 async function sendInteractiveButtons(phoneNumber, bodyText, buttons = []) {
   const apiToken = process.env.WHATSAPP_API_TOKEN || process.env.WHATCHIMP_API_KEY;
   const phone_number_id =
@@ -309,8 +71,8 @@ async function sendInteractiveButtons(phoneNumber, bodyText, buttons = []) {
 
   const res = await whatsappPost(phone_number_id, apiToken, interactivePayload);
 
+  // If interactive failed, fallback to text menu
   if (res?.error) {
-    // fallback
     const fallback = [
       bodyText,
       "",
@@ -341,13 +103,12 @@ async function retry(fn, attempts = 3, delay = 400) {
 // ================= Conversation / Menu helpers =================
 async function sendMenu(phone) {
   const bodyText = "Welcome to CribMatch 👋 — choose an option:";
-  const rows = [
-    { id: "menu_list", title: "List a property", description: "Post a rental listing" },
-    { id: "menu_search", title: "Search properties", description: "Find rentals by area and budget" },
-    { id: "menu_purchases", title: "View my purchases", description: "See paid contact unlocks" },
+  const buttons = [
+    { id: "menu_list", title: "List a property" },
+    { id: "menu_search", title: "Search properties" },
+    { id: "menu_purchases", title: "View my purchases" },
   ];
 
-  // store system state message (only system messages are used to detect state)
   await Message.create({
     phone: digitsOnly(phone),
     from: "system",
@@ -357,83 +118,28 @@ async function sendMenu(phone) {
     meta: { state: "AWAITING_MENU_CHOICE" },
   }).catch(() => null);
 
-  // send interactive list (WhatsApp client shows this as a tappable list)
-  await sendInteractiveList(phone, {
-    headerText: "CribMatch",
-    bodyText,
-    footerText: "Tap an option or reply with 1, 2, or 3.",
-    buttonText: "Choose",
-    sections: [{ title: "Options", rows }],
-  });
+  await sendInteractiveButtons(phone, `${bodyText}\nTap a button or reply with a number`, buttons);
 }
 
 async function getLastConversationState(phone) {
-  // IMPORTANT: only consider system messages for state (prevents user messages from hiding state)
-  const doc = await Message.findOne({ phone: digitsOnly(phone), from: "system", "meta.state": { $exists: true } })
+  const doc = await Message.findOne({ phone: digitsOnly(phone), "meta.state": { $exists: true } })
     .sort({ createdAt: -1 })
     .lean()
     .exec();
   return doc?.meta || null;
 }
 
-function getWhatsappIncomingMessage(payload, messageBlock) {
-  return (
-    payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0] ||
-    payload?.messages?.[0] ||
-    messageBlock?.messages?.[0] ||
-    null
-  );
-}
-
-/**
- * Parse incoming text including interactive replies (button/list).
- */
-function extractIncomingText(payload, messageBlock) {
-  if (payload?.user_message) return String(payload.user_message);
-
-  const direct =
-    messageBlock && (messageBlock.text || messageBlock.body?.text || messageBlock.body?.plain || messageBlock.body);
-  if (typeof direct === "string" && direct.trim()) return direct.trim();
-
-  const waMsg = getWhatsappIncomingMessage(payload, messageBlock);
-  if (!waMsg) return "";
-
-  // text messages
-  if (waMsg.type === "text" && typeof waMsg?.text?.body === "string") return waMsg.text.body.trim();
-
-  // new interactive formats
-  const interactive = waMsg?.interactive || messageBlock?.interactive || waMsg;
-  if (interactive?.type === "button_reply" || interactive?.type === "button") {
-    return String(interactive?.button_reply?.id || interactive?.button_reply?.title || waMsg?.button?.payload || waMsg?.button?.text || "").trim();
-  }
-  if (interactive?.type === "list_reply") {
-    return String(interactive?.list_reply?.id || interactive?.list_reply?.title || "").trim();
-  }
-
-  if (waMsg.interactive?.type === "button_reply") {
-    return String(waMsg.interactive.button_reply.id || waMsg.interactive.button_reply.title || "").trim();
-  }
-  if (waMsg.interactive?.type === "list_reply") {
-    return String(waMsg.interactive.list_reply.id || waMsg.interactive.list_reply.title || "").trim();
-  }
-
-  if (typeof waMsg?.body === "string" && waMsg.body.trim()) return waMsg.body.trim();
-
-  return "";
-}
-
 function interpretMenuChoice(text) {
   if (!text) return null;
   const t = String(text || "").trim().toLowerCase();
-  const digit = (t.match(/[123]/) || [])[0] || "";
 
-  if (digit === "1" || t.startsWith("list") || t === "menu_list") return "LIST";
-  if (digit === "2" || t.startsWith("search") || t === "menu_search") return "SEARCH";
-  if (digit === "3" || t.startsWith("purchase") || t === "menu_purchases") return "PURCHASES";
+  if (/^\s*1\s*$/.test(t) || t.startsWith("list") || t.includes("list a") || t === "menu_list") return "LIST";
+  if (/^\s*2\s*$/.test(t) || t.startsWith("search") || t.includes("search") || t === "menu_search") return "SEARCH";
+  if (/^\s*3\s*$/.test(t) || t.startsWith("purchase") || t.includes("purchase") || t.includes("orders") || t === "menu_purchases") return "PURCHASES";
   return null;
 }
 
-// Minimal payment link creator placeholder (replace with real gateway)
+// Minimal payment link creator placeholder (replace with Stripe/Payfast)
 async function createPaymentLink(phone, amountCents, description = "Contact details") {
   const fakeId = Date.now().toString(36);
   return {
@@ -471,15 +177,7 @@ async function revealContactDetails(listingId, phone) {
   await sendText(phone, contactMessage);
 }
 
-// helper: simple heuristic whether a free-text message looks like "area and budget"
-function looksLikeAreaBudget(text) {
-  if (!text) return false;
-  const hasWord = /\p{L}{2,}/u.test(text); // any word of 2+ letters
-  const hasNumber = /[$]?\d{2,}/.test(text); // dollar or plain number
-  return hasWord && hasNumber;
-}
-
-// timestamp helper
+// ================= Timestamp extraction helper =================
 function extractTimestamp(payload, messageBlock) {
   const candidates = [];
   if (payload?.timestamp) candidates.push(payload.timestamp);
@@ -534,14 +232,8 @@ export async function GET(request) {
 
 export async function POST(request) {
   console.log("[webhook] POST invoked");
-  try {
-    await dbConnect();
-  } catch (err) {
-    console.error("[webhook] DB connect failed", err);
-    return NextResponse.json({ ok: false, error: "DB connect failed" }, { status: 500 });
-  }
 
-  // parse body
+  // parse body (robust)
   let payload = {};
   try {
     payload = await request.json();
@@ -553,23 +245,88 @@ export async function POST(request) {
       payload = {};
     }
   }
+
   console.log("[webhook] payload keys:", Object.keys(payload));
 
-  // Quick: if this is an encrypted Flow payload, handle and return encrypted response
-  if (payload?.encrypted_flow_data || payload?.encrypted_aes_key || payload?.initialization_vector) {
-    console.log("[webhook] detected encrypted Flow payload — attempting to decrypt");
-    try {
-      const flowResp = await handleFlowRequest(payload);
-      if (flowResp.error) {
-        console.warn("[webhook] flow handling failed", flowResp.body);
-        return NextResponse.json(flowResp.body, { status: flowResp.status || 400 });
-      }
-      // success — return encrypted payload directly
-      return NextResponse.json(flowResp.body, { status: 200 });
-    } catch (e) {
-      console.error("[webhook] flow handler threw:", e);
-      return NextResponse.json({ success: false, reason: "flow_handler_exception" }, { status: 500 });
+  // ------------------------------
+  // Flow detection & fast-response
+  // ------------------------------
+  try {
+    // Detect common Flow/data_exchange shapes:
+    const hasDataExchange = Boolean(payload?.data_exchange);
+    const hasFlowWrapper = Boolean(payload?.flow);
+    const hasActionFlow = Boolean(payload?.action && (payload.action.name === "flow" || payload.action?.type === "flow"));
+    const mayBeFlowViaEntry =
+      Boolean(payload?.entry?.[0]?.changes?.[0]?.value?.flow) ||
+      Boolean(payload?.entry?.[0]?.changes?.[0]?.value?.data_exchange) ||
+      Boolean(payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.type === "flow");
+    const isFlowRequest = hasDataExchange || hasFlowWrapper || hasActionFlow || mayBeFlowViaEntry;
+
+    if (isFlowRequest) {
+      console.log("[webhook] detected flow request - returning minimal flow response for healthcheck");
+
+      // attempt to extract the requested/next screen name from the incoming payload
+      const screenFromRequest =
+        payload?.data_exchange?.screen || payload?.flow?.screen || payload?.screen || payload?.action?.payload?.screen || "RESULTS";
+
+      // Build a minimal safe 'data' object that matches your Flow screens (SEARCH, RESULTS)
+      // Make sure all keys expected by the Flow validator are present with safe defaults.
+      const flowResponse = {
+        version: "3.0",
+        screen: screenFromRequest,
+        data: {
+          // data expected by RESULTS screen
+          resultsCount: 0,
+          listings: [],
+          querySummary: "",
+          listingText0: "",
+          listingText1: "",
+          listingText2: "",
+          hasResult0: false,
+          hasResult1: false,
+          hasResult2: false,
+
+          // echo search inputs if present
+          city: (payload?.data_exchange?.data?.city || payload?.form?.city || "") + "",
+          suburb: (payload?.data_exchange?.data?.suburb || payload?.form?.suburb || "") + "",
+          property_category: (payload?.data_exchange?.data?.property_category || "") + "",
+          property_type: (payload?.data_exchange?.data?.property_type || "") + "",
+          bedrooms: (payload?.data_exchange?.data?.bedrooms || "") + "",
+          min_price: Number(payload?.data_exchange?.data?.min_price || 0),
+          max_price: Number(payload?.data_exchange?.data?.max_price || 0),
+          q: (payload?.data_exchange?.data?.q || "") + "",
+
+          // data expected by SEARCH screen (drop-down lists, selections)
+          cities: payload?.data?.cities || payload?.data_exchange?.data?.cities || [],
+          suburbs: payload?.data?.suburbs || payload?.data_exchange?.data?.suburbs || [],
+          propertyCategories: payload?.data?.propertyCategories || payload?.data_exchange?.data?.propertyCategories || [],
+          propertyTypes: payload?.data?.propertyTypes || payload?.data_exchange?.data?.propertyTypes || [],
+          bedrooms_list: payload?.data?.bedrooms || payload?.data_exchange?.data?.bedrooms || [],
+          min_price_default: payload?.data?.min_price || 0,
+          max_price_default: payload?.data?.max_price || 0,
+          query: payload?.data?.query || "",
+
+          // navigation/refine flag
+          refine: false,
+        },
+      };
+
+      // Return 200 and the response body Meta expects for Flow endpoints
+      return NextResponse.json(flowResponse, { status: 200 });
     }
+  } catch (e) {
+    console.error("[webhook] flow-detect error", e);
+    // fall through to normal processing if detection fails
+  }
+
+  // ------------------------------
+  // Non-flow processing (normal webhook)
+  // ------------------------------
+  try {
+    await dbConnect();
+  } catch (err) {
+    console.error("[webhook] DB connect failed", err);
+    return NextResponse.json({ ok: false, error: "DB connect failed" }, { status: 500 });
   }
 
   // persist raw event (best-effort)
@@ -580,7 +337,7 @@ export async function POST(request) {
     console.warn("[webhook] save raw event failed:", e);
   }
 
-  // normalize messageBlock (support multiple wrapper shapes)
+  // Normalize messageBlock and phone candidates
   let messageBlock = payload;
   if (payload.user_message) messageBlock = { text: payload.user_message };
   else if (payload.message_content && typeof payload.message_content === "string") {
@@ -592,25 +349,36 @@ export async function POST(request) {
   } else if (payload.message) messageBlock = payload.message;
   else if (payload.data) messageBlock = payload.data;
 
-  const waIncomingMsg = getWhatsappIncomingMessage(payload, messageBlock);
-
   const rawCandidates = [
-    payload?.entry?.[0]?.changes?.[0]?.value?.contacts?.[0]?.wa_id,
-    payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.from,
-    waIncomingMsg?.from,
-    messageBlock?.from,
-    payload.from,
     payload.chat_id,
     payload.subscriber_id ? String(payload.subscriber_id).split("-")[0] : null,
     payload.phone_number,
+    payload.from,
+    messageBlock?.to,
+    messageBlock?.from,
     messageBlock?.recipient,
+    payload?.entry?.[0]?.changes?.[0]?.value?.contacts?.[0]?.wa_id,
+    payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.from,
   ].filter(Boolean);
 
   const phone = digitsOnly(rawCandidates[0] || "");
 
-  // parse incoming text and interactive replies
-  const parsedText = extractIncomingText(payload, messageBlock);
-  console.log("[webhook] parsedText:", parsedText, "waType:", waIncomingMsg?.type || null);
+  // Parse text and also handle interactive button replies
+  let parsedText =
+    payload.user_message || (messageBlock && (messageBlock.text || messageBlock.body?.text || messageBlock.body?.plain)) || "";
+
+  // If incoming payload contains interactive button reply, prefer its id/title
+  try {
+    const incomingInteractive =
+      payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.interactive ||
+      messageBlock?.interactive;
+    if (incomingInteractive && incomingInteractive.type === "button_reply") {
+      parsedText = incomingInteractive?.button_reply?.id || incomingInteractive?.button_reply?.title || parsedText;
+      console.log("[webhook] parsed interactive.button_reply:", parsedText);
+    }
+  } catch (e) {
+    // ignore
+  }
 
   const incoming = {
     phone,
@@ -633,9 +401,8 @@ export async function POST(request) {
   // Conversation routing
   try {
     const lastMeta = await getLastConversationState(phone);
-    console.log("[webhook] lastMeta:", lastMeta);
 
-    // If there's no system state yet, show interactive menu
+    // If there's no state yet, show menu
     if (!lastMeta) {
       await sendMenu(phone);
       await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.triggeredMenu": true } }).catch(() => { });
@@ -646,14 +413,10 @@ export async function POST(request) {
     if (lastMeta.state === "AWAITING_MENU_CHOICE") {
       const choice = interpretMenuChoice(parsedText);
       if (!choice) {
-        console.log("[webhook] menu choice not understood", { parsedText });
         await sendText(phone, "Sorry, I didn't understand. Reply with 1 (List), 2 (Search) or 3 (Purchases), or tap a button.");
-        // re-send interactive menu so client shows tappable options again
-        await sendMenu(phone);
         return NextResponse.json({ ok: true, note: "menu-repeat" });
       }
 
-      // To avoid race/loop: create a system message that updates the conversation state
       if (choice === "LIST") {
         const sys = await Message.create({
           phone: digitsOnly(phone),
@@ -691,9 +454,9 @@ export async function POST(request) {
       }
     }
 
-    // Listing flow states
+    // Listing flow (states)
     if (lastMeta.state && lastMeta.state.startsWith("LISTING_WAIT_")) {
-      const draftContainer = await Message.findOne({ phone: digitsOnly(phone), from: "system", "meta.draft": { $exists: true } }).sort({ createdAt: -1 }).exec();
+      const draftContainer = await Message.findOne({ phone: digitsOnly(phone), "meta.draft": { $exists: true } }).sort({ createdAt: -1 }).exec();
       let draft = draftContainer?.meta?.draft || {};
 
       if (lastMeta.state === "LISTING_WAIT_TITLE") {
@@ -764,7 +527,7 @@ export async function POST(request) {
       }
     }
 
-    // SEARCH flow
+    // Search flow
     if (lastMeta.state === "SEARCH_WAIT_AREA_BUDGET") {
       const parts = parsedText.split(/[ ,\n]/).map((s) => s.trim()).filter(Boolean);
       const area = parts[0] || "";
@@ -796,7 +559,7 @@ export async function POST(request) {
       return NextResponse.json({ ok: true, note: "contact-payment-requested" });
     }
 
-    // PAID fallback
+    // PAID fallback (rudimentary)
     if (/^paid\s+/i.test(parsedText || "")) {
       const paymentId = (parsedText || "").split(/\s+/)[1];
       if (!paymentId) {
@@ -815,7 +578,7 @@ export async function POST(request) {
     }
   } catch (e) {
     console.warn("[webhook] conversation routing error:", e);
-    // continue to fallback logic below
+    // continue to existing free-text/send logic below
   }
 
   // Determine whether we are allowed to send free-text based on last user message timestamp
@@ -825,7 +588,7 @@ export async function POST(request) {
   const ts = extractTimestamp(payload, messageBlock);
   if (ts) {
     const age = Date.now() - ts;
-    console.log("[webhook] incoming message ageMs=", age);
+    console.log(`[webhook] incoming message ageMs=${age}`);
     if (age <= windowMs) allowedToSend = true;
   } else {
     if (savedMsg) allowedToSend = true;
@@ -838,26 +601,21 @@ export async function POST(request) {
     return NextResponse.json({ ok: true, note: "not-allowed-to-send-free-text-yet" });
   }
 
-  // If the user typed something that looks like "area + budget", handle it as search (so users typing directly work)
-  if (looksLikeAreaBudget(extractIncomingText(payload, messageBlock))) {
-    const text = extractIncomingText(payload, messageBlock);
-    const parts = text.split(/[ ,\n]/).map((s) => s.trim()).filter(Boolean);
-    const area = parts[0] || "";
-    const budgetMatch = text.match(/\$?(\d+(?:\.\d+)?)/);
-    const budget = budgetMatch ? Number(budgetMatch[1]) : null;
+  // If allowed, attempt the free-text send using Graph API
+  const replyText = `Hi 👋 Welcome to CribMatch — tell me area and budget (eg. Borrowdale, $200) and I'll find matches.`;
+  const sendResp = await sendText(phone, replyText);
+  console.log("[webhook] sendText response:", sendResp);
 
-    const results = await searchPublishedListings({ q: area, minPrice: null, maxPrice: budget, perPage: 6 });
-    const msg = results.listings.length
-      ? results.listings.map((l) => `${l.title} — ${l.suburb} — $${l.pricePerMonth} — ID:${l._id}`).join("\n\n")
-      : "No matches found. Try a broader area or higher budget.";
-
-    await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: msg, meta: { state: "SEARCH_RESULTS", query: { area, budget }, resultsCount: results.total } }).catch(() => { });
-    await sendText(phone, msg);
-    await sendText(phone, "To view contact details for any listing reply with: CONTACT <LISTING_ID>");
-    return NextResponse.json({ ok: true, note: "search-results-sent-direct" });
+  if (sendResp?.error) {
+    await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.sendError": sendResp } }).catch(() => { });
+    const msg = String(sendResp?.error?.message || sendResp?.error || "");
+    if (/24 hour|message template/i.test(msg)) {
+      await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.templateRequired": true, "meta.sendResp": sendResp } }).catch(() => { });
+      return NextResponse.json({ ok: true, note: "send-rejected-24-hour", sendResp });
+    }
+    return NextResponse.json({ ok: false, error: sendResp }, { status: 500 });
   }
 
-  // otherwise: re-send interactive menu (safer than the old single-line "welcome" which caused loops)
-  await sendMenu(phone);
-  return NextResponse.json({ ok: true, note: "menu-resent" });
+  await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.sendResp": sendResp } }).catch(() => { });
+  return NextResponse.json({ ok: true, savedMessageId: savedMsg?._id || null, sendResp });
 }
