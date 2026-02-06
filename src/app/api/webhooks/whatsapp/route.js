@@ -142,7 +142,7 @@ function aesGcmEncryptAndEncode(responseObj, aesKeyBuffer, requestIvBuffer) {
   return out.toString("base64");
 }
 
-// ================= Flow response builders =================
+// ================= Flow response builders ================
 
 function buildResultsFlowResponse(screen = "RESULTS", incoming = {}) {
   return {
