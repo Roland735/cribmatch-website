@@ -222,55 +222,131 @@ async function markHandledMsg(dbAvailable, msgId) {
 }
 
 /* -------------------------
-   detectRequestedScreen & helpers (to catch flow completions)
+   detectRequestedScreen & improved helpers (more robust)
 ------------------------- */
+function _safeGet(obj, pathArr) {
+  try {
+    return pathArr.reduce((o, k) => (o && o[k] != null ? o[k] : undefined), obj);
+  } catch (e) {
+    return undefined;
+  }
+}
+
 function detectRequestedScreen(rawPayload = {}, decryptedPayload = {}) {
-  const checks = [
-    rawPayload?.data_exchange?.screen,
-    rawPayload?.flow?.screen,
-    rawPayload?.screen,
-    rawPayload?.action,
-    rawPayload?.action?.payload?.screen,
-    rawPayload?.entry?.[0]?.changes?.[0]?.value?.data_exchange?.screen,
-    rawPayload?.entry?.[0]?.changes?.[0]?.value?.flow?.screen,
-    decryptedPayload?.screen,
-    decryptedPayload?.flow,
-    decryptedPayload?.data?.screen,
-    decryptedPayload?.data_exchange?.screen,
-    decryptedPayload?.action?.payload?.screen,
-    decryptedPayload?.data?.selected_city,
-    decryptedPayload?.data?.city,
-  ];
-  for (const c of checks) {
+  // Try to find a "screen" value in a variety of places where Meta might put it.
+  const v = rawPayload?.entry?.[0]?.changes?.[0]?.value || rawPayload || {};
+  const candidates = [];
+
+  // Common explicit places
+  candidates.push(_safeGet(v, ["data_exchange", "screen"]));
+  candidates.push(_safeGet(v, ["flow", "screen"]));
+  candidates.push(_safeGet(v, ["action", "payload", "screen"]));
+  candidates.push(_safeGet(v, ["data", "screen"]));
+  candidates.push(_safeGet(v, ["data_exchange"])); // sometimes object contains the screen inside
+  candidates.push(_safeGet(v, ["flow"]));
+  candidates.push(_safeGet(v, ["action"]));
+  candidates.push(_safeGet(v, ["data"]));
+
+  // Messages interactive path: messages[0].interactive.flow or messages[0].interactive.type
+  const msgInteractiveFlowScreen = _safeGet(v, ["messages", 0, "interactive", "flow", "screen"]) ||
+    _safeGet(v, ["messages", 0, "interactive", "flow"]) ||
+    _safeGet(v, ["messages", 0, "interactive", "type"]);
+  candidates.push(msgInteractiveFlowScreen);
+
+  // Sometimes flow completion sends data under messages[0].interactive (which may include form data)
+  const interactive = _safeGet(v, ["messages", 0, "interactive"]);
+  if (interactive) candidates.push(interactive);
+
+  // Also look at top-level payload keys which sometimes appear
+  candidates.push(decryptedPayload?.screen);
+  candidates.push(decryptedPayload?.flow);
+  candidates.push(decryptedPayload?.data?.screen);
+  candidates.push(decryptedPayload?.action?.payload?.screen);
+
+  // Finally, check for specific form-field keys — if present we can reasonably assume it's a SEARCH submission
+  const flowData = getFlowDataFromPayload(rawPayload);
+  const hasSearchFields = !!(
+    flowData &&
+    (flowData.city || flowData.selected_city || flowData.suburb || flowData.selected_suburb || flowData.q || flowData.min_price || flowData.max_price)
+  );
+  if (hasSearchFields) {
+    return "SEARCH";
+  }
+
+  // Inspect candidates in order and return the first string-like screen
+  for (const c of candidates) {
     if (!c) continue;
     try {
-      const s = String(c).trim();
-      if (s) return s.toUpperCase();
-    } catch (e) { }
+      // if candidate is object, try common keys
+      if (typeof c === "string") {
+        const s = c.trim();
+        if (s) return s.toUpperCase();
+      } else if (typeof c === "object") {
+        // if object includes screen property: { screen: 'SEARCH' }
+        if (c.screen && typeof c.screen === "string") return String(c.screen).toUpperCase();
+        if (c.name && typeof c.name === "string") return String(c.name).toUpperCase();
+        // sometimes the interactive payload is simply the form data (no explicit screen) -> infer SEARCH
+        const keys = Object.keys(c);
+        if (keys.includes("city") || keys.includes("selected_city") || keys.includes("q") || keys.includes("min_price")) {
+          return "SEARCH";
+        }
+      }
+    } catch (e) {
+      // ignore and continue
+    }
   }
+
+  // nothing found
   return null;
 }
 
 /**
  * Extract flow form data (returns object with possible fields)
- * Handles typical shapes: entry[0].changes[0].value.data_exchange, value.flow.data, or top-level payload.data
+ * Handles typical shapes: entry[0].changes[0].value.data_exchange, value.flow.data, value.data
+ * Also inspects messages[0].interactive.* for submitted form values.
  */
 function getFlowDataFromPayload(payload) {
   try {
-    const v = payload?.entry?.[0]?.changes?.[0]?.value || payload;
-    // possible places:
-    // v.data_exchange, v.flow (or v.flow.data), v.data
-    const data =
-      v?.data_exchange?.data ||
-      v?.data_exchange ||
-      v?.flow?.data ||
-      v?.flow ||
-      v?.data ||
-      payload?.data ||
-      {};
-    // If the flow submission comes in a 'complete' payload the keys could be in payload.action.payload
-    const alt = payload?.action?.payload || {};
-    return { ...data, ...alt };
+    const v = payload?.entry?.[0]?.changes?.[0]?.value || payload || {};
+    // prefer explicit containers
+    const candidates = [
+      _safeGet(v, ["data_exchange", "data"]),
+      _safeGet(v, ["data_exchange"]),
+      _safeGet(v, ["flow", "data"]),
+      _safeGet(v, ["flow"]),
+      _safeGet(v, ["data"]),
+      payload?.data,
+    ];
+
+    // messages interactive may contain form data directly
+    const msgInteractivePayload = _safeGet(v, ["messages", 0, "interactive", "flow", "data"]) ||
+      _safeGet(v, ["messages", 0, "interactive", "data"]) ||
+      _safeGet(v, ["messages", 0, "interactive"]);
+
+    if (msgInteractivePayload && typeof msgInteractivePayload === "object") {
+      candidates.unshift(msgInteractivePayload);
+    }
+
+    for (const c of candidates) {
+      if (!c || typeof c !== "object") continue;
+      // normalize known keys and return
+      const out = {};
+      // strings/nested fields we care about
+      const maybe = (k) => c[k] ?? c[String(k)] ?? undefined;
+      out.city = maybe("city") ?? maybe("selected_city") ?? maybe("selectedCity") ?? maybe("qCity");
+      out.suburb = maybe("suburb") ?? maybe("selected_suburb") ?? maybe("selectedSuburb");
+      out.property_category = maybe("property_category") ?? maybe("selected_category");
+      out.property_type = maybe("property_type") ?? maybe("selected_type");
+      out.bedrooms = maybe("bedrooms") ?? maybe("selected_bedrooms");
+      out.min_price = maybe("min_price") ?? maybe("minPrice") ?? maybe("min");
+      out.max_price = maybe("max_price") ?? maybe("maxPrice") ?? maybe("max");
+      out.q = maybe("q") ?? maybe("keyword") ?? maybe("query");
+      // copy all keys so nothing is lost
+      Object.assign(out, c);
+      return out;
+    }
+
+    return {};
   } catch (e) {
     return {};
   }
@@ -367,6 +443,14 @@ export async function POST(request) {
     } catch (e) {
       payload = {};
     }
+  }
+
+  // LOG the incoming payload (truncated to 12k chars) to help debug flow shapes
+  try {
+    const snippet = JSON.stringify(payload, null, 2).slice(0, 12000);
+    console.log("[webhook] raw payload snippet:\n", snippet);
+  } catch (e) {
+    console.log("[webhook] failed to stringify raw payload for logging");
   }
 
   // Optional signature validation (log but non-fatal)
@@ -471,7 +555,6 @@ export async function POST(request) {
         headerText: "Find rentals — filters",
         bodyText: "Please press continue to SEARCH.",
         footerText: "Search",
-        // optionally include default data (predefined cities/suburbs)
         data: {
           cities: PREDEFINED_CITIES,
           suburbs: [
@@ -500,8 +583,6 @@ export async function POST(request) {
 
   /* -------------
      2) Handle flow submissions (user completed the SEARCH flow)
-     We detect the requested screen from the payload, and if it's SEARCH
-     (i.e., user completed the form) we run the search and send back a RESULTS flow.
      ------------- */
   try {
     const requestedScreen = detectRequestedScreen(payload, msg || {});
