@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { dbConnect, WebhookEvent, Listing } from "@/lib/db";
 import Message from "@/lib/Message";
 import { getListingById, searchPublishedListings } from "@/lib/getListings";
+import seedListings from "./seedListings.json"; // make sure this file exists next to this route
 
 export const runtime = "nodejs";
 
@@ -67,8 +68,6 @@ async function sendInteractiveButtons(phoneNumber, bodyText, buttons = []) {
   };
 
   const res = await whatsappPost(phone_number_id, apiToken, interactivePayload);
-
-  // fallback to text menu
   if (res?.error) {
     const fallback = [
       bodyText,
@@ -79,10 +78,74 @@ async function sendInteractiveButtons(phoneNumber, bodyText, buttons = []) {
     ].join("\n");
     await sendText(phoneNumber, fallback);
   }
-
   return res;
 }
 
+/* -------------------------
+   Send flow helper
+   ------------------------- */
+const DEFAULT_FLOW_ID = process.env.WHATSAPP_FLOW_ID || "1534021024566343";
+
+async function sendFlowStart(phoneNumber, flowId = DEFAULT_FLOW_ID, data = {}) {
+  const apiToken = process.env.WHATSAPP_API_TOKEN || process.env.WHATCHIMP_API_KEY;
+  const phone_number_id =
+    process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATCHIMP_PHONE_ID || process.env.WHATCHIMP_PHONE_NUMBER_ID;
+  if (!apiToken || !phone_number_id) return { error: "missing-credentials" };
+
+  // ensure some minimal arrays so dropdowns render
+  const payloadData = {
+    cities: (data.cities || PREDEFINED_CITIES).map((c) => ({ id: c.id, title: c.title })),
+    suburbs: data.suburbs || [],
+    propertyCategories: data.propertyCategories || [
+      { id: "residential", title: "Residential" },
+      { id: "commercial", title: "Commercial" },
+    ],
+    propertyTypes: data.propertyTypes || [
+      { id: "house", title: "House" },
+      { id: "flat", title: "Flat" },
+      { id: "studio", title: "Studio" },
+    ],
+    bedrooms: data.bedrooms || [
+      { id: "any", title: "Any" },
+      { id: "1", title: "1" },
+      { id: "2", title: "2" },
+      { id: "3", title: "3" },
+    ],
+    // merge in any selected_* values passed
+    ...data,
+  };
+
+  const interactivePayload = {
+    messaging_product: "whatsapp",
+    to: digitsOnly(phoneNumber),
+    type: "interactive",
+    interactive: {
+      type: "flow",
+      header: { type: "text", text: "Find rentals — filters" },
+      body: { text: "Please press continue to SEARCH." },
+      footer: { text: "Search" },
+      action: {
+        name: "flow",
+        parameters: {
+          flow_message_version: "3",
+          flow_id: String(flowId),
+          flow_cta: "Search",
+          flow_action: "navigate",
+          flow_action_payload: {
+            screen: "SEARCH",
+            data: payloadData,
+          },
+        },
+      },
+    },
+  };
+
+  return whatsappPost(phone_number_id, apiToken, interactivePayload);
+}
+
+/* -------------------------
+   Simple retry
+   ------------------------- */
 async function retry(fn, attempts = 3, delay = 400) {
   let lastErr;
   for (let i = 0; i < attempts; i++) {
@@ -127,8 +190,8 @@ function aesGcmDecrypt(encryptedFlowDataB64, aesKeyBuffer, ivB64) {
   return { plaintext: plaintext.toString("utf8"), aesIv: iv };
 }
 
-// flip IV bytes (bitwise NOT) and encrypt response JSON, return base64
 function aesGcmEncryptAndEncode(responseObj, aesKeyBuffer, requestIvBuffer) {
+  // flip IV bits (bitwise NOT)
   const flippedIv = Buffer.alloc(requestIvBuffer.length);
   for (let i = 0; i < requestIvBuffer.length; i++) flippedIv[i] = (~requestIvBuffer[i]) & 0xff;
 
@@ -142,71 +205,51 @@ function aesGcmEncryptAndEncode(responseObj, aesKeyBuffer, requestIvBuffer) {
 }
 
 /* -------------------------
-   Flow response builders
+   Predefined cities & seed listings helper
    ------------------------- */
-function buildResultsFlowResponse(screen = "RESULTS", incoming = {}) {
-  return {
-    version: "3.0",
-    screen: screen,
-    data: {
-      resultsCount: 0,
-      listings: [],
-      querySummary: "",
-      listingText0: "",
-      listingText1: "",
-      listingText2: "",
-      hasResult0: false,
-      hasResult1: false,
-      hasResult2: false,
-      city: incoming.city || "",
-      suburb: incoming.suburb || "",
-      property_category: incoming.property_category || "",
-      property_type: incoming.property_type || "",
-      bedrooms: incoming.bedrooms || "",
-      min_price: Number(incoming.min_price || 0),
-      max_price: Number(incoming.max_price || 0),
-      q: incoming.q || "",
-      cities: [],
-      suburbs: [],
-      propertyCategories: [],
-      propertyTypes: [],
-      bedrooms_list: [],
-      min_price_default: 0,
-      max_price_default: 0,
-      query: "",
-      refine: false,
-    },
-  };
+const PREDEFINED_CITIES = [
+  { id: "harare", title: "Harare" },
+  { id: "bulawayo", title: "Bulawayo" },
+  { id: "mutare", title: "Mutare" },
+];
+
+function getSeedListingsForCity(cityIdOrTitle) {
+  const q = String(cityIdOrTitle || "").trim().toLowerCase();
+  const found = (seedListings || []).filter((s) => {
+    if (!s.city) return false;
+    const c = String(s.city).toLowerCase();
+    return c.includes(q) || s.city.toLowerCase() === q || (s.cityId && String(s.cityId).toLowerCase() === q);
+  });
+  return found.slice(0, 3);
 }
 
+/* -------------------------
+   Flow response builders (single SEARCH screen + RESULTS)
+   ------------------------- */
 function buildSearchSchemaFlowResponse() {
-  // EXACT search flow JSON (version 7.3 + data_api_version 3.0)
+  // Return the SEARCH screen JSON you supplied (version 7.3)
   return {
     version: "7.3",
-    data_api_version: "3.0",
-    routing_model: {
-      SEARCH: ["RESULTS"],
-      RESULTS: ["COMPLETE"],
-      COMPLETE: [],
-    },
     screens: [
       {
         id: "SEARCH",
-        title: "Find rentals near you",
+        title: "Find rentals — filters",
+        terminal: true,
+        success: true,
         data: {
-          cities: { type: "array", items: { type: "object", properties: { id: { type: "string" }, title: { type: "string" } } }, "__example__": [] },
-          suburbs: { type: "array", items: { type: "object", properties: { id: { type: "string" }, title: { type: "string" } } }, "__example__": [] },
-          propertyCategories: { type: "array", items: { type: "object", properties: { id: { type: "string" }, title: { type: "string" } } }, "__example__": [] },
-          propertyTypes: { type: "array", items: { type: "object", properties: { id: { type: "string" }, title: { type: "string" } } }, "__example__": [] },
-          bedrooms: { type: "array", items: { type: "object", properties: { id: { type: "string" }, title: { type: "string" } } }, "__example__": [] },
-          min_price: { type: "number", "__example__": 0 },
-          max_price: { type: "number", "__example__": 0 },
-          query: { type: "string", "__example__": "" },
-          selected_city: { type: "string", "__example__": "" },
-          selected_suburb: { type: "string", "__example__": "" },
-          selected_category: { type: "string", "__example__": "" },
-          selected_type: { type: "string", "__example__": "" },
-          selected_bedrooms: { type: "string", "__example__": "" },
+          cities: PREDEFINED_CITIES.map((c) => ({ id: c.id, title: c.title })),
+          suburbs: [],
+          propertyCategories: [],
+          propertyTypes: [],
+          bedrooms: [],
+          min_price: "0",
+          max_price: "0",
+          q: "",
+          selected_city: "harare",
+          selected_suburb: "any",
+          selected_category: "residential",
+          selected_type: "house",
+          selected_bedrooms: "any",
         },
         layout: {
           type: "SingleColumnLayout",
@@ -222,75 +265,36 @@ function buildSearchSchemaFlowResponse() {
                 bedrooms: "${data.selected_bedrooms}",
                 min_price: "${data.min_price}",
                 max_price: "${data.max_price}",
-                q: "${data.query}",
+                q: "${data.q}",
               },
               children: [
-                { type: "Image", src: "/9j/4AAQSkZJRgABAQAAAQABAAD...search-hero-base64...==", height: 108, "scale-type": "cover" },
-                { type: "TextSubheading", text: "Find rentals fast" },
-                { type: "TextBody", text: "Tell us where and what you want — tap fields or type keywords (eg: Borrowdale, $200)." },
-                { type: "Dropdown", label: "City", required: true, name: "city", "data-source": "${data.cities}", "on-select-action": { name: "data_exchange", payload: { selected_city: "${form.city}" } } },
-                { type: "Dropdown", label: "Suburb (optional)", required: false, name: "suburb", "data-source": "${data.suburbs}", "on-select-action": { name: "data_exchange", payload: { selected_suburb: "${form.suburb}" } } },
-                { type: "Dropdown", label: "Category", required: false, name: "property_category", "data-source": "${data.propertyCategories}", "on-select-action": { name: "data_exchange", payload: { selected_category: "${form.property_category}" } } },
-                { type: "Dropdown", label: "Property type", required: false, name: "property_type", "data-source": "${data.propertyTypes}", "on-select-action": { name: "data_exchange", payload: { selected_type: "${form.property_type}" } } },
-                { type: "Dropdown", label: "Bedrooms", required: false, name: "bedrooms", "data-source": "${data.bedrooms}", "on-select-action": { name: "data_exchange", payload: { selected_bedrooms: "${form.bedrooms}" } } },
-                { type: "TextInput", label: "Min monthly rent (numbers only)", name: "min_price", required: false, "input-type": "number" },
-                { type: "TextInput", label: "Max monthly rent (numbers only)", name: "max_price", required: false, "input-type": "number" },
-                { type: "TextInput", label: "Keywords (optional)", name: "q", required: false, "input-type": "text" },
-                { type: "Footer", label: "Search", "on-click-action": { name: "data_exchange", payload: { city: "${form.city}", suburb: "${form.suburb}", property_category: "${form.property_category}", property_type: "${form.property_type}", bedrooms: "${form.bedrooms}", min_price: "${form.min_price}", max_price: "${form.max_price}", q: "${form.q}" } } },
-              ],
-            },
-          ],
-        },
-      },
-      {
-        id: "RESULTS",
-        title: "Search results",
-        data: {
-          resultsCount: { type: "number", "__example__": 0 },
-          listings: { type: "array", items: { type: "object", properties: { id: { type: "string" }, title: { type: "string" }, suburb: { type: "string" }, pricePerMonth: { type: "number" }, bedrooms: { type: "string" } } }, "__example__": [] },
-          querySummary: { type: "string", "__example__": "" },
-          listingText0: { type: "string", "__example__": "" },
-          listingText1: { type: "string", "__example__": "" },
-          listingText2: { type: "string", "__example__": "" },
-          hasResult0: { type: "boolean", "__example__": false },
-          hasResult1: { type: "boolean", "__example__": false },
-          hasResult2: { type: "boolean", "__example__": false },
-        },
-        layout: {
-          type: "SingleColumnLayout",
-          children: [
-            {
-              type: "Form",
-              name: "results_view",
-              children: [
-                { type: "TextSubheading", text: "Results" },
-                { type: "TextBody", text: "Found ${data.resultsCount} matching listings." },
-                { type: "TextBody", text: "${data.querySummary}" },
-                { type: "TextBody", text: "${data.listingText0}", visible: "${data.hasResult0}" },
-                { type: "TextBody", text: "${data.listingText1}", visible: "${data.hasResult1}" },
-                { type: "TextBody", text: "${data.listingText2}", visible: "${data.hasResult2}" },
-                { type: "TextBody", text: "To view contact details for any listing, reply with: CONTACT <LISTING_ID> in the chat or use the chat to request more details." },
-                { type: "Footer", label: "Refine search", "on-click-action": { name: "data_exchange", payload: { refine: "true" } } },
-              ],
-            },
-          ],
-        },
-      },
-      {
-        id: "COMPLETE",
-        title: "Search sent",
-        data: {},
-        terminal: true,
-        layout: {
-          type: "SingleColumnLayout",
-          children: [
-            {
-              type: "Form",
-              name: "flow_complete",
-              children: [
-                { type: "TextSubheading", text: "All set!" },
-                { type: "TextBody", text: "We've run the search and sent the results. Reply with a listing ID to view contact details or start a new search any time." },
-                { type: "Footer", label: "Done", "on-click-action": { name: "complete", payload: {} } },
+                { type: "TextSubheading", text: "Find rentals — pick filters" },
+                { type: "TextBody", text: "Choose from predefined options or leave blanks for broader search." },
+                { type: "Dropdown", label: "City", required: true, name: "city", "data-source": "${data.cities}" },
+                { type: "Dropdown", label: "Suburb (optional)", name: "suburb", "data-source": "${data.suburbs}" },
+                { type: "Dropdown", label: "Property category", name: "property_category", "data-source": "${data.propertyCategories}" },
+                { type: "Dropdown", label: "Property type", name: "property_type", "data-source": "${data.propertyTypes}" },
+                { type: "Dropdown", label: "Bedrooms", name: "bedrooms", "data-source": "${data.bedrooms}" },
+                { type: "TextInput", label: "Min price (optional)", name: "min_price" },
+                { type: "TextInput", label: "Max price (optional)", name: "max_price" },
+                { type: "TextInput", label: "Keyword (optional)", name: "q" },
+                {
+                  type: "Footer",
+                  label: "Search",
+                  "on-click-action": {
+                    name: "complete",
+                    payload: {
+                      city: "${form.city}",
+                      suburb: "${form.suburb}",
+                      property_category: "${form.property_category}",
+                      property_type: "${form.property_type}",
+                      bedrooms: "${form.bedrooms}",
+                      min_price: "${form.min_price}",
+                      max_price: "${form.max_price}",
+                      q: "${form.q}",
+                    },
+                  },
+                },
               ],
             },
           ],
@@ -300,8 +304,64 @@ function buildSearchSchemaFlowResponse() {
   };
 }
 
+function buildResultsFlowResponseForListings(listings, incoming = {}) {
+  const listingText = listings
+    .map((l, i) => `${i + 1}) ${l.title} — ${l.suburb || ""} — $${l.pricePerMonth || l.price || "N/A"} — ID:${l.id || l._id || i}`)
+    .slice(0, 3);
+
+  return {
+    version: "7.3",
+    screens: [
+      {
+        id: "RESULTS",
+        title: "Search results",
+        data: {
+          resultsCount: listings.length,
+          listings: listings.map((l) => ({
+            id: l.id || l._id || "",
+            title: l.title || "",
+            suburb: l.suburb || "",
+            pricePerMonth: l.pricePerMonth || l.price || 0,
+            bedrooms: l.bedrooms || "",
+          })),
+          querySummary: `Top ${listings.length} results`,
+          listingText0: listingText[0] || "",
+          listingText1: listingText[1] || "",
+          listingText2: listingText[2] || "",
+          hasResult0: Boolean(listingText[0]),
+          hasResult1: Boolean(listingText[1]),
+          hasResult2: Boolean(listingText[2]),
+          city: incoming.city || "",
+          suburb: incoming.suburb || "",
+          property_category: incoming.property_category || "",
+          property_type: incoming.property_type || "",
+          bedrooms: incoming.bedrooms || "",
+          min_price: Number(incoming.min_price || 0),
+          max_price: Number(incoming.max_price || 0),
+          q: incoming.q || "",
+          cities: PREDEFINED_CITIES.map((c) => ({ id: c.id, title: c.title })),
+        },
+        layout: {
+          type: "SingleColumnLayout",
+          children: [
+            { type: "TextSubheading", text: "${data.querySummary}" },
+            {
+              type: "TextBody", text: "${data.listingText0}\n\n${ data.listingText1 }\n\n${ data.listingText2 }",
+            },
+            {
+              type: "Footer",
+              label: "Done",
+              "on-click-action": { name: "complete", payload: { status: "ok" } },
+            },
+          ],
+        },
+      },
+    ],
+  };
+}
+
 /* -------------------------
-   Helper: detect requested screen in raw or decrypted payload
+   detectRequestedScreen
    ------------------------- */
 function detectRequestedScreen(rawPayload = {}, decryptedPayload = {}) {
   const checks = [
@@ -317,95 +377,17 @@ function detectRequestedScreen(rawPayload = {}, decryptedPayload = {}) {
     decryptedPayload?.data?.screen,
     decryptedPayload?.data_exchange?.screen,
     decryptedPayload?.action?.payload?.screen,
-    decryptedPayload?.data?.selected_screen,
+    decryptedPayload?.data?.selected_city,
+    decryptedPayload?.data?.city,
   ];
   for (const c of checks) {
     if (!c) continue;
     try {
       const s = String(c).trim();
       if (s) return s.toUpperCase();
-    } catch (e) {
-      // ignore
-    }
+    } catch (e) { }
   }
   return null;
-}
-
-/* -------------------------
-   Conversation helpers (unchanged)
-   ------------------------- */
-async function sendMenu(phone) {
-  const bodyText = "Welcome to CribMatch 👋 — choose an option:";
-  const buttons = [
-    { id: "menu_list", title: "List a property" },
-    { id: "menu_search", title: "Search properties" },
-    { id: "menu_purchases", title: "View my purchases" },
-  ];
-
-  await Message.create({
-    phone: digitsOnly(phone),
-    from: "system",
-    type: "text",
-    text: `${bodyText}\n1) List a property\n2) Search properties\n3) View my purchases\n\nReply with the number (e.g. 1) or the word (e.g. 'list').`,
-    raw: null,
-    meta: { state: "AWAITING_MENU_CHOICE" },
-  }).catch(() => null);
-
-  await sendInteractiveButtons(phone, `${bodyText}\nTap a button or reply with a number`, buttons);
-}
-
-async function getLastConversationState(phone) {
-  const doc = await Message.findOne({ phone: digitsOnly(phone), "meta.state": { $exists: true } })
-    .sort({ createdAt: -1 })
-    .lean()
-    .exec();
-  return doc?.meta || null;
-}
-
-function interpretMenuChoice(text) {
-  if (!text) return null;
-  const t = String(text || "").trim().toLowerCase();
-  if (/^\s*1\s*$/.test(t) || t.startsWith("list") || t.includes("list a") || t === "menu_list") return "LIST";
-  if (/^\s*2\s*$/.test(t) || t.startsWith("search") || t.includes("search") || t === "menu_search") return "SEARCH";
-  if (/^\s*3\s*$/.test(t) || t.startsWith("purchase") || t.includes("purchase") || t.includes("orders") || t === "menu_purchases") return "PURCHASES";
-  return null;
-}
-
-async function createPaymentLink(phone, amountCents, description = "Contact details") {
-  const fakeId = Date.now().toString(36);
-  return {
-    id: `pay_${fakeId}`,
-    url: `https://payments.example.com/pay/${fakeId}?amount=${amountCents}&phone=${encodeURIComponent(phone)}`,
-    amount: amountCents,
-  };
-}
-
-async function revealContactDetails(listingId, phone) {
-  const listing = await getListingById(listingId);
-  if (!listing) {
-    await sendText(phone, "Sorry — listing not found.");
-    return;
-  }
-
-  const contactMessage = [
-    `Contact info for "${listing.title}":`,
-    `Name: ${listing.contactName || "N/A"}`,
-    `Phone: ${listing.contactPhone || "N/A"}`,
-    `WhatsApp: ${listing.contactWhatsApp || "N/A"}`,
-    `Email: ${listing.contactEmail || "N/A"}`,
-    "",
-    "Note: address and exact location are not shared until meeting is arranged.",
-  ].join("\n");
-
-  await Message.create({
-    phone: digitsOnly(phone),
-    from: "system",
-    type: "text",
-    text: contactMessage,
-    meta: { state: "CONTACT_REVEALED", listingId },
-  }).catch(() => { });
-
-  await sendText(phone, contactMessage);
 }
 
 /* -------------------------
@@ -417,11 +399,9 @@ function extractTimestamp(payload, messageBlock) {
   if (messageBlock?.timestamp) candidates.push(messageBlock.timestamp);
   if (messageBlock?.conversation_time) candidates.push(messageBlock.conversation_time);
   try {
-    const msg =
-      payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0] || payload?.messages?.[0] || messageBlock?.messages?.[0];
+    const msg = payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0] || payload?.messages?.[0] || messageBlock?.messages?.[0];
     if (msg?.timestamp) candidates.push(msg.timestamp);
   } catch (e) { }
-
   for (const c of candidates) {
     if (!c) continue;
     if (/^\d+$/.test(String(c))) {
@@ -471,7 +451,7 @@ export async function GET(request) {
 export async function POST(request) {
   console.log("[webhook] POST invoked");
 
-  // Read raw body text (used for signature validation if APP_SECRET is set)
+  // read raw body for optional signature verification and parsing
   let rawText = "";
   try {
     rawText = await request.text();
@@ -484,14 +464,11 @@ export async function POST(request) {
     try {
       payload = JSON.parse(rawText);
     } catch (e) {
-      // not JSON - leave as {}
       payload = {};
     }
-  } else {
-    payload = {};
   }
 
-  // Optional X-Hub-Signature-256 validation using APP_SECRET
+  // Optional signature validation
   try {
     const appSecret = process.env.APP_SECRET;
     const sigHeader = request.headers.get("x-hub-signature-256") || request.headers.get("X-Hub-Signature-256");
@@ -509,7 +486,7 @@ export async function POST(request) {
 
   console.log("[webhook] payload keys:", Object.keys(payload));
 
-  // Flow detection & handling (healthcheck + encrypted/unencrypted flows)
+  // Flow detection
   try {
     const hasDataExchange = Boolean(payload?.data_exchange);
     const hasEncrypted = Boolean(payload?.encrypted_flow_data && payload?.encrypted_aes_key && payload?.initial_vector);
@@ -524,87 +501,98 @@ export async function POST(request) {
     if (isFlowRequest) {
       console.log("[webhook] detected flow request");
 
-      // --- HEALTH CHECK: payload.action === "ping" ---
+      // Health check
       const actionVal = (payload?.action || "").toString().toLowerCase();
       if (actionVal === "ping") {
         const healthBody = { data: { status: "active" } };
-
         if (hasEncrypted) {
-          // encrypt healthBody using RSA-decrypted AES key and flipped IV
           try {
             const privateKeyPem = process.env.FLOW_PRIVATE_KEY || process.env.PRIVATE_KEY;
-            if (!privateKeyPem) {
-              console.error("[webhook] FLOW_PRIVATE_KEY missing");
-              return NextResponse.json({ error: "private key missing" }, { status: 500 });
-            }
+            if (!privateKeyPem) return NextResponse.json({ error: "private key missing" }, { status: 500 });
             const aesKeyBuffer = rsaDecryptAesKey(payload.encrypted_aes_key, privateKeyPem);
             const ivBuf = Buffer.from(payload.initial_vector, "base64");
             const encryptedRespBase64 = aesGcmEncryptAndEncode(healthBody, aesKeyBuffer, ivBuf);
-            return new Response(encryptedRespBase64, {
-              status: 200,
-              headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
-            });
+            return new Response(encryptedRespBase64, { status: 200, headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" } });
           } catch (e) {
             console.error("[webhook] health encrypted response error:", e);
             return NextResponse.json({ error: "health encrypt failed" }, { status: 500 });
           }
         } else {
-          // UNENCRYPTED healthcheck -> return plain JSON exactly { data: { status: "active" } }
           return NextResponse.json(healthBody, { status: 200 });
         }
       }
 
-      // --- ENCRYPTED FLOW REQUEST ---
+      // ENCRYPTED flow path
       if (hasEncrypted) {
         try {
           const privateKeyPem = process.env.FLOW_PRIVATE_KEY || process.env.PRIVATE_KEY;
-          if (!privateKeyPem) {
-            console.error("[webhook] FLOW_PRIVATE_KEY env var not set");
-            return NextResponse.json({ error: "private key missing" }, { status: 500 });
-          }
+          if (!privateKeyPem) return NextResponse.json({ error: "private key missing" }, { status: 500 });
 
-          // 1) decrypt AES key
           const aesKeyBuffer = rsaDecryptAesKey(payload.encrypted_aes_key, privateKeyPem);
 
-          // 2) if encrypted_flow_data present, decrypt it (some health-checks may not include encrypted_flow_data)
-          let decryptedPayload = {};
+          // If encrypted_flow_data exists — decrypt and inspect
           if (payload.encrypted_flow_data) {
             const { plaintext: decryptedText, aesIv } = aesGcmDecrypt(payload.encrypted_flow_data, aesKeyBuffer, payload.initial_vector);
             console.log("[webhook] decrypted flow payload:", decryptedText);
+            let decryptedPayload = {};
             try {
               decryptedPayload = JSON.parse(decryptedText);
             } catch (e) {
               decryptedPayload = { data: {} };
             }
 
-            // detect requested screen robustly
+            // see if this is a SEARCH request or selection
             const requestedScreen = detectRequestedScreen(payload, decryptedPayload) || "RESULTS";
-            console.log("[webhook] detected requestedScreen:", requestedScreen);
+            console.log("[webhook] requestedScreen (decrypted):", requestedScreen);
 
+            // extract phone if present in the entry or decrypted payload (flow requests often include contacts)
+            const phoneCandidate = (
+              payload?.entry?.[0]?.changes?.[0]?.value?.contacts?.[0]?.wa_id ||
+              decryptedPayload?.data?.wa_id ||
+              decryptedPayload?.data?.from
+            ) || null;
+            const phone = phoneCandidate ? digitsOnly(String(phoneCandidate)) : null;
+
+            // If the request is asking for the SEARCH screen, return the single-screen SEARCH schema
             if (requestedScreen === "SEARCH") {
               const flowResponse = buildSearchSchemaFlowResponse();
               const encryptedRespBase64 = aesGcmEncryptAndEncode(flowResponse, aesKeyBuffer, aesIv);
-              return new Response(encryptedRespBase64, {
-                status: 200,
-                headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
-              });
-            } else {
-              const flowResponse = buildResultsFlowResponse("RESULTS", decryptedPayload?.data || {});
-              const encryptedRespBase64 = aesGcmEncryptAndEncode(flowResponse, aesKeyBuffer, aesIv);
-              return new Response(encryptedRespBase64, {
-                status: 200,
-                headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
-              });
+              return new Response(encryptedRespBase64, { status: 200, headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" } });
             }
+
+            // If decrypted payload includes selected_city (user selected a city)
+            const selectedCity = decryptedPayload?.data?.selected_city || decryptedPayload?.data?.city || decryptedPayload?.data?.city_id || null;
+            if (selectedCity) {
+              // get seed listings
+              const listings = getSeedListingsForCity(selectedCity);
+              const flowResponse = buildResultsFlowResponseForListings(listings, { city: selectedCity });
+
+              // store an AWATING_LIST_SELECTION system message for phone (if we have one)
+              if (phone) {
+                const listingIds = listings.map((l) => l.id || l._id || "");
+                await Message.create({
+                  phone: digitsOnly(phone),
+                  from: "system",
+                  type: "text",
+                  text: `Found ${listings.length} listings for ${selectedCity}. Reply with the number (1-${listings.length}) to choose.`,
+                  meta: { state: "AWAITING_LIST_SELECTION", listingIds },
+                }).catch(() => { });
+              }
+
+              const encryptedRespBase64 = aesGcmEncryptAndEncode(flowResponse, aesKeyBuffer, aesIv);
+              return new Response(encryptedRespBase64, { status: 200, headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" } });
+            }
+
+            // No selected city & not SEARCH -> just reply with empty RESULTS (safe default)
+            const emptyResp = buildResultsFlowResponseForListings([], {});
+            const encryptedRespBase64 = aesGcmEncryptAndEncode(emptyResp, aesKeyBuffer, aesIv);
+            return new Response(encryptedRespBase64, { status: 200, headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" } });
           } else {
-            // encrypted request with no encrypted_flow_data (rare) - respond with default encrypted RESULTS
+            // encrypted without encrypted_flow_data -> respond with SEARCH schema encrypted using IV
             const ivBuf = Buffer.from(payload.initial_vector, "base64");
-            const flowResponse = buildResultsFlowResponse("RESULTS", {});
+            const flowResponse = buildSearchSchemaFlowResponse();
             const encryptedRespBase64 = aesGcmEncryptAndEncode(flowResponse, aesKeyBuffer, ivBuf);
-            return new Response(encryptedRespBase64, {
-              status: 200,
-              headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
-            });
+            return new Response(encryptedRespBase64, { status: 200, headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" } });
           }
         } catch (e) {
           console.error("[webhook] flow encrypted handling error:", e);
@@ -612,14 +600,14 @@ export async function POST(request) {
         }
       }
 
-      // --- UNENCRYPTED flow / data_exchange route ---
+      // UNENCRYPTED flow path
       if (hasDataExchange || hasFlowWrapper || mayBeFlowViaEntry) {
         const screenFromRequest = (payload?.data_exchange?.screen || payload?.flow?.screen || payload?.screen || "RESULTS");
         const incomingData = payload?.data_exchange?.data || payload?.data || {};
-
         const requestedScreen = detectRequestedScreen(payload, {}) || String(screenFromRequest || "RESULTS").toUpperCase();
         console.log("[webhook] unencrypted requestedScreen:", requestedScreen);
 
+        // If they asked for SEARCH -> return the single SEARCH screen (base64)
         if (requestedScreen === "SEARCH") {
           const flowResponse = buildSearchSchemaFlowResponse();
           const flowResponseJson = JSON.stringify(flowResponse);
@@ -632,10 +620,24 @@ export async function POST(request) {
               "Cache-Control": "no-store",
             },
           });
-        } else {
-          const flowResponse = buildResultsFlowResponse(screenFromRequest, incomingData);
+        }
+
+        // If they submitted a selected city via data_exchange
+        const selectedCity = incomingData?.selected_city || incomingData?.city || null;
+        if (selectedCity) {
+          const listings = getSeedListingsForCity(selectedCity);
+          const flowResponse = buildResultsFlowResponseForListings(listings, { city: selectedCity });
           const flowResponseJson = JSON.stringify(flowResponse);
           const flowResponseBase64 = Buffer.from(flowResponseJson, "utf8").toString("base64");
+
+          // try to extract phone from entry contacts (if present) to create AWATING_LIST_SELECTION meta
+          const phoneCandidate = payload?.entry?.[0]?.changes?.[0]?.value?.contacts?.[0]?.wa_id || null;
+          const phone = phoneCandidate ? digitsOnly(String(phoneCandidate)) : null;
+          if (phone) {
+            const listingIds = listings.map((l) => l.id || l._id || "");
+            await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: `Found ${listings.length} listings for ${selectedCity}. Reply with the number (1-${listings.length}) to choose.`, meta: { state: "AWAITING_LIST_SELECTION", listingIds } }).catch(() => { });
+          }
+
           return new Response(flowResponseBase64, {
             status: 200,
             headers: {
@@ -645,15 +647,27 @@ export async function POST(request) {
             },
           });
         }
+
+        // fallback: return empty RESULTS base64
+        const fallback = buildResultsFlowResponseForListings([], {});
+        const fallbackBase64 = Buffer.from(JSON.stringify(fallback), "utf8").toString("base64");
+        return new Response(fallbackBase64, {
+          status: 200,
+          headers: {
+            "Content-Type": "application/octet-stream",
+            "Content-Transfer-Encoding": "base64",
+            "Cache-Control": "no-store",
+          },
+        });
       }
     }
   } catch (e) {
     console.error("[webhook] flow-detect/response error", e);
-    // fall through to normal processing if detection fails
+    // fall through to normal processing
   }
 
   /* -------------------------
-     Non-flow processing: regular conversation routing (unchanged logic)
+     Non-flow processing: conversation routing (unchanged mostly)
      ------------------------- */
   try {
     await dbConnect();
@@ -670,7 +684,7 @@ export async function POST(request) {
     console.warn("[webhook] save raw event failed:", e);
   }
 
-  // Normalize messageBlock and phone candidates (same as your original)
+  // Normalize messageBlock and phone candidates
   let messageBlock = payload;
   if (payload.user_message) messageBlock = { text: payload.user_message };
   else if (payload.message_content && typeof payload.message_content === "string") {
@@ -696,6 +710,7 @@ export async function POST(request) {
 
   const phone = digitsOnly(rawCandidates[0] || "");
 
+  // Parse text and handle interactive replies
   let parsedText =
     payload.user_message || (messageBlock && (messageBlock.text || messageBlock.body?.text || messageBlock.body?.plain)) || "";
 
@@ -727,134 +742,102 @@ export async function POST(request) {
     return null;
   });
 
-  // Conversation routing: full listing/search/contact flows (kept as your original)
+  // Conversation routing and selection handling
   try {
-    const lastMeta = await getLastConversationState(phone);
+    const lastMeta = await (async () => {
+      const doc = await Message.findOne({ phone: digitsOnly(phone), "meta.state": { $exists: true } }).sort({ createdAt: -1 }).lean().exec();
+      return doc?.meta || null;
+    })();
 
     if (!lastMeta) {
-      await sendMenu(phone);
-      await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.triggeredMenu": true } }).catch(() => { });
+      // send menu as before
+      const bodyText = "Welcome to CribMatch 👋 — choose an option:";
+      const buttons = [
+        { id: "menu_list", title: "List a property" },
+        { id: "menu_search", title: "Search properties" },
+        { id: "menu_purchases", title: "View my purchases" },
+      ];
+
+      await Message.create({
+        phone: digitsOnly(phone),
+        from: "system",
+        type: "text",
+        text: `${bodyText}\n1) List a property\n2) Search properties\n3) View my purchases\n\nReply with the number (e.g. 1) or the word (e.g. 'list').`,
+        raw: null,
+        meta: { state: "AWAITING_MENU_CHOICE" },
+      }).catch(() => null);
+
+      await sendInteractiveButtons(phone, `${bodyText}\nTap a button or reply with a number`, buttons);
       return NextResponse.json({ ok: true, note: "menu-sent" });
     }
 
-    if (lastMeta.state === "AWAITING_MENU_CHOICE") {
-      const choice = interpretMenuChoice(parsedText);
-      if (!choice) {
-        await sendText(phone, "Sorry, I didn't understand. Reply with 1 (List), 2 (Search) or 3 (Purchases), or tap a button.");
-        return NextResponse.json({ ok: true, note: "menu-repeat" });
+    // If user is choosing from previous results
+    if (lastMeta.state === "AWAITING_LIST_SELECTION") {
+      // user reply with a number e.g. "1"
+      const m = String(parsedText || "").trim();
+      if (/^[1-9]\d*$/.test(m)) {
+        const idx = parseInt(m, 10) - 1;
+        const ids = lastMeta.listingIds || [];
+        if (idx >= 0 && idx < ids.length) {
+          const listingId = ids[idx];
+          // reveal contact
+          await revealContactDetails(listingId, phone);
+          // update system state message
+          await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: `You selected ${m}. Contact details sent.`, meta: { state: "CONTACT_REVEALED", listingId } }).catch(() => { });
+          return NextResponse.json({ ok: true, note: "selection-handled" });
+        } else {
+          await sendText(phone, `Invalid selection. Reply with a number between 1 and ${ids.length}.`);
+          return NextResponse.json({ ok: true, note: "selection-invalid" });
+        }
+      } else {
+        // not a number
+        await sendText(phone, "Please reply with the number of the listing (e.g. 1).");
+        return NextResponse.json({ ok: true, note: "selection-expected-number" });
       }
+    }
 
-      if (choice === "LIST") {
-        const sys = await Message.create({
-          phone: digitsOnly(phone),
-          from: "system",
-          type: "text",
-          text: "Okay — let's list a property. What's the property title?",
-          meta: { state: "LISTING_WAIT_TITLE", draft: {} },
-        }).catch(() => null);
-
-        await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.handledMenu": true } }).catch(() => { });
+    // Original menu handling (LIST / SEARCH / PURCHASES)
+    if (lastMeta.state === "AWAITING_MENU_CHOICE") {
+      const t = String(parsedText || "").trim().toLowerCase();
+      if (/^\s*1\s*$/.test(t) || t.startsWith("list") || t === "menu_list") {
+        const sys = await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "Okay — let's list a property. What's the property title?", meta: { state: "LISTING_WAIT_TITLE", draft: {} } }).catch(() => null);
         await sendText(phone, "Okay — let's list a property. What's the property title?");
+        await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.handledMenu": true } }).catch(() => { });
         return NextResponse.json({ ok: true, note: "start-listing", sysId: sys?._id || null });
       }
+      if (/^\s*2\s*$/.test(t) || t.startsWith("search") || t === "menu_search") {
+        // UPDATED: open the Flow search form and also send a quick list of seed results
+        const sys = await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "Opening search form...", meta: { state: "FLOW_OPENED" } }).catch(() => null);
 
-      if (choice === "SEARCH") {
-        const sys = await Message.create({
-          phone: digitsOnly(phone),
-          from: "system",
-          type: "text",
-          text: "Tell me area and budget (eg: Borrowdale, $200).",
-          meta: { state: "SEARCH_WAIT_AREA_BUDGET" },
-        }).catch(() => null);
+        // Open the flow (clients will see the interactive SEARCH form)
+        await sendFlowStart(phone, DEFAULT_FLOW_ID, { selected_city: "harare" }).catch((e) => console.warn("sendFlowStart failed", e));
+
+        // send a short textual summary of top seed listings for the default city so users immediately see examples
+        const seed = getSeedListingsForCity("harare");
+        if (seed && seed.length) {
+          const msg = seed.map((l, i) => `${i + 1}) ${l.title} — ${l.suburb || ""} — $${l.price || l.pricePerMonth || "N/A"}`).join("\n\n");
+          await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: `Here are a few examples:\n\n${msg}`, meta: { state: "SEED_LIST_SENT" } }).catch(() => null);
+          await sendText(phone, `Here are a few examples:\n\n${msg}`);
+          // also send interactive quick-reply buttons for the seed items
+          const buttons = seed.map((s, i) => ({ id: `select_${s.id || i}`, title: s.title || `Listing ${i + 1}` }));
+          await sendInteractiveButtons(phone, "Or tap a result to view contact details:", buttons).catch(() => { });
+        }
 
         await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.handledMenu": true } }).catch(() => { });
-        await sendText(phone, "Tell me area and budget (eg: Borrowdale, $200).");
-        return NextResponse.json({ ok: true, note: "start-search", sysId: sys?._id || null });
+        return NextResponse.json({ ok: true, note: "start-search-flow", sysId: sys?._id || null });
       }
-
-      if (choice === "PURCHASES") {
+      if (/^\s*3\s*$/.test(t) || t.startsWith("purchase") || t === "menu_purchases") {
         const purchasesPlaceholder = "You have 0 purchases. (This is a placeholder — wire your purchases DB.)";
         const sys = await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: purchasesPlaceholder, meta: { state: "SHOW_PURCHASES" } }).catch(() => null);
-        await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.handledMenu": true } }).catch(() => { });
         await sendText(phone, purchasesPlaceholder);
+        await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.handledMenu": true } }).catch(() => { });
         return NextResponse.json({ ok: true, note: "show-purchases", sysId: sys?._id || null });
       }
+      await sendText(phone, "Sorry, I didn't understand. Reply with 1 (List), 2 (Search) or 3 (Purchases), or tap a button.");
+      return NextResponse.json({ ok: true, note: "menu-repeat" });
     }
 
-    // Listing flow (full implementation as before)
-    if (lastMeta.state && lastMeta.state.startsWith("LISTING_WAIT_")) {
-      const draftContainer = await Message.findOne({ phone: digitsOnly(phone), "meta.draft": { $exists: true } }).sort({ createdAt: -1 }).exec();
-      let draft = draftContainer?.meta?.draft || {};
-
-      if (lastMeta.state === "LISTING_WAIT_TITLE") {
-        draft.title = parsedText;
-        const sys = await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "Got it. What suburb is it in?", meta: { state: "LISTING_WAIT_SUBURB", draft } }).catch(() => null);
-        await sendText(phone, "Got it. What suburb is it in?");
-        return NextResponse.json({ ok: true, note: "listing-title-saved", sysId: sys?._id || null });
-      }
-
-      if (lastMeta.state === "LISTING_WAIT_SUBURB") {
-        draft.suburb = parsedText;
-        const sys = await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "Property type (e.g. House, Apartment)?", meta: { state: "LISTING_WAIT_TYPE", draft } }).catch(() => null);
-        await sendText(phone, "Property type (e.g. House, Apartment)?");
-        return NextResponse.json({ ok: true, note: "listing-suburb-saved", sysId: sys?._id || null });
-      }
-
-      if (lastMeta.state === "LISTING_WAIT_TYPE") {
-        draft.propertyType = parsedText;
-        const sys = await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "Monthly price (numbers only)?", meta: { state: "LISTING_WAIT_PRICE", draft } }).catch(() => null);
-        await sendText(phone, "Monthly price (numbers only)?");
-        return NextResponse.json({ ok: true, note: "listing-type-saved", sysId: sys?._id || null });
-      }
-
-      if (lastMeta.state === "LISTING_WAIT_PRICE") {
-        const price = Number(parsedText.replace(/[^\d.]/g, "")) || 0;
-        draft.pricePerMonth = price;
-        const sys = await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "How many bedrooms?", meta: { state: "LISTING_WAIT_BEDS", draft } }).catch(() => null);
-        await sendText(phone, "How many bedrooms?");
-        return NextResponse.json({ ok: true, note: "listing-price-saved", sysId: sys?._id || null });
-      }
-
-      if (lastMeta.state === "LISTING_WAIT_BEDS") {
-        const beds = Math.max(0, parseInt(parsedText, 10) || 0);
-        draft.bedrooms = beds;
-        const sys = await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "Add a short description or send 'skip'.", meta: { state: "LISTING_WAIT_DESC", draft } }).catch(() => null);
-        await sendText(phone, "Add a short description or send 'skip'.");
-        return NextResponse.json({ ok: true, note: "listing-beds-saved", sysId: sys?._id || null });
-      }
-
-      if (lastMeta.state === "LISTING_WAIT_DESC") {
-        draft.description = parsedText && parsedText.toLowerCase() !== "skip" ? parsedText : "";
-        const newListing = await Listing.create({
-          title: draft.title || "Untitled",
-          listerPhoneNumber: phone,
-          suburb: draft.suburb || "",
-          propertyType: draft.propertyType || "Unknown",
-          pricePerMonth: draft.pricePerMonth || 0,
-          bedrooms: draft.bedrooms || 0,
-          description: draft.description || "",
-          images: [],
-          contactName: "",
-          contactPhone: "",
-          contactWhatsApp: "",
-          contactEmail: "",
-        }).catch((e) => {
-          console.error("listing create failed", e);
-          return null;
-        });
-
-        if (newListing) {
-          const confirm = `Listing created: "${newListing.title}" — ID: ${newListing._id}\nTo add contact details or images, reply with "edit ${newListing._id}"`;
-          await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: confirm, meta: { state: "LISTING_CREATED", listingId: newListing._id } }).catch(() => { });
-          await sendText(phone, confirm);
-        } else {
-          await sendText(phone, "Failed to create listing — please try again later.");
-        }
-        return NextResponse.json({ ok: true, note: "listing-created" });
-      }
-    }
-
-    // Search flow (AWAITING_MENU_CHOICE was handled above)
+    // Search flow (text-based fallback) - unchanged except we now send interactive buttons for results
     if (lastMeta.state === "SEARCH_WAIT_AREA_BUDGET") {
       const parts = parsedText.split(/[ ,\n]/).map((s) => s.trim()).filter(Boolean);
       const area = parts[0] || "";
@@ -868,46 +851,22 @@ export async function POST(request) {
 
       await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: msg, meta: { state: "SEARCH_RESULTS", query: { area, budget }, resultsCount: results.total } }).catch(() => { });
       await sendText(phone, msg);
-      await sendText(phone, "To view contact details for any listing reply with: CONTACT <LISTING_ID>");
+
+      // send interactive quick-reply buttons for top 3 results so user can tap to select
+      if (results.listings && results.listings.length) {
+        const top = results.listings.slice(0, 3);
+        const buttons = top.map((l, i) => ({ id: `select_${l._id}`, title: `${l.title} — ${l.suburb} — $${l.pricePerMonth}` }));
+        await sendInteractiveButtons(phone, "Tap a result to view contact details:", buttons).catch(() => { });
+      }
+
+      await sendText(phone, "To view contact details for any listing reply with: CONTACT <LISTING_ID> or tap the result.");
       return NextResponse.json({ ok: true, note: "search-results-sent" });
-    }
-
-    // CONTACT flow
-    if (/^contact\s+/i.test(parsedText || "")) {
-      const listingId = (parsedText || "").split(/\s+/)[1];
-      if (!listingId) {
-        await sendText(phone, "Please reply with: CONTACT <listing-id>");
-        return NextResponse.json({ ok: true, note: "contact-missing-id" });
-      }
-
-      const payment = await createPaymentLink(phone, 300, `Contact for listing ${listingId}`);
-      await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: `Contact costs $3. Pay here: ${payment.url}`, meta: { state: "CONTACT_PAYMENT_PENDING", listingId, payment } }).catch(() => { });
-      await sendText(phone, `Contact costs $3. Pay here: ${payment.url}\nAfter paying, reply with: PAID ${payment.id}`);
-      return NextResponse.json({ ok: true, note: "contact-payment-requested" });
-    }
-
-    // PAID fallback
-    if (/^paid\s+/i.test(parsedText || "")) {
-      const paymentId = (parsedText || "").split(/\s+/)[1];
-      if (!paymentId) {
-        await sendText(phone, "Please reply with: PAID <payment-id>");
-        return NextResponse.json({ ok: true, note: "paid-missing-id" });
-      }
-
-      const pend2 = await Message.findOne({ phone: digitsOnly(phone), "meta.state": "CONTACT_PAYMENT_PENDING" }).sort({ createdAt: -1 }).lean().exec();
-      if (pend2) {
-        await revealContactDetails(pend2.meta.listingId, phone);
-        return NextResponse.json({ ok: true, note: "contact-revealed" });
-      }
-
-      await sendText(phone, "Could not find a pending payment / listing. Please try again.");
-      return NextResponse.json({ ok: false, note: "payment-not-found" });
     }
   } catch (e) {
     console.warn("[webhook] conversation routing error:", e);
   }
 
-  // Free text reply window logic
+  // Free-text reply window logic & default reply (as before)
   const windowMs = Number(process.env.WHATSAPP_FREE_WINDOW_MS) || 24 * 60 * 60 * 1000;
   let allowedToSend = false;
   const ts = extractTimestamp(payload, messageBlock);
@@ -938,4 +897,17 @@ export async function POST(request) {
 
   await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.sendResp": sendResp } }).catch(() => { });
   return NextResponse.json({ ok: true, savedMessageId: savedMsg?._id || null, sendResp });
+}
+
+// helper used earlier - simple placeholder, implement according to your app logic
+async function revealContactDetails(listingId, phone) {
+  // try to fetch listing and send owner contact to the phone
+  try {
+    const listing = await getListingById(listingId);
+    if (!listing) return;
+    const contactMsg = `Contact for ${listing.title}: ${listing.contactName || "Owner"} — ${listing.contactPhone || listing.phone || "N/A"}`;
+    await sendText(phone, contactMsg);
+  } catch (e) {
+    console.warn("revealContactDetails error", e);
+  }
 }
