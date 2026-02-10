@@ -4,7 +4,6 @@ import crypto from "crypto";
 import { dbConnect, WebhookEvent, Listing } from "@/lib/db";
 import Message from "@/lib/Message";
 import { getListingById, searchPublishedListings } from "@/lib/getListings";
-import seedListings from "./seedListings.json"; // make sure this file exists next to this route
 
 export const runtime = "nodejs";
 
@@ -85,6 +84,12 @@ async function sendInteractiveButtons(phoneNumber, bodyText, buttons = []) {
    Send flow helper
    ------------------------- */
 const DEFAULT_FLOW_ID = process.env.WHATSAPP_FLOW_ID || "1534021024566343";
+
+const PREDEFINED_CITIES = [
+  { id: "harare", title: "Harare" },
+  { id: "bulawayo", title: "Bulawayo" },
+  { id: "mutare", title: "Mutare" },
+];
 
 async function sendFlowStart(phoneNumber, flowId = DEFAULT_FLOW_ID, data = {}) {
   const apiToken = process.env.WHATSAPP_API_TOKEN || process.env.WHATCHIMP_API_KEY;
@@ -205,25 +210,6 @@ function aesGcmEncryptAndEncode(responseObj, aesKeyBuffer, requestIvBuffer) {
 }
 
 /* -------------------------
-   Predefined cities & seed listings helper
-   ------------------------- */
-const PREDEFINED_CITIES = [
-  { id: "harare", title: "Harare" },
-  { id: "bulawayo", title: "Bulawayo" },
-  { id: "mutare", title: "Mutare" },
-];
-
-function getSeedListingsForCity(cityIdOrTitle) {
-  const q = String(cityIdOrTitle || "").trim().toLowerCase();
-  const found = (seedListings || []).filter((s) => {
-    if (!s.city) return false;
-    const c = String(s.city).toLowerCase();
-    return c.includes(q) || s.city.toLowerCase() === q || (s.cityId && String(s.cityId).toLowerCase() === q);
-  });
-  return found.slice(0, 3);
-}
-
-/* -------------------------
    Flow response builders (single SEARCH screen + RESULTS)
    ------------------------- */
 function buildSearchSchemaFlowResponse() {
@@ -306,7 +292,7 @@ function buildSearchSchemaFlowResponse() {
 
 function buildResultsFlowResponseForListings(listings, incoming = {}) {
   const listingText = listings
-    .map((l, i) => `${i + 1}) ${l.title} — ${l.suburb || ""} — $${l.pricePerMonth || l.price || "N/A"} — ID:${l.id || l._id || i}`)
+    .map((l, i) => `${i + 1}) ${l.title} — ${l.suburb || ""} — $${l.pricePerMonth || l.price || "N/A"} — ID:${l._id || l.id || i}`)
     .slice(0, 3);
 
   return {
@@ -318,7 +304,7 @@ function buildResultsFlowResponseForListings(listings, incoming = {}) {
         data: {
           resultsCount: listings.length,
           listings: listings.map((l) => ({
-            id: l.id || l._id || "",
+            id: l._id || l.id || "",
             title: l.title || "",
             suburb: l.suburb || "",
             pricePerMonth: l.pricePerMonth || l.price || 0,
@@ -346,7 +332,7 @@ function buildResultsFlowResponseForListings(listings, incoming = {}) {
           children: [
             { type: "TextSubheading", text: "${data.querySummary}" },
             {
-              type: "TextBody", text: "${data.listingText0}\n\n${ data.listingText1 }\n\n${ data.listingText2 }",
+              type: "TextBody", text: "${data.listingText0}\n\n${ data.listingText1 }\n\n${ data.listingText2 }"
             },
             {
               type: "Footer",
@@ -563,13 +549,26 @@ export async function POST(request) {
             // If decrypted payload includes selected_city (user selected a city)
             const selectedCity = decryptedPayload?.data?.selected_city || decryptedPayload?.data?.city || decryptedPayload?.data?.city_id || null;
             if (selectedCity) {
-              // get seed listings
-              const listings = getSeedListingsForCity(selectedCity);
+              // get listings from DB (top 3)
+              let listings = [];
+              try {
+                const results = await searchPublishedListings({ city: selectedCity, perPage: 3 });
+                listings = results?.listings || results || [];
+              } catch (e) {
+                // fallback to simple DB query if searchPublishedListings not available/failed
+                try {
+                  await dbConnect();
+                  listings = await Listing.find({ status: "published", city: new RegExp(`^${selectedCity}$`, "i") }).limit(3).lean().exec();
+                } catch (err) {
+                  listings = [];
+                }
+              }
+
               const flowResponse = buildResultsFlowResponseForListings(listings, { city: selectedCity });
 
               // store an AWATING_LIST_SELECTION system message for phone (if we have one)
               if (phone) {
-                const listingIds = listings.map((l) => l.id || l._id || "");
+                const listingIds = listings.map((l) => l._id || l.id || "");
                 await Message.create({
                   phone: digitsOnly(phone),
                   from: "system",
@@ -625,7 +624,20 @@ export async function POST(request) {
         // If they submitted a selected city via data_exchange
         const selectedCity = incomingData?.selected_city || incomingData?.city || null;
         if (selectedCity) {
-          const listings = getSeedListingsForCity(selectedCity);
+          // get listings from DB (top 3)
+          let listings = [];
+          try {
+            const results = await searchPublishedListings({ city: selectedCity, perPage: 3 });
+            listings = results?.listings || results || [];
+          } catch (e) {
+            try {
+              await dbConnect();
+              listings = await Listing.find({ status: "published", city: new RegExp(`^${selectedCity}$`, "i") }).limit(3).lean().exec();
+            } catch (err) {
+              listings = [];
+            }
+          }
+
           const flowResponse = buildResultsFlowResponseForListings(listings, { city: selectedCity });
           const flowResponseJson = JSON.stringify(flowResponse);
           const flowResponseBase64 = Buffer.from(flowResponseJson, "utf8").toString("base64");
@@ -634,7 +646,7 @@ export async function POST(request) {
           const phoneCandidate = payload?.entry?.[0]?.changes?.[0]?.value?.contacts?.[0]?.wa_id || null;
           const phone = phoneCandidate ? digitsOnly(String(phoneCandidate)) : null;
           if (phone) {
-            const listingIds = listings.map((l) => l.id || l._id || "");
+            const listingIds = listings.map((l) => l._id || l.id || "");
             await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: `Found ${listings.length} listings for ${selectedCity}. Reply with the number (1-${listings.length}) to choose.`, meta: { state: "AWAITING_LIST_SELECTION", listingIds } }).catch(() => { });
           }
 
@@ -806,22 +818,11 @@ export async function POST(request) {
         return NextResponse.json({ ok: true, note: "start-listing", sysId: sys?._id || null });
       }
       if (/^\s*2\s*$/.test(t) || t.startsWith("search") || t === "menu_search") {
-        // UPDATED: open the Flow search form and also send a quick list of seed results
+        // UPDATED: open the Flow search form (no seed listings)
         const sys = await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "Opening search form...", meta: { state: "FLOW_OPENED" } }).catch(() => null);
 
         // Open the flow (clients will see the interactive SEARCH form)
         await sendFlowStart(phone, DEFAULT_FLOW_ID, { selected_city: "harare" }).catch((e) => console.warn("sendFlowStart failed", e));
-
-        // send a short textual summary of top seed listings for the default city so users immediately see examples
-        const seed = getSeedListingsForCity("harare");
-        if (seed && seed.length) {
-          const msg = seed.map((l, i) => `${i + 1}) ${l.title} — ${l.suburb || ""} — $${l.price || l.pricePerMonth || "N/A"}`).join("\n\n");
-          await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: `Here are a few examples:\n\n${msg}`, meta: { state: "SEED_LIST_SENT" } }).catch(() => null);
-          await sendText(phone, `Here are a few examples:\n\n${msg}`);
-          // also send interactive quick-reply buttons for the seed items
-          const buttons = seed.map((s, i) => ({ id: `select_${s.id || i}`, title: s.title || `Listing ${i + 1}` }));
-          await sendInteractiveButtons(phone, "Or tap a result to view contact details:", buttons).catch(() => { });
-        }
 
         await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.handledMenu": true } }).catch(() => { });
         return NextResponse.json({ ok: true, note: "start-search-flow", sysId: sys?._id || null });
