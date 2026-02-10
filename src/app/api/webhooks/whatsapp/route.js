@@ -359,7 +359,7 @@ export async function POST(request) {
     console.warn("[webhook] save raw event failed:", e);
   }
 
-  // canonicalize message
+  // canonicalize  message
   const { msg, id: msgId, from: phone, text: parsedText } = getCanonicalMessage(payload);
   console.log("[webhook] parsedMessage:", { msgId, phone, parsedText });
 
