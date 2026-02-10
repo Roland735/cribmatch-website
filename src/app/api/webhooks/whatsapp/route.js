@@ -332,7 +332,8 @@ function buildResultsFlowResponseForListings(listings, incoming = {}) {
           children: [
             { type: "TextSubheading", text: "${data.querySummary}" },
             {
-              type: "TextBody", text: "${data.listingText0}\n\n${ data.listingText1 }\n\n${ data.listingText2 }"
+              type: "TextBody",
+              text: "${data.listingText0}\n\n${ data.listingText1 }\n\n${ data.listingText2 }",
             },
             {
               type: "Footer",
@@ -359,7 +360,7 @@ function detectRequestedScreen(rawPayload = {}, decryptedPayload = {}) {
     rawPayload?.entry?.[0]?.changes?.[0]?.value?.data_exchange?.screen,
     rawPayload?.entry?.[0]?.changes?.[0]?.value?.flow?.screen,
     decryptedPayload?.screen,
-    decryptedPayload?.flow?.screen,
+    decryptedPayload?.flow,
     decryptedPayload?.data?.screen,
     decryptedPayload?.data_exchange?.screen,
     decryptedPayload?.action?.payload?.screen,
@@ -566,7 +567,7 @@ export async function POST(request) {
 
               const flowResponse = buildResultsFlowResponseForListings(listings, { city: selectedCity });
 
-              // store an AWATING_LIST_SELECTION system message for phone (if we have one)
+              // store an AWAITING_LIST_SELECTION system message for phone (if we have one)
               if (phone) {
                 const listingIds = listings.map((l) => l._id || l.id || "");
                 await Message.create({
@@ -642,7 +643,7 @@ export async function POST(request) {
           const flowResponseJson = JSON.stringify(flowResponse);
           const flowResponseBase64 = Buffer.from(flowResponseJson, "utf8").toString("base64");
 
-          // try to extract phone from entry contacts (if present) to create AWATING_LIST_SELECTION meta
+          // try to extract phone from entry contacts (if present) to create AWAITING_LIST_SELECTION meta
           const phoneCandidate = payload?.entry?.[0]?.changes?.[0]?.value?.contacts?.[0]?.wa_id || null;
           const phone = phoneCandidate ? digitsOnly(String(phoneCandidate)) : null;
           if (phone) {
@@ -761,6 +762,28 @@ export async function POST(request) {
       return doc?.meta || null;
     })();
 
+    // If user typed "search" directly (no active meta), ask for confirmation
+    if (!lastMeta && /^search\b/i.test(parsedText || "")) {
+      const confirmText = "Do you want to open the Search form now? Reply with Yes to continue or No to cancel.";
+      const sys = await Message.create({
+        phone: digitsOnly(phone),
+        from: "system",
+        type: "text",
+        text: confirmText,
+        meta: { state: "AWAITING_SEARCH_CONFIRMATION" },
+      }).catch(() => null);
+
+      try {
+        await sendInteractiveButtons(phone, confirmText, [
+          { id: "confirm_search_yes", title: "Yes" },
+          { id: "confirm_search_no", title: "No" },
+        ]);
+      } catch (e) {
+        await sendText(phone, confirmText).catch(() => { });
+      }
+      return NextResponse.json({ ok: true, note: "asked-search-confirmation-direct" });
+    }
+
     if (!lastMeta) {
       // send menu as before
       const bodyText = "Welcome to CribMatch 👋 — choose an option:";
@@ -785,7 +808,6 @@ export async function POST(request) {
 
     // If user is choosing from previous results
     if (lastMeta.state === "AWAITING_LIST_SELECTION") {
-      // user reply with a number e.g. "1"
       const m = String(parsedText || "").trim();
       if (/^[1-9]\d*$/.test(m)) {
         const idx = parseInt(m, 10) - 1;
@@ -794,7 +816,6 @@ export async function POST(request) {
           const listingId = ids[idx];
           // reveal contact
           await revealContactDetails(listingId, phone);
-          // update system state message
           await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: `You selected ${m}. Contact details sent.`, meta: { state: "CONTACT_REVEALED", listingId } }).catch(() => { });
           return NextResponse.json({ ok: true, note: "selection-handled" });
         } else {
@@ -802,9 +823,37 @@ export async function POST(request) {
           return NextResponse.json({ ok: true, note: "selection-invalid" });
         }
       } else {
-        // not a number
         await sendText(phone, "Please reply with the number of the listing (e.g. 1).");
         return NextResponse.json({ ok: true, note: "selection-expected-number" });
+      }
+    }
+
+    // Handle search confirmation (user replied to the "Do you want to search?" prompt)
+    if (lastMeta.state === "AWAITING_SEARCH_CONFIRMATION") {
+      const reply = String(parsedText || "").trim().toLowerCase();
+      const positive = /^(yes|y|1|ok|sure|start)$/i;
+      const negative = /^(no|n|cancel|stop|later)$/i;
+
+      if (positive.test(reply)) {
+        await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "Opening search form...", meta: { state: "FLOW_OPENED" } }).catch(() => null);
+
+        // open the interactive flow (preselect city if you want)
+        await sendFlowStart(phone, DEFAULT_FLOW_ID, { selected_city: "harare" }).catch((e) => console.warn("sendFlowStart failed", e));
+
+        await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.handledConfirmation": true } }).catch(() => { });
+        return NextResponse.json({ ok: true, note: "search-confirmed-opened-flow" });
+      } else if (negative.test(reply)) {
+        await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "Okay — search cancelled. What would you like to do next?", meta: { state: "AWAITING_MENU_CHOICE" } }).catch(() => null);
+        const buttons = [
+          { id: "menu_list", title: "List a property" },
+          { id: "menu_search", title: "Search properties" },
+          { id: "menu_purchases", title: "View my purchases" },
+        ];
+        await sendInteractiveButtons(phone, "Choose an option:", buttons).catch(() => { });
+        return NextResponse.json({ ok: true, note: "search-cancelled" });
+      } else {
+        await sendText(phone, "Please reply with Yes to open the search form, or No to cancel.").catch(() => { });
+        return NextResponse.json({ ok: true, note: "search-confirmation-clarify" });
       }
     }
 
@@ -817,16 +866,31 @@ export async function POST(request) {
         await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.handledMenu": true } }).catch(() => { });
         return NextResponse.json({ ok: true, note: "start-listing", sysId: sys?._id || null });
       }
-      if (/^\s*2\s*$/.test(t) || t.startsWith("search") || t === "menu_search") {
-        // UPDATED: open the Flow search form (no seed listings)
-        const sys = await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "Opening search form...", meta: { state: "FLOW_OPENED" } }).catch(() => null);
 
-        // Open the flow (clients will see the interactive SEARCH form)
-        await sendFlowStart(phone, DEFAULT_FLOW_ID, { selected_city: "harare" }).catch((e) => console.warn("sendFlowStart failed", e));
+      if (/^\s*2\s*$/.test(t) || t.startsWith("search") || t === "menu_search") {
+        // Ask user to confirm they want to search, then wait for confirmation
+        const confirmText = "Do you want to open the Search form now? Reply with Yes to continue or No to cancel.";
+        const sys = await Message.create({
+          phone: digitsOnly(phone),
+          from: "system",
+          type: "text",
+          text: confirmText,
+          meta: { state: "AWAITING_SEARCH_CONFIRMATION" },
+        }).catch(() => null);
+
+        try {
+          await sendInteractiveButtons(phone, confirmText, [
+            { id: "confirm_search_yes", title: "Yes" },
+            { id: "confirm_search_no", title: "No" },
+          ]);
+        } catch (e) {
+          await sendText(phone, confirmText).catch(() => { });
+        }
 
         await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.handledMenu": true } }).catch(() => { });
-        return NextResponse.json({ ok: true, note: "start-search-flow", sysId: sys?._id || null });
+        return NextResponse.json({ ok: true, note: "asked-search-confirmation", sysId: sys?._id || null });
       }
+
       if (/^\s*3\s*$/.test(t) || t.startsWith("purchase") || t === "menu_purchases") {
         const purchasesPlaceholder = "You have 0 purchases. (This is a placeholder — wire your purchases DB.)";
         const sys = await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: purchasesPlaceholder, meta: { state: "SHOW_PURCHASES" } }).catch(() => null);
@@ -834,6 +898,7 @@ export async function POST(request) {
         await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.handledMenu": true } }).catch(() => { });
         return NextResponse.json({ ok: true, note: "show-purchases", sysId: sys?._id || null });
       }
+
       await sendText(phone, "Sorry, I didn't understand. Reply with 1 (List), 2 (Search) or 3 (Purchases), or tap a button.");
       return NextResponse.json({ ok: true, note: "menu-repeat" });
     }
