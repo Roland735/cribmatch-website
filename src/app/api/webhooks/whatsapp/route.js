@@ -84,11 +84,9 @@ async function sendInteractiveButtons(phoneNumber, bodyText, buttons = []) {
    Send flow helper
    ------------------------- */
 
-// NOTE: This Flow ID is used ONLY for the Search flow. Nothing else should call sendFlowStart.
-// DEFAULT_FLOW_ID is centralized so you can override with WHATSAPP_FLOW_ID env var.
+// NOTE: This Flow ID is used ONLY for the Search flow.
 const DEFAULT_FLOW_ID = process.env.WHATSAPP_FLOW_ID || "1534021024566343";
-
-// Runtime toggle: set ENABLE_SEARCH_FLOW="false" to disable Flow opening in prod without changing code.
+// Runtime toggle:
 const ENABLE_SEARCH_FLOW = (String(process.env.ENABLE_SEARCH_FLOW || "true").toLowerCase() === "true");
 
 const PREDEFINED_CITIES = [
@@ -103,7 +101,7 @@ async function sendFlowStart(phoneNumber, flowId = DEFAULT_FLOW_ID, data = {}) {
     process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATCHIMP_PHONE_ID || process.env.WHATCHIMP_PHONE_NUMBER_ID;
   if (!apiToken || !phone_number_id) return { error: "missing-credentials" };
 
-  // ensure some minimal arrays so dropdowns render
+  // ensure minimal arrays so dropdowns render
   const payloadData = {
     cities: (data.cities || PREDEFINED_CITIES).map((c) => ({ id: c.id, title: c.title })),
     suburbs: data.suburbs || [],
@@ -122,7 +120,6 @@ async function sendFlowStart(phoneNumber, flowId = DEFAULT_FLOW_ID, data = {}) {
       { id: "2", title: "2" },
       { id: "3", title: "3" },
     ],
-    // merge in any selected_* values passed
     ...data,
   };
 
@@ -171,55 +168,9 @@ async function retry(fn, attempts = 3, delay = 400) {
 }
 
 /* -------------------------
-   Crypto helpers (RSA-OAEP SHA256 + AES-GCM)
-   ------------------------- */
-function rsaDecryptAesKey(encryptedAesKeyB64, privateKeyPem) {
-  const encryptedKeyBuf = Buffer.from(encryptedAesKeyB64, "base64");
-  const aesKey = crypto.privateDecrypt(
-    {
-      key: privateKeyPem,
-      padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
-      oaepHash: "sha256",
-    },
-    encryptedKeyBuf
-  );
-  return aesKey; // Buffer
-}
-
-function aesGcmDecrypt(encryptedFlowDataB64, aesKeyBuffer, ivB64) {
-  const flowBuf = Buffer.from(encryptedFlowDataB64, "base64");
-  const iv = Buffer.from(ivB64, "base64");
-  const TAG_LENGTH = 16;
-  if (flowBuf.length < TAG_LENGTH) throw new Error("encrypted flow data too short");
-  const ciphertext = flowBuf.slice(0, flowBuf.length - TAG_LENGTH);
-  const tag = flowBuf.slice(flowBuf.length - TAG_LENGTH);
-
-  const alg = `aes-${aesKeyBuffer.length * 8}-gcm`;
-  const decipher = crypto.createDecipheriv(alg, aesKeyBuffer, iv);
-  decipher.setAuthTag(tag);
-  const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
-  return { plaintext: plaintext.toString("utf8"), aesIv: iv };
-}
-
-function aesGcmEncryptAndEncode(responseObj, aesKeyBuffer, requestIvBuffer) {
-  // flip IV bits (bitwise NOT)
-  const flippedIv = Buffer.alloc(requestIvBuffer.length);
-  for (let i = 0; i < requestIvBuffer.length; i++) flippedIv[i] = (~requestIvBuffer[i]) & 0xff;
-
-  const alg = `aes-${aesKeyBuffer.length * 8}-gcm`;
-  const cipher = crypto.createCipheriv(alg, aesKeyBuffer, flippedIv);
-  const plainBuf = Buffer.from(JSON.stringify(responseObj), "utf8");
-  const encrypted = Buffer.concat([cipher.update(plainBuf), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  const out = Buffer.concat([encrypted, tag]);
-  return out.toString("base64");
-}
-
-/* -------------------------
-   Flow response builders (single SEARCH screen + RESULTS)
+   Flow response builders (SEARCH screen + RESULTS)
    ------------------------- */
 function buildSearchSchemaFlowResponse() {
-  // Return the SEARCH screen JSON you supplied (version 7.3)
   return {
     version: "7.3",
     screens: [
@@ -439,7 +390,7 @@ export async function GET(request) {
 }
 
 /* -------------------------
-   POST handler (full)
+   POST handler (full - UNENCRYPTED flow only)
    ------------------------- */
 export async function POST(request) {
   console.log("[webhook] POST invoked");
@@ -461,7 +412,7 @@ export async function POST(request) {
     }
   }
 
-  // Optional signature validation
+  // Optional signature validation (keeps the HMAC check)
   try {
     const appSecret = process.env.APP_SECRET;
     const sigHeader = request.headers.get("x-hub-signature-256") || request.headers.get("X-Hub-Signature-256");
@@ -479,131 +430,31 @@ export async function POST(request) {
 
   console.log("[webhook] payload keys:", Object.keys(payload));
 
-  // Flow detection
+  // Flow detection (we only support UNENCRYPTED flow payloads here).
   try {
     const hasDataExchange = Boolean(payload?.data_exchange);
-    const hasEncrypted = Boolean(payload?.encrypted_flow_data && payload?.encrypted_aes_key && payload?.initial_vector);
+    const hasEncrypted = Boolean(payload?.encrypted_flow_data || payload?.encrypted_aes_key || payload?.initial_vector);
     const hasFlowWrapper = Boolean(payload?.flow);
     const mayBeFlowViaEntry =
       Boolean(payload?.entry?.[0]?.changes?.[0]?.value?.flow) ||
       Boolean(payload?.entry?.[0]?.changes?.[0]?.value?.data_exchange) ||
       Boolean(payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.type === "flow");
 
-    const isFlowRequest = hasDataExchange || hasEncrypted || hasFlowWrapper || mayBeFlowViaEntry;
+    const isFlowRequest = hasDataExchange || hasFlowWrapper || mayBeFlowViaEntry || hasEncrypted;
 
     if (isFlowRequest) {
-      console.log("[webhook] detected flow request");
+      console.log("[webhook] detected flow request (unencrypted-only mode)");
 
-      // Health check
-      const actionVal = (payload?.action || "").toString().toLowerCase();
-      if (actionVal === "ping") {
-        const healthBody = { data: { status: "active" } };
-        if (hasEncrypted) {
-          try {
-            const privateKeyPem = process.env.FLOW_PRIVATE_KEY || process.env.PRIVATE_KEY;
-            if (!privateKeyPem) return NextResponse.json({ error: "private key missing" }, { status: 500 });
-            const aesKeyBuffer = rsaDecryptAesKey(payload.encrypted_aes_key, privateKeyPem);
-            const ivBuf = Buffer.from(payload.initial_vector, "base64");
-            const encryptedRespBase64 = aesGcmEncryptAndEncode(healthBody, aesKeyBuffer, ivBuf);
-            return new Response(encryptedRespBase64, { status: 200, headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" } });
-          } catch (e) {
-            console.error("[webhook] health encrypted response error:", e);
-            return NextResponse.json({ error: "health encrypt failed" }, { status: 500 });
-          }
-        } else {
-          return NextResponse.json(healthBody, { status: 200 });
-        }
+      // If webhook received encrypted payloads, we don't handle them in this simplified route.
+      if (hasEncrypted) {
+        console.warn("[webhook] encrypted_flow_data received but this route does not support encrypted flows.");
+        return NextResponse.json({ error: "encrypted_flow_data_not_supported", message: "Webhook is running in UNENCRYPTED mode. Implement decryption to support encrypted_flow_data." }, { status: 501 });
       }
 
-      // ENCRYPTED flow path
-      if (hasEncrypted) {
-        try {
-          const privateKeyPem = process.env.FLOW_PRIVATE_KEY || process.env.PRIVATE_KEY;
-          if (!privateKeyPem) return NextResponse.json({ error: "private key missing" }, { status: 500 });
-
-          const aesKeyBuffer = rsaDecryptAesKey(payload.encrypted_aes_key, privateKeyPem);
-
-          // If encrypted_flow_data exists — decrypt and inspect
-          if (payload.encrypted_flow_data) {
-            const { plaintext: decryptedText, aesIv } = aesGcmDecrypt(payload.encrypted_flow_data, aesKeyBuffer, payload.initial_vector);
-            console.log("[webhook] decrypted flow payload:", decryptedText);
-            let decryptedPayload = {};
-            try {
-              decryptedPayload = JSON.parse(decryptedText);
-            } catch (e) {
-              decryptedPayload = { data: {} };
-            }
-
-            // see if this is a SEARCH request or selection
-            const requestedScreen = detectRequestedScreen(payload, decryptedPayload) || "RESULTS";
-            console.log("[webhook] requestedScreen (decrypted):", requestedScreen);
-
-            // extract phone if present in the entry or decrypted payload (flow requests often include contacts)
-            const phoneCandidate = (
-              payload?.entry?.[0]?.changes?.[0]?.value?.contacts?.[0]?.wa_id ||
-              decryptedPayload?.data?.wa_id ||
-              decryptedPayload?.data?.from
-            ) || null;
-            const phone = phoneCandidate ? digitsOnly(String(phoneCandidate)) : null;
-
-            // If the request is asking for the SEARCH screen, return the single-screen SEARCH schema
-            if (requestedScreen === "SEARCH") {
-              const flowResponse = buildSearchSchemaFlowResponse();
-              const encryptedRespBase64 = aesGcmEncryptAndEncode(flowResponse, aesKeyBuffer, aesIv);
-              return new Response(encryptedRespBase64, { status: 200, headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" } });
-            }
-
-            // If decrypted payload includes selected_city (user selected a city)
-            const selectedCity = decryptedPayload?.data?.selected_city || decryptedPayload?.data?.city || decryptedPayload?.data?.city_id || null;
-            if (selectedCity) {
-              // get listings from DB (top 3)
-              let listings = [];
-              try {
-                const results = await searchPublishedListings({ city: selectedCity, perPage: 3 });
-                listings = results?.listings || results || [];
-              } catch (e) {
-                // fallback to simple DB query if searchPublishedListings not available/failed
-                try {
-                  await dbConnect();
-                  listings = await Listing.find({ status: "published", city: new RegExp(`^${selectedCity}$`, "i") }).limit(3).lean().exec();
-                } catch (err) {
-                  listings = [];
-                }
-              }
-
-              const flowResponse = buildResultsFlowResponseForListings(listings, { city: selectedCity });
-
-              // store an AWAITING_LIST_SELECTION system message for phone (if we have one)
-              if (phone) {
-                const listingIds = listings.map((l) => l._id || l.id || "");
-                await Message.create({
-                  phone: digitsOnly(phone),
-                  from: "system",
-                  type: "text",
-                  text: `Found ${listings.length} listings for ${selectedCity}. Reply with the number (1-${listings.length}) to choose.`,
-                  meta: { state: "AWAITING_LIST_SELECTION", listingIds },
-                }).catch(() => { });
-              }
-
-              const encryptedRespBase64 = aesGcmEncryptAndEncode(flowResponse, aesKeyBuffer, aesIv);
-              return new Response(encryptedRespBase64, { status: 200, headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" } });
-            }
-
-            // No selected city & not SEARCH -> just reply with empty RESULTS (safe default)
-            const emptyResp = buildResultsFlowResponseForListings([], {});
-            const encryptedRespBase64 = aesGcmEncryptAndEncode(emptyResp, aesKeyBuffer, aesIv);
-            return new Response(encryptedRespBase64, { status: 200, headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" } });
-          } else {
-            // encrypted without encrypted_flow_data -> respond with SEARCH schema encrypted using IV
-            const ivBuf = Buffer.from(payload.initial_vector, "base64");
-            const flowResponse = buildSearchSchemaFlowResponse();
-            const encryptedRespBase64 = aesGcmEncryptAndEncode(flowResponse, aesKeyBuffer, ivBuf);
-            return new Response(encryptedRespBase64, { status: 200, headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" } });
-          }
-        } catch (e) {
-          console.error("[webhook] flow encrypted handling error:", e);
-          return NextResponse.json({ ok: false, error: "flow-encrypt-handling-failed" }, { status: 500 });
-        }
+      // Health check (unencrypted)
+      const actionVal = (payload?.action || "").toString().toLowerCase();
+      if (actionVal === "ping") {
+        return NextResponse.json({ data: { status: "active" } }, { status: 200 });
       }
 
       // UNENCRYPTED flow path
@@ -613,7 +464,7 @@ export async function POST(request) {
         const requestedScreen = detectRequestedScreen(payload, {}) || String(screenFromRequest || "RESULTS").toUpperCase();
         console.log("[webhook] unencrypted requestedScreen:", requestedScreen);
 
-        // If they asked for SEARCH -> return the single SEARCH screen (base64)
+        // If Meta requests the SEARCH screen, return the SEARCH schema base64 (Meta expects base64 for unencrypted responses)
         if (requestedScreen === "SEARCH") {
           const flowResponse = buildSearchSchemaFlowResponse();
           const flowResponseJson = JSON.stringify(flowResponse);
@@ -628,10 +479,9 @@ export async function POST(request) {
           });
         }
 
-        // If they submitted a selected city via data_exchange
+        // If a city was selected via data_exchange, fetch listings and return RESULTS schema (base64)
         const selectedCity = incomingData?.selected_city || incomingData?.city || null;
         if (selectedCity) {
-          // get listings from DB (top 3)
           let listings = [];
           try {
             const results = await searchPublishedListings({ city: selectedCity, perPage: 3 });
@@ -847,7 +697,7 @@ export async function POST(request) {
         if (ENABLE_SEARCH_FLOW && DEFAULT_FLOW_ID) {
           await sendFlowStart(phone, DEFAULT_FLOW_ID, { selected_city: "harare" }).catch((e) => console.warn("sendFlowStart failed", e));
         } else {
-          // Flow disabled — fallback to interactive button or text so user can still proceed with search via messages
+          // Flow disabled — fallback to interactive button or text
           const fallbackText = "Search Flow is currently disabled — reply with area and budget (eg. Borrowdale, $200) or tap 'Search by message'.";
           await sendInteractiveButtons(phone, fallbackText, [{ id: "msg_search", title: "Search by message" }]).catch(() => { });
           await sendText(phone, "Or just type area and budget (eg. Borrowdale, $200) and I'll search for matches.");
@@ -870,7 +720,7 @@ export async function POST(request) {
       }
     }
 
-    // Original menu handling (LIST / SEARCH / PURCHASES)
+    // MENU handling, SEARCH fallback, etc. (same as earlier)
     if (lastMeta.state === "AWAITING_MENU_CHOICE") {
       const t = String(parsedText || "").trim().toLowerCase();
       if (/^\s*1\s*$/.test(t) || t.startsWith("list") || t === "menu_list") {
@@ -881,7 +731,6 @@ export async function POST(request) {
       }
 
       if (/^\s*2\s*$/.test(t) || t.startsWith("search") || t === "menu_search") {
-        // Ask user to confirm they want to search, then wait for confirmation
         const confirmText = "Do you want to open the Search form now? Reply with Yes to continue or No to cancel.";
         const sys = await Message.create({
           phone: digitsOnly(phone),
@@ -916,7 +765,7 @@ export async function POST(request) {
       return NextResponse.json({ ok: true, note: "menu-repeat" });
     }
 
-    // Search flow (text-based fallback) - unchanged except we now send interactive buttons for results
+    // SEARCH text fallback
     if (lastMeta.state === "SEARCH_WAIT_AREA_BUDGET") {
       const parts = parsedText.split(/[ ,\n]/).map((s) => s.trim()).filter(Boolean);
       const area = parts[0] || "";
@@ -931,7 +780,6 @@ export async function POST(request) {
       await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: msg, meta: { state: "SEARCH_RESULTS", query: { area, budget }, resultsCount: results.total } }).catch(() => { });
       await sendText(phone, msg);
 
-      // send interactive quick-reply buttons for top 3 results so user can tap to select
       if (results.listings && results.listings.length) {
         const top = results.listings.slice(0, 3);
         const buttons = top.map((l, i) => ({ id: `select_${l._id}`, title: `${l.title} — ${l.suburb} — $${l.pricePerMonth}` }));
@@ -945,7 +793,7 @@ export async function POST(request) {
     console.warn("[webhook] conversation routing error:", e);
   }
 
-  // Free-text reply window logic & default reply (as before)
+  // Free-text reply window logic & default reply
   const windowMs = Number(process.env.WHATSAPP_FREE_WINDOW_MS) || 24 * 60 * 60 * 1000;
   let allowedToSend = false;
   const ts = extractTimestamp(payload, messageBlock);
@@ -980,7 +828,6 @@ export async function POST(request) {
 
 // helper used earlier - simple placeholder, implement according to your app logic
 async function revealContactDetails(listingId, phone) {
-  // try to fetch listing and send owner contact to the phone
   try {
     const listing = await getListingById(listingId);
     if (!listing) return;
