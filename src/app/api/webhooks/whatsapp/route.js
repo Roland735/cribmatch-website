@@ -83,7 +83,13 @@ async function sendInteractiveButtons(phoneNumber, bodyText, buttons = []) {
 /* -------------------------
    Send flow helper
    ------------------------- */
+
+// NOTE: This Flow ID is used ONLY for the Search flow. Nothing else should call sendFlowStart.
+// DEFAULT_FLOW_ID is centralized so you can override with WHATSAPP_FLOW_ID env var.
 const DEFAULT_FLOW_ID = process.env.WHATSAPP_FLOW_ID || "1534021024566343";
+
+// Runtime toggle: set ENABLE_SEARCH_FLOW="false" to disable Flow opening in prod without changing code.
+const ENABLE_SEARCH_FLOW = (String(process.env.ENABLE_SEARCH_FLOW || "true").toLowerCase() === "true");
 
 const PREDEFINED_CITIES = [
   { id: "harare", title: "Harare" },
@@ -837,8 +843,15 @@ export async function POST(request) {
       if (positive.test(reply)) {
         await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "Opening search form...", meta: { state: "FLOW_OPENED" } }).catch(() => null);
 
-        // open the interactive flow (preselect city if you want)
-        await sendFlowStart(phone, DEFAULT_FLOW_ID, { selected_city: "harare" }).catch((e) => console.warn("sendFlowStart failed", e));
+        // ONLY open the Flow for Search — guarded by ENABLE_SEARCH_FLOW.
+        if (ENABLE_SEARCH_FLOW && DEFAULT_FLOW_ID) {
+          await sendFlowStart(phone, DEFAULT_FLOW_ID, { selected_city: "harare" }).catch((e) => console.warn("sendFlowStart failed", e));
+        } else {
+          // Flow disabled — fallback to interactive button or text so user can still proceed with search via messages
+          const fallbackText = "Search Flow is currently disabled — reply with area and budget (eg. Borrowdale, $200) or tap 'Search by message'.";
+          await sendInteractiveButtons(phone, fallbackText, [{ id: "msg_search", title: "Search by message" }]).catch(() => { });
+          await sendText(phone, "Or just type area and budget (eg. Borrowdale, $200) and I'll search for matches.");
+        }
 
         await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.handledConfirmation": true } }).catch(() => { });
         return NextResponse.json({ ok: true, note: "search-confirmed-opened-flow" });
@@ -965,7 +978,7 @@ export async function POST(request) {
   return NextResponse.json({ ok: true, savedMessageId: savedMsg?._id || null, sendResp });
 }
 
-// helper used earlier- simple placeholder, implement according to your app logic
+// helper used earlier - simple placeholder, implement according to your app logic
 async function revealContactDetails(listingId, phone) {
   // try to fetch listing and send owner contact to the phone
   try {
