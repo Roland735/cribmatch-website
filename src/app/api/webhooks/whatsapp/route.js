@@ -405,7 +405,7 @@ export async function POST(request) {
     }
   }
 
-  // Optional signature validation (keeping it, but non-fatal)
+  // Optional signature validation (log but non-fatal)
   try {
     const appSecret = process.env.APP_SECRET;
     const sigHeader = request.headers.get("x-hub-signature-256") || request.headers.get("X-Hub-Signature-256");
@@ -413,8 +413,8 @@ export async function POST(request) {
       const expectedSig = sigHeader.startsWith("sha256=") ? sigHeader.slice(7) : sigHeader;
       const hmac = crypto.createHmac("sha256", appSecret).update(rawText).digest("hex");
       if (!crypto.timingSafeEqual(Buffer.from(expectedSig, "hex"), Buffer.from(hmac, "hex"))) {
-        console.warn("[webhook] signature validation failed");
-        // Do NOT abort; just log and continue (optional: return 403 if you prefer strict)
+        console.warn("[webhook] signature validation failed (hmac mismatch)");
+        // non-fatal: continue processing
       }
     }
   } catch (e) {
@@ -423,16 +423,15 @@ export async function POST(request) {
 
   console.log("[webhook] payload keys:", Object.keys(payload));
 
-  // --- QUICK EARLY EXIT: non-actionable Meta entry (prevents 500s for minimal pings)
+  // EARLY-EXIT: meta minimal deliveries (prevents 500s for simple pings)
   try {
     if (payload && payload.object && Array.isArray(payload.entry)) {
-      // check whether any entry contains actionable keys
       const hasActionable = payload.entry.some((en) => {
         if (!en) return false;
         if (en.changes && en.changes.length) return true;
         if (en.messaging && en.messaging.length) return true;
         if (en.messages && en.messages.length) return true;
-        if (en.changes?.some((c) => c?.value?.data_exchange || c?.value?.flow)) return true;
+        if (en.changes?.some((c) => c?.value?.data_exchange || c?.value?.flow || c?.value?.messages)) return true;
         return false;
       });
       if (!hasActionable) {
@@ -468,7 +467,7 @@ export async function POST(request) {
     console.warn("[webhook] save raw event failed:", e);
   }
 
-  // Normalize messageBlock and phone candidates (same resilient logic as before)
+  // Normalize messageBlock and phone candidates
   let messageBlock = payload;
   if (payload.user_message) messageBlock = { text: payload.user_message };
   else if (payload.message_content && typeof payload.message_content === "string") {
@@ -521,7 +520,7 @@ export async function POST(request) {
     conversationId: payload.conversation_id || null,
   };
 
-  // Save message only if DB available, otherwise keep a lightweight savedMsg placeholder
+  // Save message only if DB available
   let savedMsg = null;
   try {
     if (dbAvailable && typeof Message?.create === "function") {
@@ -537,7 +536,7 @@ export async function POST(request) {
     savedMsg = null;
   }
 
-  // Conversation routing — robust and wrapped in try/catch
+  // Conversation routing
   try {
     const lastMeta = dbAvailable
       ? await (async () => {
@@ -551,7 +550,7 @@ export async function POST(request) {
       })()
       : null;
 
-    // If user typed "search" directly (no active meta), ask for confirmation (same messages as earlier)
+    // If user typed "search" directly (no active meta), ask for confirmation
     if (!lastMeta && /^search\b/i.test(parsedText || "")) {
       const confirmText = "Do you want to open the Search form now? Reply with Yes to continue or No to cancel.";
       if (dbAvailable) {
@@ -596,7 +595,6 @@ export async function POST(request) {
       return NextResponse.json({ ok: true, note: "menu-sent" });
     }
 
-    // Handle other states similarly (we keep the same logic as earlier, but skip DB writes if not available).
     // --- AWAITING_LIST_SELECTION
     if (lastMeta.state === "AWAITING_LIST_SELECTION") {
       const m = String(parsedText || "").trim();
@@ -625,8 +623,8 @@ export async function POST(request) {
     // --- AWAITING_SEARCH_CONFIRMATION
     if (lastMeta.state === "AWAITING_SEARCH_CONFIRMATION") {
       const reply = String(parsedText || "").trim().toLowerCase();
-      const positive = /^(yes|y|1|ok|sure|start)$/i;
-      const negative = /^(no|n|cancel|stop|later)$/i;
+      const positive = /^(yes|y|1|ok|sure|start|search|find)$/i;
+      const negative = /^(no|n|cancel|stop|later|not now)$/i;
 
       if (positive.test(reply)) {
         if (dbAvailable) {
@@ -662,7 +660,7 @@ export async function POST(request) {
       const t = String(parsedText || "").trim().toLowerCase();
       if (/^\s*1\s*$/.test(t) || t.startsWith("list") || t === "menu_list") {
         if (dbAvailable) {
-          const sys = await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "Okay — let's list a property. What's the property title?", meta: { state: "LISTING_WAIT_TITLE", draft: {} } }).catch(() => null);
+          await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "Okay — let's list a property. What's the property title?", meta: { state: "LISTING_WAIT_TITLE", draft: {} } }).catch(() => null);
         }
         await sendText(phone, "Okay — let's list a property. What's the property title?");
         return NextResponse.json({ ok: true, note: "start-listing" });
