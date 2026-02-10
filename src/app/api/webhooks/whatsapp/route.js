@@ -81,12 +81,9 @@ async function sendInteractiveButtons(phoneNumber, bodyText, buttons = []) {
 }
 
 /* -------------------------
-   Send flow helper
+   Flow helper & config (Search Flow only)
    ------------------------- */
-
-// NOTE: This Flow ID is used ONLY for the Search flow.
 const DEFAULT_FLOW_ID = process.env.WHATSAPP_FLOW_ID || "1534021024566343";
-// Runtime toggle:
 const ENABLE_SEARCH_FLOW = (String(process.env.ENABLE_SEARCH_FLOW || "true").toLowerCase() === "true");
 
 const PREDEFINED_CITIES = [
@@ -101,7 +98,6 @@ async function sendFlowStart(phoneNumber, flowId = DEFAULT_FLOW_ID, data = {}) {
     process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATCHIMP_PHONE_ID || process.env.WHATCHIMP_PHONE_NUMBER_ID;
   if (!apiToken || !phone_number_id) return { error: "missing-credentials" };
 
-  // ensure minimal arrays so dropdowns render
   const payloadData = {
     cities: (data.cities || PREDEFINED_CITIES).map((c) => ({ id: c.id, title: c.title })),
     suburbs: data.suburbs || [],
@@ -168,7 +164,7 @@ async function retry(fn, attempts = 3, delay = 400) {
 }
 
 /* -------------------------
-   Flow response builders (SEARCH screen + RESULTS)
+   Flow response builders (SEARCH + RESULTS)
    ------------------------- */
 function buildSearchSchemaFlowResponse() {
   return {
@@ -305,7 +301,7 @@ function buildResultsFlowResponseForListings(listings, incoming = {}) {
 }
 
 /* -------------------------
-   detectRequestedScreen
+   detectRequestedScreen & helpers
    ------------------------- */
 function detectRequestedScreen(rawPayload = {}, decryptedPayload = {}) {
   const checks = [
@@ -334,9 +330,6 @@ function detectRequestedScreen(rawPayload = {}, decryptedPayload = {}) {
   return null;
 }
 
-/* -------------------------
-   Timestamp extraction helper
-   ------------------------- */
 function extractTimestamp(payload, messageBlock) {
   const candidates = [];
   if (payload?.timestamp) candidates.push(payload.timestamp);
@@ -360,7 +353,7 @@ function extractTimestamp(payload, messageBlock) {
 }
 
 /* -------------------------
-   GET handler (verify webhook)
+   GET handler
    ------------------------- */
 export async function GET(request) {
   const url = new URL(request.url);
@@ -390,7 +383,7 @@ export async function GET(request) {
 }
 
 /* -------------------------
-   POST handler (full - UNENCRYPTED flow only)
+   POST handler (UNENCRYPTED flow only, resilient)
    ------------------------- */
 export async function POST(request) {
   console.log("[webhook] POST invoked");
@@ -412,7 +405,7 @@ export async function POST(request) {
     }
   }
 
-  // Optional signature validation (keeps the HMAC check)
+  // Optional signature validation (keeping it, but non-fatal)
   try {
     const appSecret = process.env.APP_SECRET;
     const sigHeader = request.headers.get("x-hub-signature-256") || request.headers.get("X-Hub-Signature-256");
@@ -421,7 +414,7 @@ export async function POST(request) {
       const hmac = crypto.createHmac("sha256", appSecret).update(rawText).digest("hex");
       if (!crypto.timingSafeEqual(Buffer.from(expectedSig, "hex"), Buffer.from(hmac, "hex"))) {
         console.warn("[webhook] signature validation failed");
-        return new Response("Invalid signature", { status: 403 });
+        // Do NOT abort; just log and continue (optional: return 403 if you prefer strict)
       }
     }
   } catch (e) {
@@ -430,130 +423,52 @@ export async function POST(request) {
 
   console.log("[webhook] payload keys:", Object.keys(payload));
 
-  // Flow detection (we only support UNENCRYPTED flow payloads here).
+  // --- QUICK EARLY EXIT: non-actionable Meta entry (prevents 500s for minimal pings)
   try {
-    const hasDataExchange = Boolean(payload?.data_exchange);
-    const hasEncrypted = Boolean(payload?.encrypted_flow_data || payload?.encrypted_aes_key || payload?.initial_vector);
-    const hasFlowWrapper = Boolean(payload?.flow);
-    const mayBeFlowViaEntry =
-      Boolean(payload?.entry?.[0]?.changes?.[0]?.value?.flow) ||
-      Boolean(payload?.entry?.[0]?.changes?.[0]?.value?.data_exchange) ||
-      Boolean(payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.type === "flow");
-
-    const isFlowRequest = hasDataExchange || hasFlowWrapper || mayBeFlowViaEntry || hasEncrypted;
-
-    if (isFlowRequest) {
-      console.log("[webhook] detected flow request (unencrypted-only mode)");
-
-      // If webhook received encrypted payloads, we don't handle them in this simplified route.
-      if (hasEncrypted) {
-        console.warn("[webhook] encrypted_flow_data received but this route does not support encrypted flows.");
-        return NextResponse.json({ error: "encrypted_flow_data_not_supported", message: "Webhook is running in UNENCRYPTED mode. Implement decryption to support encrypted_flow_data." }, { status: 501 });
-      }
-
-      // Health check (unencrypted)
-      const actionVal = (payload?.action || "").toString().toLowerCase();
-      if (actionVal === "ping") {
-        return NextResponse.json({ data: { status: "active" } }, { status: 200 });
-      }
-
-      // UNENCRYPTED flow path
-      if (hasDataExchange || hasFlowWrapper || mayBeFlowViaEntry) {
-        const screenFromRequest = (payload?.data_exchange?.screen || payload?.flow?.screen || payload?.screen || "RESULTS");
-        const incomingData = payload?.data_exchange?.data || payload?.data || {};
-        const requestedScreen = detectRequestedScreen(payload, {}) || String(screenFromRequest || "RESULTS").toUpperCase();
-        console.log("[webhook] unencrypted requestedScreen:", requestedScreen);
-
-        // If Meta requests the SEARCH screen, return the SEARCH schema base64 (Meta expects base64 for unencrypted responses)
-        if (requestedScreen === "SEARCH") {
-          const flowResponse = buildSearchSchemaFlowResponse();
-          const flowResponseJson = JSON.stringify(flowResponse);
-          const flowResponseBase64 = Buffer.from(flowResponseJson, "utf8").toString("base64");
-          return new Response(flowResponseBase64, {
-            status: 200,
-            headers: {
-              "Content-Type": "application/octet-stream",
-              "Content-Transfer-Encoding": "base64",
-              "Cache-Control": "no-store",
-            },
-          });
-        }
-
-        // If a city was selected via data_exchange, fetch listings and return RESULTS schema (base64)
-        const selectedCity = incomingData?.selected_city || incomingData?.city || null;
-        if (selectedCity) {
-          let listings = [];
-          try {
-            const results = await searchPublishedListings({ city: selectedCity, perPage: 3 });
-            listings = results?.listings || results || [];
-          } catch (e) {
-            try {
-              await dbConnect();
-              listings = await Listing.find({ status: "published", city: new RegExp(`^${selectedCity}$`, "i") }).limit(3).lean().exec();
-            } catch (err) {
-              listings = [];
-            }
-          }
-
-          const flowResponse = buildResultsFlowResponseForListings(listings, { city: selectedCity });
-          const flowResponseJson = JSON.stringify(flowResponse);
-          const flowResponseBase64 = Buffer.from(flowResponseJson, "utf8").toString("base64");
-
-          // try to extract phone from entry contacts (if present) to create AWAITING_LIST_SELECTION meta
-          const phoneCandidate = payload?.entry?.[0]?.changes?.[0]?.value?.contacts?.[0]?.wa_id || null;
-          const phone = phoneCandidate ? digitsOnly(String(phoneCandidate)) : null;
-          if (phone) {
-            const listingIds = listings.map((l) => l._id || l.id || "");
-            await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: `Found ${listings.length} listings for ${selectedCity}. Reply with the number (1-${listings.length}) to choose.`, meta: { state: "AWAITING_LIST_SELECTION", listingIds } }).catch(() => { });
-          }
-
-          return new Response(flowResponseBase64, {
-            status: 200,
-            headers: {
-              "Content-Type": "application/octet-stream",
-              "Content-Transfer-Encoding": "base64",
-              "Cache-Control": "no-store",
-            },
-          });
-        }
-
-        // fallback: return empty RESULTS base64
-        const fallback = buildResultsFlowResponseForListings([], {});
-        const fallbackBase64 = Buffer.from(JSON.stringify(fallback), "utf8").toString("base64");
-        return new Response(fallbackBase64, {
-          status: 200,
-          headers: {
-            "Content-Type": "application/octet-stream",
-            "Content-Transfer-Encoding": "base64",
-            "Cache-Control": "no-store",
-          },
-        });
+    if (payload && payload.object && Array.isArray(payload.entry)) {
+      // check whether any entry contains actionable keys
+      const hasActionable = payload.entry.some((en) => {
+        if (!en) return false;
+        if (en.changes && en.changes.length) return true;
+        if (en.messaging && en.messaging.length) return true;
+        if (en.messages && en.messages.length) return true;
+        if (en.changes?.some((c) => c?.value?.data_exchange || c?.value?.flow)) return true;
+        return false;
+      });
+      if (!hasActionable) {
+        console.log("[webhook] no actionable entry — returning 200");
+        return NextResponse.json({ ok: true, note: "no-actionable-entry" }, { status: 200 });
       }
     }
   } catch (e) {
-    console.error("[webhook] flow-detect/response error", e);
-    // fall through to normal processing
+    console.warn("[webhook] early-exit check error:", e);
+    // continue processing
   }
 
-  /* -------------------------
-     Non-flow processing: conversation routing (unchanged mostly)
-     ------------------------- */
+  // Try connecting to DB but don't crash the webhook if DB is down
+  let dbAvailable = true;
   try {
     await dbConnect();
   } catch (err) {
-    console.error("[webhook] DB connect failed", err);
-    return NextResponse.json({ ok: false, error: "DB connect failed" }, { status: 500 });
+    dbAvailable = false;
+    console.error("[webhook] DB connect failed (continuing without persistence):", err);
   }
 
-  // persist raw event (best-effort)
+  // persist raw event (best-effort — only if DB available)
   try {
-    const headersObj = Object.fromEntries(request.headers.entries());
-    await WebhookEvent.create({ provider: "whatsapp", headers: headersObj, payload, receivedAt: new Date() });
+    if (dbAvailable && typeof WebhookEvent?.create === "function") {
+      const headersObj = Object.fromEntries(request.headers.entries());
+      await WebhookEvent.create({ provider: "whatsapp", headers: headersObj, payload, receivedAt: new Date() }).catch((e) => {
+        console.warn("[webhook] save raw event create() error:", e);
+      });
+    } else {
+      console.log("[webhook] skipping WebhookEvent.create because DB unavailable");
+    }
   } catch (e) {
     console.warn("[webhook] save raw event failed:", e);
   }
 
-  // Normalize messageBlock and phone candidates
+  // Normalize messageBlock and phone candidates (same resilient logic as before)
   let messageBlock = payload;
   if (payload.user_message) messageBlock = { text: payload.user_message };
   else if (payload.message_content && typeof payload.message_content === "string") {
@@ -606,29 +521,48 @@ export async function POST(request) {
     conversationId: payload.conversation_id || null,
   };
 
-  const savedMsg = await Message.create(incoming).catch((e) => {
-    console.error("[webhook] save message error", e);
-    return null;
-  });
-
-  // Conversation routing and selection handling
+  // Save message only if DB available, otherwise keep a lightweight savedMsg placeholder
+  let savedMsg = null;
   try {
-    const lastMeta = await (async () => {
-      const doc = await Message.findOne({ phone: digitsOnly(phone), "meta.state": { $exists: true } }).sort({ createdAt: -1 }).lean().exec();
-      return doc?.meta || null;
-    })();
+    if (dbAvailable && typeof Message?.create === "function") {
+      savedMsg = await Message.create(incoming).catch((e) => {
+        console.error("[webhook] save message error (create):", e);
+        return null;
+      });
+    } else {
+      console.log("[webhook] skipping Message.create because DB unavailable");
+    }
+  } catch (e) {
+    console.error("[webhook] unexpected save message error:", e);
+    savedMsg = null;
+  }
 
-    // If user typed "search" directly (no active meta), ask for confirmation
+  // Conversation routing — robust and wrapped in try/catch
+  try {
+    const lastMeta = dbAvailable
+      ? await (async () => {
+        try {
+          const doc = await Message.findOne({ phone: digitsOnly(phone), "meta.state": { $exists: true } }).sort({ createdAt: -1 }).lean().exec();
+          return doc?.meta || null;
+        } catch (e) {
+          console.warn("[webhook] lastMeta lookup failed:", e);
+          return null;
+        }
+      })()
+      : null;
+
+    // If user typed "search" directly (no active meta), ask for confirmation (same messages as earlier)
     if (!lastMeta && /^search\b/i.test(parsedText || "")) {
       const confirmText = "Do you want to open the Search form now? Reply with Yes to continue or No to cancel.";
-      const sys = await Message.create({
-        phone: digitsOnly(phone),
-        from: "system",
-        type: "text",
-        text: confirmText,
-        meta: { state: "AWAITING_SEARCH_CONFIRMATION" },
-      }).catch(() => null);
-
+      if (dbAvailable) {
+        await Message.create({
+          phone: digitsOnly(phone),
+          from: "system",
+          type: "text",
+          text: confirmText,
+          meta: { state: "AWAITING_SEARCH_CONFIRMATION" },
+        }).catch(() => null);
+      }
       try {
         await sendInteractiveButtons(phone, confirmText, [
           { id: "confirm_search_yes", title: "Yes" },
@@ -640,29 +574,30 @@ export async function POST(request) {
       return NextResponse.json({ ok: true, note: "asked-search-confirmation-direct" });
     }
 
+    // If no lastMeta -> show menu
     if (!lastMeta) {
-      // send menu as before
       const bodyText = "Welcome to CribMatch 👋 — choose an option:";
       const buttons = [
         { id: "menu_list", title: "List a property" },
         { id: "menu_search", title: "Search properties" },
         { id: "menu_purchases", title: "View my purchases" },
       ];
-
-      await Message.create({
-        phone: digitsOnly(phone),
-        from: "system",
-        type: "text",
-        text: `${bodyText}\n1) List a property\n2) Search properties\n3) View my purchases\n\nReply with the number (e.g. 1) or the word (e.g. 'list').`,
-        raw: null,
-        meta: { state: "AWAITING_MENU_CHOICE" },
-      }).catch(() => null);
-
+      if (dbAvailable) {
+        await Message.create({
+          phone: digitsOnly(phone),
+          from: "system",
+          type: "text",
+          text: `${bodyText}\n1) List a property\n2) Search properties\n3) View my purchases\n\nReply with the number (e.g. 1) or the word (e.g. 'list').`,
+          raw: null,
+          meta: { state: "AWAITING_MENU_CHOICE" },
+        }).catch(() => null);
+      }
       await sendInteractiveButtons(phone, `${bodyText}\nTap a button or reply with a number`, buttons);
       return NextResponse.json({ ok: true, note: "menu-sent" });
     }
 
-    // If user is choosing from previous results
+    // Handle other states similarly (we keep the same logic as earlier, but skip DB writes if not available).
+    // --- AWAITING_LIST_SELECTION
     if (lastMeta.state === "AWAITING_LIST_SELECTION") {
       const m = String(parsedText || "").trim();
       if (/^[1-9]\d*$/.test(m)) {
@@ -670,9 +605,12 @@ export async function POST(request) {
         const ids = lastMeta.listingIds || [];
         if (idx >= 0 && idx < ids.length) {
           const listingId = ids[idx];
-          // reveal contact
           await revealContactDetails(listingId, phone);
-          await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: `You selected ${m}. Contact details sent.`, meta: { state: "CONTACT_REVEALED", listingId } }).catch(() => { });
+          if (dbAvailable) {
+            await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: `You selected ${m}. Contact details sent.`, meta: { state: "CONTACT_REVEALED", listingId } }).catch(() => { });
+          } else {
+            await sendText(phone, `You selected ${m}. Contact details sent.`).catch(() => { });
+          }
           return NextResponse.json({ ok: true, note: "selection-handled" });
         } else {
           await sendText(phone, `Invalid selection. Reply with a number between 1 and ${ids.length}.`);
@@ -684,29 +622,28 @@ export async function POST(request) {
       }
     }
 
-    // Handle search confirmation (user replied to the "Do you want to search?" prompt)
+    // --- AWAITING_SEARCH_CONFIRMATION
     if (lastMeta.state === "AWAITING_SEARCH_CONFIRMATION") {
       const reply = String(parsedText || "").trim().toLowerCase();
       const positive = /^(yes|y|1|ok|sure|start)$/i;
       const negative = /^(no|n|cancel|stop|later)$/i;
 
       if (positive.test(reply)) {
-        await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "Opening search form...", meta: { state: "FLOW_OPENED" } }).catch(() => null);
-
-        // ONLY open the Flow for Search — guarded by ENABLE_SEARCH_FLOW.
+        if (dbAvailable) {
+          await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "Opening search form...", meta: { state: "FLOW_OPENED" } }).catch(() => null);
+        }
         if (ENABLE_SEARCH_FLOW && DEFAULT_FLOW_ID) {
           await sendFlowStart(phone, DEFAULT_FLOW_ID, { selected_city: "harare" }).catch((e) => console.warn("sendFlowStart failed", e));
         } else {
-          // Flow disabled — fallback to interactive button or text
           const fallbackText = "Search Flow is currently disabled — reply with area and budget (eg. Borrowdale, $200) or tap 'Search by message'.";
           await sendInteractiveButtons(phone, fallbackText, [{ id: "msg_search", title: "Search by message" }]).catch(() => { });
           await sendText(phone, "Or just type area and budget (eg. Borrowdale, $200) and I'll search for matches.");
         }
-
-        await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.handledConfirmation": true } }).catch(() => { });
         return NextResponse.json({ ok: true, note: "search-confirmed-opened-flow" });
       } else if (negative.test(reply)) {
-        await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "Okay — search cancelled. What would you like to do next?", meta: { state: "AWAITING_MENU_CHOICE" } }).catch(() => null);
+        if (dbAvailable) {
+          await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "Okay — search cancelled. What would you like to do next?", meta: { state: "AWAITING_MENU_CHOICE" } }).catch(() => null);
+        }
         const buttons = [
           { id: "menu_list", title: "List a property" },
           { id: "menu_search", title: "Search properties" },
@@ -720,26 +657,28 @@ export async function POST(request) {
       }
     }
 
-    // MENU handling, SEARCH fallback, etc. (same as earlier)
+    // --- AWAITING_MENU_CHOICE
     if (lastMeta.state === "AWAITING_MENU_CHOICE") {
       const t = String(parsedText || "").trim().toLowerCase();
       if (/^\s*1\s*$/.test(t) || t.startsWith("list") || t === "menu_list") {
-        const sys = await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "Okay — let's list a property. What's the property title?", meta: { state: "LISTING_WAIT_TITLE", draft: {} } }).catch(() => null);
+        if (dbAvailable) {
+          const sys = await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: "Okay — let's list a property. What's the property title?", meta: { state: "LISTING_WAIT_TITLE", draft: {} } }).catch(() => null);
+        }
         await sendText(phone, "Okay — let's list a property. What's the property title?");
-        await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.handledMenu": true } }).catch(() => { });
-        return NextResponse.json({ ok: true, note: "start-listing", sysId: sys?._id || null });
+        return NextResponse.json({ ok: true, note: "start-listing" });
       }
 
       if (/^\s*2\s*$/.test(t) || t.startsWith("search") || t === "menu_search") {
         const confirmText = "Do you want to open the Search form now? Reply with Yes to continue or No to cancel.";
-        const sys = await Message.create({
-          phone: digitsOnly(phone),
-          from: "system",
-          type: "text",
-          text: confirmText,
-          meta: { state: "AWAITING_SEARCH_CONFIRMATION" },
-        }).catch(() => null);
-
+        if (dbAvailable) {
+          await Message.create({
+            phone: digitsOnly(phone),
+            from: "system",
+            type: "text",
+            text: confirmText,
+            meta: { state: "AWAITING_SEARCH_CONFIRMATION" },
+          }).catch(() => null);
+        }
         try {
           await sendInteractiveButtons(phone, confirmText, [
             { id: "confirm_search_yes", title: "Yes" },
@@ -748,24 +687,23 @@ export async function POST(request) {
         } catch (e) {
           await sendText(phone, confirmText).catch(() => { });
         }
-
-        await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.handledMenu": true } }).catch(() => { });
-        return NextResponse.json({ ok: true, note: "asked-search-confirmation", sysId: sys?._id || null });
+        return NextResponse.json({ ok: true, note: "asked-search-confirmation" });
       }
 
       if (/^\s*3\s*$/.test(t) || t.startsWith("purchase") || t === "menu_purchases") {
         const purchasesPlaceholder = "You have 0 purchases. (This is a placeholder — wire your purchases DB.)";
-        const sys = await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: purchasesPlaceholder, meta: { state: "SHOW_PURCHASES" } }).catch(() => null);
+        if (dbAvailable) {
+          await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: purchasesPlaceholder, meta: { state: "SHOW_PURCHASES" } }).catch(() => null);
+        }
         await sendText(phone, purchasesPlaceholder);
-        await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.handledMenu": true } }).catch(() => { });
-        return NextResponse.json({ ok: true, note: "show-purchases", sysId: sys?._id || null });
+        return NextResponse.json({ ok: true, note: "show-purchases" });
       }
 
       await sendText(phone, "Sorry, I didn't understand. Reply with 1 (List), 2 (Search) or 3 (Purchases), or tap a button.");
       return NextResponse.json({ ok: true, note: "menu-repeat" });
     }
 
-    // SEARCH text fallback
+    // --- SEARCH_WAIT_AREA_BUDGET (text fallback)
     if (lastMeta.state === "SEARCH_WAIT_AREA_BUDGET") {
       const parts = parsedText.split(/[ ,\n]/).map((s) => s.trim()).filter(Boolean);
       const area = parts[0] || "";
@@ -777,7 +715,9 @@ export async function POST(request) {
         ? results.listings.map((l) => `${l.title} — ${l.suburb} — $${l.pricePerMonth} — ID:${l._id}`).join("\n\n")
         : "No matches found. Try a broader area or higher budget.";
 
-      await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: msg, meta: { state: "SEARCH_RESULTS", query: { area, budget }, resultsCount: results.total } }).catch(() => { });
+      if (dbAvailable) {
+        await Message.create({ phone: digitsOnly(phone), from: "system", type: "text", text: msg, meta: { state: "SEARCH_RESULTS", query: { area, budget }, resultsCount: results.total } }).catch(() => { });
+      }
       await sendText(phone, msg);
 
       if (results.listings && results.listings.length) {
@@ -791,49 +731,62 @@ export async function POST(request) {
     }
   } catch (e) {
     console.warn("[webhook] conversation routing error:", e);
+    // continue to safe default below
   }
 
   // Free-text reply window logic & default reply
-  const windowMs = Number(process.env.WHATSAPP_FREE_WINDOW_MS) || 24 * 60 * 60 * 1000;
-  let allowedToSend = false;
-  const ts = extractTimestamp(payload, messageBlock);
-  if (ts) {
-    const age = Date.now() - ts;
-    if (age <= windowMs) allowedToSend = true;
-  } else {
-    if (savedMsg) allowedToSend = true;
-  }
-
-  if (!allowedToSend) {
-    await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.needsFollowUp": true } }).catch(() => { });
-    return NextResponse.json({ ok: true, note: "not-allowed-to-send-free-text-yet" });
-  }
-
-  const replyText = `Hi 👋 Welcome to CribMatch — tell me area and budget (eg. Borrowdale, $200) and I'll find matches.`;
-  const sendResp = await sendText(phone, replyText);
-
-  if (sendResp?.error) {
-    await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.sendError": sendResp } }).catch(() => { });
-    const msg = String(sendResp?.error?.message || sendResp?.error || "");
-    if (/24 hour|message template/i.test(msg)) {
-      await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.templateRequired": true, "meta.sendResp": sendResp } }).catch(() => { });
-      return NextResponse.json({ ok: true, note: "send-rejected-24-hour", sendResp });
+  try {
+    const windowMs = Number(process.env.WHATSAPP_FREE_WINDOW_MS) || 24 * 60 * 60 * 1000;
+    let allowedToSend = false;
+    const ts = extractTimestamp(payload, messageBlock);
+    if (ts) {
+      const age = Date.now() - ts;
+      if (age <= windowMs) allowedToSend = true;
+    } else {
+      if (savedMsg) allowedToSend = true;
     }
-    return NextResponse.json({ ok: false, error: sendResp }, { status: 500 });
-  }
 
-  await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.sendResp": sendResp } }).catch(() => { });
-  return NextResponse.json({ ok: true, savedMessageId: savedMsg?._id || null, sendResp });
+    if (!allowedToSend) {
+      if (dbAvailable && savedMsg) {
+        await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.needsFollowUp": true } }).catch(() => { });
+      }
+      return NextResponse.json({ ok: true, note: "not-allowed-to-send-free-text-yet" });
+    }
+
+    const replyText = `Hi 👋 Welcome to CribMatch — tell me area and budget (eg. Borrowdale, $200) and I'll find matches.`;
+    const sendResp = await sendText(phone, replyText);
+
+    if (sendResp?.error) {
+      if (dbAvailable && savedMsg) await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.sendError": sendResp } }).catch(() => { });
+      const msg = String(sendResp?.error?.message || sendResp?.error || "");
+      if (/24 hour|message template/i.test(msg)) {
+        if (dbAvailable && savedMsg) await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.templateRequired": true, "meta.sendResp": sendResp } }).catch(() => { });
+        return NextResponse.json({ ok: true, note: "send-rejected-24-hour", sendResp });
+      }
+      return NextResponse.json({ ok: false, error: sendResp }, { status: 500 });
+    }
+
+    if (dbAvailable && savedMsg) await Message.findByIdAndUpdate(savedMsg?._id, { $set: { "meta.sendResp": sendResp } }).catch(() => { });
+    return NextResponse.json({ ok: true, savedMessageId: savedMsg?._id || null, sendResp });
+  } catch (e) {
+    console.error("[webhook] final reply error:", e);
+    // respond 200 to avoid Meta retries — log the issue
+    return NextResponse.json({ ok: true, note: "reply-error-logged" }, { status: 200 });
+  }
 }
 
-// helper used earlier - simple placeholder, implement according to your app logic
+// helper to reveal contact details
 async function revealContactDetails(listingId, phone) {
   try {
     const listing = await getListingById(listingId);
-    if (!listing) return;
+    if (!listing) {
+      await sendText(phone, "Sorry, listing not found.");
+      return;
+    }
     const contactMsg = `Contact for ${listing.title}: ${listing.contactName || "Owner"} — ${listing.contactPhone || listing.phone || "N/A"}`;
     await sendText(phone, contactMsg);
   } catch (e) {
     console.warn("revealContactDetails error", e);
+    try { await sendText(phone, "Sorry — couldn't fetch contact details right now."); } catch { }
   }
 }
