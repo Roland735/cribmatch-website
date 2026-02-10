@@ -965,7 +965,7 @@ export async function POST(request) {
   return NextResponse.json({ ok: true, savedMessageId: savedMsg?._id || null, sendResp });
 }
 
-// helper used earlier - simple placeholder, implement according to your app logic
+// helper used earlier- simple placeholder, implement according to your app logic
 async function revealContactDetails(listingId, phone) {
   // try to fetch listing and send owner contact to the phone
   try {
