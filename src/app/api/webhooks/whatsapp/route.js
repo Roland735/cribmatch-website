@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 
 /* -------------------------
    Helpers
-   ------------------------- */
+------------------------- */
 function digitsOnly(v) {
   return String(v || "").replace(/\D/g, "");
 }
@@ -79,8 +79,8 @@ async function sendInteractiveButtons(phoneNumber, bodyText, buttons = []) {
 }
 
 /* -------------------------
-   Flow helper & config (Search Flow only)
-   ------------------------- */
+   Flow helpers & config
+------------------------- */
 const DEFAULT_FLOW_ID = process.env.WHATSAPP_FLOW_ID || "1534021024566343";
 const ENABLE_SEARCH_FLOW = (String(process.env.ENABLE_SEARCH_FLOW || "true").toLowerCase() === "true");
 
@@ -91,6 +91,7 @@ const PREDEFINED_CITIES = [
 ];
 
 async function sendFlowStart(phoneNumber, flowId = DEFAULT_FLOW_ID, data = {}) {
+  // start/navigate a flow screen (generalised). Use for sending SEARCH or RESULTS screens.
   const apiToken = process.env.WHATSAPP_API_TOKEN;
   const phone_number_id = process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_ID;
   if (!apiToken || !phone_number_id) return { error: "missing-credentials" };
@@ -122,18 +123,18 @@ async function sendFlowStart(phoneNumber, flowId = DEFAULT_FLOW_ID, data = {}) {
     type: "interactive",
     interactive: {
       type: "flow",
-      header: { type: "text", text: "Find rentals — filters" },
-      body: { text: "Please press continue to SEARCH." },
-      footer: { text: "Search" },
+      header: { type: "text", text: data.headerText || "Find rentals — filters" },
+      body: { text: data.bodyText || "Please press continue to SEARCH." },
+      footer: { text: data.footerText || "Search" },
       action: {
         name: "flow",
         parameters: {
           flow_message_version: "3",
           flow_id: String(flowId),
-          flow_cta: "Search",
+          flow_cta: data.flow_cta || "Search",
           flow_action: "navigate",
           flow_action_payload: {
-            screen: "SEARCH",
+            screen: data.screen || "SEARCH",
             data: payloadData,
           },
         },
@@ -144,9 +145,17 @@ async function sendFlowStart(phoneNumber, flowId = DEFAULT_FLOW_ID, data = {}) {
   return whatsappPost(phone_number_id, apiToken, interactivePayload);
 }
 
+/**
+ * Send a flow navigate to a specific screen with arbitrary data (RESULTS, SEARCH, etc.)
+ * Returns the response from the Meta API and logs it where called.
+ */
+async function sendFlowNavigate(phoneNumber, screen = "RESULTS", data = {}) {
+  return sendFlowStart(phoneNumber, DEFAULT_FLOW_ID, { screen, ...data });
+}
+
 /* -------------------------
    Simple retry
-   ------------------------- */
+------------------------- */
 async function retry(fn, attempts = 3, delay = 400) {
   let lastErr;
   for (let i = 0; i < attempts; i++) {
@@ -161,21 +170,8 @@ async function retry(fn, attempts = 3, delay = 400) {
 }
 
 /* -------------------------
-   Flow send wrapper (re-usable)
-   ------------------------- */
-async function sendFlow(toPhone, opts = {}) {
-  // wrapper that calls sendFlowStart to keep payload consistent
-  // returns the response from whatsappPost/sendFlowStart
-  try {
-    return await sendFlowStart(toPhone, DEFAULT_FLOW_ID, opts.data || {});
-  } catch (e) {
-    return { error: String(e) };
-  }
-}
-
-/* -------------------------
    Dedupe: DB-backed if available, in-memory fallback
-   ------------------------- */
+------------------------- */
 const SEEN_TTL_MS = 1000 * 60 * 5; // 5 minutes
 const seenMap = new Map();
 
@@ -201,7 +197,6 @@ async function isAlreadyHandledMsg(dbAvailable, msgId) {
       const existing = await Message.findOne({ wa_message_id: msgId, "meta.handledHiFlow": true }).lean().exec();
       return Boolean(existing);
     } catch (e) {
-      // DB check failed -> treat as not handled (fall back to memory)
       return false;
     }
   }
@@ -219,12 +214,105 @@ async function markHandledMsg(dbAvailable, msgId) {
       ).exec();
       return;
     } catch (e) {
-      // DB write failed -> fall back to memory marking
       markSeenInMemory(msgId);
       return;
     }
   }
   markSeenInMemory(msgId);
+}
+
+/* -------------------------
+   detectRequestedScreen & helpers (to catch flow completions)
+------------------------- */
+function detectRequestedScreen(rawPayload = {}, decryptedPayload = {}) {
+  const checks = [
+    rawPayload?.data_exchange?.screen,
+    rawPayload?.flow?.screen,
+    rawPayload?.screen,
+    rawPayload?.action,
+    rawPayload?.action?.payload?.screen,
+    rawPayload?.entry?.[0]?.changes?.[0]?.value?.data_exchange?.screen,
+    rawPayload?.entry?.[0]?.changes?.[0]?.value?.flow?.screen,
+    decryptedPayload?.screen,
+    decryptedPayload?.flow,
+    decryptedPayload?.data?.screen,
+    decryptedPayload?.data_exchange?.screen,
+    decryptedPayload?.action?.payload?.screen,
+    decryptedPayload?.data?.selected_city,
+    decryptedPayload?.data?.city,
+  ];
+  for (const c of checks) {
+    if (!c) continue;
+    try {
+      const s = String(c).trim();
+      if (s) return s.toUpperCase();
+    } catch (e) { }
+  }
+  return null;
+}
+
+/**
+ * Extract flow form data (returns object with possible fields)
+ * Handles typical shapes: entry[0].changes[0].value.data_exchange, value.flow.data, or top-level payload.data
+ */
+function getFlowDataFromPayload(payload) {
+  try {
+    const v = payload?.entry?.[0]?.changes?.[0]?.value || payload;
+    // possible places:
+    // v.data_exchange, v.flow (or v.flow.data), v.data
+    const data =
+      v?.data_exchange?.data ||
+      v?.data_exchange ||
+      v?.flow?.data ||
+      v?.flow ||
+      v?.data ||
+      payload?.data ||
+      {};
+    // If the flow submission comes in a 'complete' payload the keys could be in payload.action.payload
+    const alt = payload?.action?.payload || {};
+    return { ...data, ...alt };
+  } catch (e) {
+    return {};
+  }
+}
+
+/* -------------------------
+   Small helper: get canonical message object + id + text
+------------------------- */
+function getCanonicalMessage(payload) {
+  // try several common shapes
+  const msg =
+    payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0] ||
+    payload?.messages?.[0] ||
+    payload?.message ||
+    payload?.message_content ||
+    payload?.user_message ||
+    null;
+
+  // message id candidates
+  const id =
+    (msg && (msg.id || msg._id || msg.message_id)) ||
+    payload?.message_id ||
+    payload?.wa_message_id ||
+    payload?.entry?.[0]?.id ||
+    null;
+
+  // phone / from
+  const from =
+    (msg && (msg.from || msg.sender || msg.from_phone)) ||
+    payload?.from ||
+    payload?.chat_id ||
+    payload?.phone_number ||
+    (payload?.entry?.[0]?.changes?.[0]?.value?.contacts?.[0]?.wa_id) ||
+    null;
+
+  // text body (basic)
+  const text =
+    (msg && ((msg.text && (msg.text.body || msg.text)) || msg.body || msg.body?.text || msg?.interactive?.button_reply?.id || msg?.interactive?.button_reply?.title)) ||
+    (typeof payload?.user_message === "string" ? payload.user_message : "") ||
+    "";
+
+  return { msg, id: String(id || ""), from: String(from || ""), text: String(text || "") };
 }
 
 /* -------------------------
@@ -258,51 +346,12 @@ export async function GET(request) {
 }
 
 /* -------------------------
-   Small helper: get canonical message object + id + text
-------------------------- */
-function getCanonicalMessage(payload) {
-  // try several common shapes
-  const msg =
-    payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0] ||
-    payload?.messages?.[0] ||
-    payload?.message ||
-    payload?.message_content ||
-    payload?.user_message ||
-    null;
-
-  // message id candidates
-  const id =
-    (msg && (msg.id || msg._id || msg.message_id)) ||
-    payload?.message_id ||
-    payload?.wa_message_id ||
-    payload?.entry?.[0]?.id ||
-    null;
-
-  // phone / from
-  const from =
-    (msg && (msg.from || msg.sender || msg.from_phone)) ||
-    payload?.from ||
-    payload?.chat_id ||
-    payload?.phone_number ||
-    (payload?.entry?.[0]?.changes?.[0]?.value?.contacts?.[0]?.wa_id) ||
-    null;
-
-  // text body
-  const text =
-    (msg && ((msg.text && (msg.text.body || msg.text)) || msg.body || msg.body?.text || msg?.interactive?.button_reply?.id || msg?.interactive?.button_reply?.title)) ||
-    (typeof payload?.user_message === "string" ? payload.user_message : "") ||
-    "";
-
-  return { msg, id: String(id || ""), from: String(from || ""), text: String(text || "") };
-}
-
-/* -------------------------
-   POST handler — patched to avoid duplicate sends and only send Flow on hi
+   POST handler — patched to handle hi and Flow SEARCH -> RESULTS
 ------------------------- */
 export async function POST(request) {
   console.log("[webhook] POST invoked");
 
-  // read raw text for logging / optional signature verification
+  // read raw text for logging / signature verification
   let rawText = "";
   try {
     rawText = await request.text();
@@ -329,7 +378,6 @@ export async function POST(request) {
       const hmac = crypto.createHmac("sha256", appSecret).update(rawText).digest("hex");
       if (!crypto.timingSafeEqual(Buffer.from(expectedSig, "hex"), Buffer.from(hmac, "hex"))) {
         console.warn("[webhook] signature validation failed (hmac mismatch)");
-        // continue processing, non-fatal
       }
     }
   } catch (e) {
@@ -359,7 +407,7 @@ export async function POST(request) {
     console.warn("[webhook] save raw event failed:", e);
   }
 
-  // canonicalize  message
+  // canonicalize message (for dedupe / hi handling)
   const { msg, id: msgId, from: phone, text: parsedText } = getCanonicalMessage(payload);
   console.log("[webhook] parsedMessage:", { msgId, phone, parsedText });
 
@@ -368,7 +416,7 @@ export async function POST(request) {
     return NextResponse.json({ ok: true, note: "no-id-or-phone" });
   }
 
-  // Save incoming message best-effort (if DB available) so we have a record to update
+  // Save incoming message best-effort (DB)
   let savedMsg = null;
   try {
     if (dbAvailable && typeof Message?.create === "function") {
@@ -383,12 +431,10 @@ export async function POST(request) {
         meta: {},
         conversationId: payload.conversation_id || null,
       };
-      // Use upsert-like behavior if wa_message_id present to avoid duplicates
       if (msgId) {
         try {
           savedMsg = await Message.findOneAndUpdate({ wa_message_id: msgId }, { $setOnInsert: doc }, { upsert: true, new: true }).exec();
         } catch (e) {
-          // fallback create
           savedMsg = await Message.create(doc).catch(() => null);
         }
       } else {
@@ -401,50 +447,166 @@ export async function POST(request) {
     console.warn("[webhook] save message error (create):", e);
   }
 
-  // 1) Deduplicate check (DB preferred, memory fallback)
+  // Deduplicate check (DB preferred, memory fallback)
   try {
     const alreadyHandled = await isAlreadyHandledMsg(dbAvailable, msgId);
     if (alreadyHandled) {
       console.log("[webhook] message already handled (dedupe) — skipping further processing", msgId);
       return NextResponse.json({ ok: true, note: "dedupe-skip" });
     }
-    // mark as handled early to prevent race conditions (we'll persist this flag properly below)
+    // mark as handled early to prevent race conditions
     await markHandledMsg(dbAvailable, msgId);
   } catch (e) {
     console.warn("[webhook] dedupe check/mark error:", e);
-    // continue — we still try to handle, but risk duplicate on failure
   }
 
-  // 2) ONLY handle "hi"-like messages here — send FLOW once and return immediately.
+  /* -------------
+     1) Handle "hi" -> open SEARCH flow (existing behaviour)
+     ------------- */
   try {
     const isHi = /^(hi|hello|hey|start)$/i.test(String(parsedText || "").trim());
     if (isHi) {
-      // Send Flow (best-effort). Use minimal options; you can expand payload by passing second arg.
-      const sendResp = await sendFlow(phone, {});
-      // Update Message doc to reflect we handled the Hi->Flow
+      // Send SEARCH flow start (navigate to SEARCH screen)
+      const resp = await sendFlowNavigate(phone, "SEARCH", {
+        headerText: "Find rentals — filters",
+        bodyText: "Please press continue to SEARCH.",
+        footerText: "Search",
+        // optionally include default data (predefined cities/suburbs)
+        data: {
+          cities: PREDEFINED_CITIES,
+          suburbs: [
+            { id: "any", title: "Any" },
+            { id: "borrowdale", title: "Borrowdale" },
+            { id: "mount_pleasant", title: "Mount Pleasant" },
+            { id: "avondale", title: "Avondale" },
+          ],
+        },
+      });
+      console.log("[webhook] sendFlowNavigate(SEARCH) response:", resp);
+      // Update message doc to reflect we sent the flow
       try {
         if (dbAvailable && savedMsg && savedMsg._id) {
-          await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.handledHiFlow": true, "meta.sendResp": sendResp } }).catch(() => null);
+          await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.sentSearchFlow": true, "meta.sendResp": resp } }).catch(() => null);
         }
       } catch (e) {
-        console.warn("[webhook] updating saved message after sending flow failed:", e);
+        console.warn("[webhook] updating saved message after sending search flow failed:", e);
       }
-
-      console.log("[webhook] Flow sent for hi. resp:", sendResp);
-      // IMPT — return immediately so no other code path runs and sends extra messages
-      return NextResponse.json({ ok: true, note: "flow-sent-on-hi", sendResp }, { status: 200 });
+      return NextResponse.json({ ok: true, note: "search-flow-sent", sendResp: resp }, { status: 200 });
     }
   } catch (e) {
-    console.error("[webhook] error in hi-flow handling:", e);
-    // Do not fall through to other message handling; return safe response
-    return NextResponse.json({ ok: true, note: "hi-flow-error-logged" }, { status: 200 });
+    console.error("[webhook] error sending search flow:", e);
+    return NextResponse.json({ ok: true, note: "search-flow-error-logged" }, { status: 200 });
   }
 
-  // If not a hi, we intentionally do NOT run the rest of the old flows here.
-  // This file is patched to ensure hi -> single flow only. For other interactions,
-  // re-enable specific handlers (search, menu, listing) with their own explicit guards.
-  console.log("[webhook] non-hi message received — no automatic reply configured (safe no-op).");
-  return NextResponse.json({ ok: true, note: "ignored-non-hi" }, { status: 200 });
+  /* -------------
+     2) Handle flow submissions (user completed the SEARCH flow)
+     We detect the requested screen from the payload, and if it's SEARCH
+     (i.e., user completed the form) we run the search and send back a RESULTS flow.
+     ------------- */
+  try {
+    const requestedScreen = detectRequestedScreen(payload, msg || {});
+    console.log("[webhook] detectRequestedScreen ->", requestedScreen);
+
+    if (requestedScreen === "SEARCH") {
+      // Extract submitted form data
+      const flowData = getFlowDataFromPayload(payload);
+      console.log("[webhook] flowData (SEARCH):", flowData);
+
+      // map fields for searchPublishedListings
+      const q = String(flowData.q || flowData.keyword || flowData.query || `${flowData.suburb || ""} ${flowData.city || ""}`).trim();
+      const minPrice = flowData.min_price || flowData.minPrice || flowData.min || null;
+      const maxPrice = flowData.max_price || flowData.maxPrice || flowData.max || null;
+
+      // parse numbers where possible
+      const minP = minPrice ? Number(String(minPrice).replace(/[^\d.]/g, "")) : null;
+      const maxP = maxPrice ? Number(String(maxPrice).replace(/[^\d.]/g, "")) : null;
+
+      // perform the search (uses your existing helper). perPage set to 6 for quick results
+      let results = { listings: [], total: 0 };
+      try {
+        results = await (async () => {
+          try {
+            return await searchPublishedListings({ q, minPrice: minP, maxPrice: maxP, perPage: 6 });
+          } catch (e) {
+            console.warn("[webhook] searchPublishedListings failed:", e);
+            return { listings: [], total: 0 };
+          }
+        })();
+      } catch (e) {
+        console.warn("[webhook] searchPublishedListings unexpected error:", e);
+      }
+
+      // prepare data for RESULTS screen: include listing items and listingText fields
+      const listings = (results.listings || []).slice(0, 6).map((l) => ({
+        id: l._id || l.id || "",
+        title: l.title || "",
+        suburb: l.suburb || "",
+        pricePerMonth: l.pricePerMonth || l.price || 0,
+        bedrooms: l.bedrooms || "",
+      }));
+
+      const listingText = (results.listings || []).map((l, i) => `${i + 1}) ${l.title} — ${l.suburb || ""} — $${l.pricePerMonth || l.price || "N/A"} — ID:${l._id || l.id || i}`).slice(0, 3);
+
+      const resultsPayloadData = {
+        resultsCount: results.total || listings.length,
+        listings: listings,
+        querySummary: `Top ${listings.length} results`,
+        listingText0: listingText[0] || "",
+        listingText1: listingText[1] || "",
+        listingText2: listingText[2] || "",
+        hasResult0: Boolean(listingText[0]),
+        hasResult1: Boolean(listingText[1]),
+        hasResult2: Boolean(listingText[2]),
+        city: flowData.city || flowData.selected_city || "",
+        suburb: flowData.suburb || flowData.selected_suburb || "",
+        property_category: flowData.property_category || flowData.selected_category || "",
+        property_type: flowData.property_type || flowData.selected_type || "",
+        bedrooms: flowData.bedrooms || flowData.selected_bedrooms || "",
+        min_price: Number(flowData.min_price || flowData.minPrice || 0),
+        max_price: Number(flowData.max_price || flowData.maxPrice || 0),
+        q: q || "",
+        cities: PREDEFINED_CITIES,
+      };
+
+      // send the RESULTS flow (navigate to RESULTS screen and include resultsPayloadData)
+      const resp = await sendFlowNavigate(phone, "RESULTS", { data: resultsPayloadData, headerText: "Search results", bodyText: listingText.join("\n\n"), footerText: "Done" });
+
+      // console log the flow search respond (as requested)
+      console.log("[webhook] sendFlowNavigate(RESULTS) response:", resp);
+
+      // persist send response to Message doc (if available)
+      try {
+        if (dbAvailable && savedMsg && savedMsg._id) {
+          await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.searchResultsCount": results.total || listings.length, "meta.sendResp_resultsFlow": resp } }).catch(() => null);
+        }
+      } catch (e) {
+        console.warn("[webhook] updating saved message after sending results flow failed:", e);
+      }
+
+      // Also send a fallback text to ensure user sees something if Flow fails (best-effort)
+      if (resp?.error) {
+        const fallbackText = listings.length
+          ? listings.map((l, i) => `${i + 1}) ${l.title} — ${l.suburb} — $${l.pricePerMonth}`).join("\n\n")
+          : "No matches found. Try a broader area or higher budget.";
+        try {
+          await sendText(phone, fallbackText);
+        } catch (e) {
+          console.warn("[webhook] fallback sendText after flow error failed:", e);
+        }
+      }
+
+      // Return immediately — we've responded to the flow submission
+      return NextResponse.json({ ok: true, note: "search-handled-results-sent", sendResp: resp }, { status: 200 });
+    }
+  } catch (e) {
+    console.error("[webhook] error handling flow SEARCH -> RESULTS:", e);
+    // return safe 200 to avoid retries
+    return NextResponse.json({ ok: true, note: "flow-search-error-logged" }, { status: 200 });
+  }
+
+  // If we reach here, it's not a hi and not a SEARCH flow submission
+  console.log("[webhook] non-hi, non-search message received — no automatic reply configured (safe no-op).");
+  return NextResponse.json({ ok: true, note: "ignored-non-hi-non-search" }, { status: 200 });
 }
 
 /* -------------------------
