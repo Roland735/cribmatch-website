@@ -105,7 +105,7 @@ async function sendInteractiveButtons(phoneNumber, bodyText, buttons = []) {
 /* -------------------------
    Flow helpers (optional interactive flow)
 ------------------------- */
-const DEFAULT_FLOW_ID = process.env.WHATSAPP_FLOW_ID || "";
+const DEFAULT_FLOW_ID = process.env.WHATSAPP_FLOW_ID || "1534021024566343";
 const PREDEFINED_CITIES = [{ id: "harare", title: "Harare" }, { id: "bulawayo", title: "Bulawayo" }, { id: "mutare", title: "Mutare" }];
 
 async function sendSearchFlow(phoneNumber, data = {}) {
