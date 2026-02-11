@@ -182,6 +182,28 @@ async function sendInteractiveList(phoneNumber, bodyText, rows = [], opts = {}) 
   return res;
 }
 
+async function saveSearchContext(phone, listingIds, resultObjects, dbAvailable) {
+  try {
+    if (!dbAvailable) return;
+    if (typeof Message?.create !== "function") return;
+    await Message.create({
+      phone: digitsOnly(phone),
+      from: "system",
+      type: "system",
+      text: "SEARCH_RESULTS",
+      raw: null,
+      meta: {
+        kind: "SEARCH_RESULTS",
+        state: "AWAITING_LIST_SELECTION",
+        listingIds: Array.isArray(listingIds) ? listingIds : [],
+        resultObjects: Array.isArray(resultObjects) ? resultObjects : [],
+      },
+    });
+  } catch (e) {
+    console.warn("[saveSearchContext] failed", e);
+  }
+}
+
 /* -------------------------
    Flow helpers (search & results)
 ------------------------- */
@@ -603,19 +625,18 @@ export async function POST(request) {
     }
 
     const ids = items.map(getIdFromListing);
-    const listRows = items.map((l, i) => {
-      const listingId = getIdFromListing(l);
-      const title = String(l.title || "Listing").slice(0, 24);
-      const description = `${String(l.suburb || "").trim()} — $${l.pricePerMonth || l.price || "N/A"}`.replace(/\s+/g, " ").trim();
-      return { id: `select_${listingId}`, title, description };
-    });
+    const numbered = items
+      .map((l, i) => {
+        const title = String(l.title || "Listing").trim();
+        const suburb = String(l.suburb || "").trim();
+        const price = l.pricePerMonth || l.price || "N/A";
+        const id = getIdFromListing(l);
+        return `${i + 1}) ${title} — ${suburb} — $${price} — ID:${id}`;
+      })
+      .join("\n\n");
 
-    await sendInteractiveList(
-      phone,
-      "Search results — tap a listing to view contact details. You can also type menu anytime.",
-      listRows,
-      { headerText: "Search Results", buttonText: "View", sectionTitle: "Listings" }
-    );
+    await saveSearchContext(phone, ids, items, dbAvailable);
+    await sendText(phone, `Reply with the number (e.g. 1) to get contact details.\n\n${numbered}`);
 
     selectionMap.set(phone, { ids, results: items });
     if (dbAvailable && savedMsg && savedMsg._id) {
@@ -881,10 +902,11 @@ export async function POST(request) {
       ? lastMeta.resultObjects
       : (mem?.results || []);
 
-    if ((!lastIds.length && !lastResults.length) && dbAvailable && typeof Message?.findOne === "function") {
+    if (dbAvailable && typeof Message?.findOne === "function") {
       const doc = await Message.findOne({
         phone,
         $or: [
+          { "meta.kind": "SEARCH_RESULTS" },
           { "meta.listingIds.0": { $exists: true } },
           { "meta.resultObjects.0": { $exists: true } },
           { "meta.state": "AWAITING_LIST_SELECTION" },
