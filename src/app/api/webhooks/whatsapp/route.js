@@ -518,6 +518,61 @@ export async function POST(request) {
   const cmd = userRaw.toLowerCase();
 
   /* -------------------------
+     Flow response handling (Search)
+  ------------------------- */
+  const flowData = getFlowDataFromPayload(payload);
+  const screen = detectRequestedScreen(payload);
+
+  if (screen === "SEARCH" || (flowData && (flowData.city || flowData.q || flowData.min_price || flowData.max_price))) {
+    console.log("[webhook] flow search submission:", flowData);
+
+    // Execute search
+    let results = { listings: [], total: 0 };
+    try {
+      results = await searchPublishedListings({
+        q: flowData.q || "",
+        city: flowData.city || "",
+        suburb: flowData.suburb || "",
+        minPrice: flowData.min_price || null,
+        maxPrice: flowData.max_price || null,
+        propertyCategory: flowData.property_category || "",
+        propertyType: flowData.property_type || "",
+        minBeds: flowData.bedrooms || null,
+        perPage: 6
+      });
+    } catch (e) {
+      console.warn("[webhook] flow search error", e);
+    }
+
+    const items = (results.listings || []).slice(0, 6);
+    if (!items.length) {
+      await sendWithMainMenuButton(phone, "No matches found for your search.", "Try adjusting filters or a broader search.");
+      return NextResponse.json({ ok: true, note: "flow-search-no-results" });
+    }
+
+    const ids = items.map(getIdFromListing);
+    const numbered = items.map((l, i) => `${i + 1}) ${l.title || "Listing"} — ${l.suburb || ""} — $${l.pricePerMonth || l.price || "N/A"}`).join("\n\n");
+
+    await sendTextWithInstructionHeader(phone, numbered, "Reply with the number (e.g. 1) to view contact details.");
+    await sendButtonsWithInstructionHeader(phone, "Return to main menu:", [{ id: "menu_main", title: "Main menu" }], "Tap Main menu.");
+
+    // Update memory
+    selectionMap.set(phone, { ids, results: items });
+    if (dbAvailable && savedMsg && savedMsg._id) {
+      await Message.findByIdAndUpdate(savedMsg._id, {
+        $set: {
+          "meta.state": "AWAITING_LIST_SELECTION",
+          "meta.listingIds": ids,
+          "meta.resultObjects": items,
+          "meta.flowData": flowData
+        }
+      }).catch(() => null);
+    }
+
+    return NextResponse.json({ ok: true, note: "flow-search-results-sent" });
+  }
+
+  /* -------------------------
      PRIORITY: Global commands
   ------------------------- */
 
