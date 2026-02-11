@@ -1,17 +1,4 @@
 // app/api/webhooks/whatsapp/route.js
-//
-// Full webhook with fixes to avoid duplicate messages and loops.
-// - messageSendCache prevents identical sends to the same phone within TTL
-// - handlers return immediately after handling to avoid overlapping sends
-// - view images and other flows are single-shot and non-repetitive
-//
-// Required env:
-// - WHATSAPP_API_TOKEN
-// - WHATSAPP_PHONE_NUMBER_ID or WHATSAPP_PHONE_ID
-// - WHATSAPP_FLOW_ID
-// - WHATSAPP_WEBHOOK_VERIFY_TOKEN
-// - APP_SECRET (optional)
-//
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { dbConnect, WebhookEvent, Listing } from "@/lib/db";
@@ -23,44 +10,34 @@ export const runtime = "nodejs";
 /* -------------------------
    Utilities
 ------------------------- */
-function digitsOnly(v) {
-  return String(v || "").replace(/\D/g, "");
-}
-function _safeGet(obj, path) {
-  try { return path.reduce((o, k) => (o && o[k] != null ? o[k] : undefined), obj); } catch (e) { return undefined; }
-}
+function digitsOnly(v) { return String(v || "").replace(/\D/g, ""); }
+function _safeGet(obj, path) { try { return path.reduce((o, k) => (o && o[k] != null ? o[k] : undefined), obj); } catch (e) { return undefined; } }
 
 /* -------------------------
-   Message send cache to prevent duplicate sends
-   - messageSendCache: Map<phone, Map<hash, timestamp>>
-   - TTL_TEXT_MS controls how long to suppress identical text messages (ms)
-   - TTL_INTERACTIVE_MS controls interactive payload duplicates (ms)
+   Send dedupe cache (prevents identical sends to same phone within TTL)
 ------------------------- */
-const messageSendCache = new Map();
-const TTL_TEXT_MS = 3000;
-const TTL_INTERACTIVE_MS = 3000;
-
+const messageSendCache = new Map(); // phone -> Map<hash, ts>
+// raised TTL to reduce duplicates from quick re-deliveries
+const TTL_MS = 10000;
 function _now() { return Date.now(); }
-function _hashString(s) {
-  try { return crypto.createHash("md5").update(String(s)).digest("hex"); } catch (e) { return String(s).slice(0, 64); }
-}
-function _shouldSend(phone, hash, ttl) {
+function _hash(s) { try { return crypto.createHash("md5").update(String(s)).digest("hex"); } catch (e) { return String(s).slice(0, 128); } }
+// canonicalize string for hashing (collapse whitespace)
+function _normalizeForHash(s) { return String(s || "").replace(/\s+/g, " ").trim(); }
+function _shouldSend(phone, hash) {
   if (!phone) return true;
   const p = messageSendCache.get(phone) || new Map();
   const ts = p.get(hash);
   const now = _now();
-  if (ts && now - ts < ttl) {
-    return false;
-  }
+  if (ts && now - ts < TTL_MS) return false;
   p.set(hash, now);
-  // cleanup stale entries occasionally
-  for (const [k, v] of p) if (now - v > Math.max(TTL_TEXT_MS, TTL_INTERACTIVE_MS) * 5) p.delete(k);
+  // cleanup
+  for (const [k, t] of p) if (now - t > TTL_MS * 10) p.delete(k);
   messageSendCache.set(phone, p);
   return true;
 }
 
 /* -------------------------
-   WhatsApp Graph wrappers (use cache to avoid duplicates)
+   WhatsApp graph wrappers (single send per logical message)
 ------------------------- */
 async function whatsappPost(phone_number_id, token, bodyObj) {
   const url = `https://graph.facebook.com/v24.0/${phone_number_id}/messages`;
@@ -73,90 +50,75 @@ async function whatsappPost(phone_number_id, token, bodyObj) {
 }
 
 async function sendText(phoneNumber, message) {
+  phoneNumber = digitsOnly(phoneNumber);
+  if (!message || !String(message).trim()) return { error: "empty" };
   const apiToken = process.env.WHATSAPP_API_TOKEN;
   const phone_number_id = process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_ID;
-  const phone = digitsOnly(phoneNumber);
-  const payload = { messaging_product: "whatsapp", to: phone, type: "text", text: { body: message } };
 
-  // suppress empty messages
-  if (!message || String(message).trim() === "") return { error: "empty-message" };
+  // normalize message to avoid tiny diffs producing different hashes
+  const normalizedMessage = _normalizeForHash(message);
+  const hash = _hash(`text:${normalizedMessage}`);
+  if (!_shouldSend(phoneNumber, hash)) return { suppressed: true };
 
-  // if missing env, log and pretend to send (prevents double fallback spam)
   if (!apiToken || !phone_number_id) {
-    const hash = _hashString(`text:${message}`);
-    if (!_shouldSend(phone, hash, TTL_TEXT_MS)) return { error: "suppressed-duplicate" };
-    console.log("[sendText] missing-credentials — preview:", message.slice(0, 400));
+    console.log("[sendText preview]", phoneNumber, normalizedMessage.slice(0, 300));
     return { error: "missing-credentials" };
   }
-
-  const hash = _hashString(`text:${message}`);
-  if (!_shouldSend(phone, hash, TTL_TEXT_MS)) {
-    console.log("[sendText] suppressed duplicate text to", phone, "hash", hash);
-    return { error: "suppressed-duplicate" };
-  }
-
+  const payload = { messaging_product: "whatsapp", to: phoneNumber, type: "text", text: { body: normalizedMessage } };
   return whatsappPost(phone_number_id, apiToken, payload);
 }
 
 async function sendInteractiveButtons(phoneNumber, bodyText, buttons = []) {
+  phoneNumber = digitsOnly(phoneNumber);
   const apiToken = process.env.WHATSAPP_API_TOKEN;
   const phone_number_id = process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_ID;
-  const phone = digitsOnly(phoneNumber);
 
-  const interactivePayload = {
-    messaging_product: "whatsapp",
-    to: phone,
-    type: "interactive",
-    interactive: {
-      type: "button",
-      body: { text: bodyText },
-      action: { buttons: buttons.slice(0, 3).map((b) => ({ type: "reply", reply: { id: b.id, title: b.title } })) },
-    },
+  // build fallback combined instruction text (one message)
+  const fallbackText = `${bodyText}\n\n${buttons.map((b, i) => `${i + 1}) ${b.title}`).join("\n")}\n\nReply with the number (e.g. 1) or the command.`;
+  const interactive = {
+    type: "button",
+    body: { text: bodyText },
+    action: { buttons: buttons.slice(0, 3).map((b) => ({ type: "reply", reply: { id: b.id, title: b.title } })) },
   };
 
-  const hash = _hashString(`interactive:${JSON.stringify(interactivePayload.interactive)}`);
-  if (!_shouldSend(phone, hash, TTL_INTERACTIVE_MS)) {
-    console.log("[sendInteractiveButtons] suppressed duplicate interactive to", phone);
-    // still return a success-like object to the caller to avoid fallback
-    return { suppressed: true };
-  }
+  // normalize interactive for hashing (use the fallback text form)
+  const hash = _hash(`interactive:${_normalizeForHash(fallbackText)}`);
+  if (!_shouldSend(phoneNumber, hash)) return { suppressed: true };
 
   if (!apiToken || !phone_number_id) {
-    // fallback: send a single text fallback (but also subject to text dedupe)
-    const fallback = [bodyText, "", ...buttons.map((b, i) => `${i + 1}) ${b.title}`), "", "Reply with the number (e.g. 1) or the command."].join("\n");
-    return sendText(phoneNumber, fallback);
+    return sendText(phoneNumber, fallbackText);
   }
 
-  const res = await whatsappPost(phone_number_id, apiToken, interactivePayload);
+  const payload = { messaging_product: "whatsapp", to: phoneNumber, type: "interactive", interactive };
+  const res = await whatsappPost(phone_number_id, apiToken, payload);
   if (res?.error) {
-    // fallback once to text
-    const fallback = [bodyText, "", ...buttons.map((b, i) => `${i + 1}) ${b.title}`), "", "Reply with the number (e.g. 1) or the command."].join("\n");
-    await sendText(phoneNumber, fallback);
+    // fallback single instruction message
+    await sendText(phoneNumber, fallbackText);
+  } else {
+    // send a tiny follow-up instruction text for clarity (normalized so dedupe works)
+    const instr = "Reply with a number (e.g. 1) or tap an option. You can also type the command shown in the buttons.";
+    await sendText(phoneNumber, instr);
   }
   return res;
 }
 
 /* -------------------------
-   Flow helpers (search & results)
+   Flow helpers (optional interactive flow)
 ------------------------- */
-const DEFAULT_FLOW_ID = process.env.WHATSAPP_FLOW_ID || "1534021024566343";
-const PREDEFINED_CITIES = [
-  { id: "harare", title: "Harare" },
-  { id: "bulawayo", title: "Bulawayo" },
-  { id: "mutare", title: "Mutare" },
-];
+const DEFAULT_FLOW_ID = process.env.WHATSAPP_FLOW_ID || "";
+const PREDEFINED_CITIES = [{ id: "harare", title: "Harare" }, { id: "bulawayo", title: "Bulawayo" }, { id: "mutare", title: "Mutare" }];
 
-async function sendSearchFlow(phoneNumber, flowId = DEFAULT_FLOW_ID, data = {}) {
+async function sendSearchFlow(phoneNumber, data = {}) {
   const apiToken = process.env.WHATSAPP_API_TOKEN;
   const phone_number_id = process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_ID;
-  if (!apiToken || !phone_number_id) return { error: "missing-credentials" };
+  if (!DEFAULT_FLOW_ID || !apiToken || !phone_number_id) return { error: "no-flow" };
 
   const payloadData = {
     cities: (data.cities || PREDEFINED_CITIES).map((c) => ({ id: c.id, title: c.title })),
     suburbs: data.suburbs || [],
     propertyCategories: data.propertyCategories || [{ id: "residential", title: "Residential" }, { id: "commercial", title: "Commercial" }],
-    propertyTypes: data.propertyTypes || [{ id: "house", title: "House" }, { id: "flat", title: "Flat" }, { id: "studio", title: "Studio" }],
-    bedrooms: data.bedrooms || [{ id: "any", title: "Any" }, { id: "1", title: "1" }, { id: "2", title: "2" }, { id: "3", title: "3" }],
+    propertyTypes: data.propertyTypes || [{ id: "house", title: "House" }, { id: "flat", title: "Flat" }],
+    bedrooms: data.bedrooms || [{ id: "any", title: "Any" }, { id: "1", title: "1" }, { id: "2", title: "2" }],
     ...data,
   };
 
@@ -167,13 +129,13 @@ async function sendSearchFlow(phoneNumber, flowId = DEFAULT_FLOW_ID, data = {}) 
     interactive: {
       type: "flow",
       header: { type: "text", text: data.headerText || "Find rentals — filters" },
-      body: { text: data.bodyText || "Please press continue to SEARCH." },
+      body: { text: data.bodyText || "Press Continue to open the search form." },
       footer: { text: data.footerText || "Search" },
       action: {
         name: "flow",
         parameters: {
           flow_message_version: "3",
-          flow_id: String(flowId),
+          flow_id: String(DEFAULT_FLOW_ID),
           flow_cta: data.flow_cta || "Search",
           flow_action: "navigate",
           flow_action_payload: { screen: data.screen || "SEARCH", data: payloadData },
@@ -182,88 +144,43 @@ async function sendSearchFlow(phoneNumber, flowId = DEFAULT_FLOW_ID, data = {}) 
     },
   };
 
-  // use same dedupe approach: interactive messages suppressed if duplicate
-  const phone = digitsOnly(phoneNumber);
-  const hash = _hashString(`flow:${JSON.stringify(interactivePayload.interactive)}`);
-  if (!_shouldSend(phone, hash, TTL_INTERACTIVE_MS)) {
-    console.log("[sendSearchFlow] suppressed duplicate flow send for", phone);
-    return { suppressed: true };
-  }
-
-  return whatsappPost(phone_number_id, apiToken, interactivePayload);
-}
-
-async function sendResultsFlow(phoneNumber, flowId = DEFAULT_FLOW_ID, resultsPayload = {}) {
-  const apiToken = process.env.WHATSAPP_API_TOKEN;
-  const phone_number_id = process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_ID;
-  if (!apiToken || !phone_number_id) return { error: "missing-credentials" };
-
-  const interactivePayload = {
-    messaging_product: "whatsapp",
-    to: digitsOnly(phoneNumber),
-    type: "interactive",
-    interactive: {
-      type: "flow",
-      header: { type: "text", text: resultsPayload.headerText || "Search results" },
-      body: { text: resultsPayload.bodyText || (resultsPayload.data && resultsPayload.data.listingText0) || "Results" },
-      footer: { text: resultsPayload.footerText || "Done" },
-      action: {
-        name: "flow",
-        parameters: {
-          flow_message_version: "3",
-          flow_id: String(flowId),
-          flow_cta: resultsPayload.flow_cta || "View",
-          flow_action: "navigate",
-          flow_action_payload: { screen: resultsPayload.screen || "RESULTS", data: resultsPayload.data || {} },
-        },
-      },
-    },
-  };
-
-  const phone = digitsOnly(phoneNumber);
-  const hash = _hashString(`flow_results:${JSON.stringify(interactivePayload.interactive)}`);
-  if (!_shouldSend(phone, hash, TTL_INTERACTIVE_MS)) {
-    console.log("[sendResultsFlow] suppressed duplicate results flow for", phone);
-    return { suppressed: true };
-  }
+  // dedupe interactive sends (normalize fallback)
+  const fallback = `${interactivePayload.interactive.body?.text || ""} ${interactivePayload.interactive.footer?.text || ""}`.trim();
+  const hash = _hash(`flow:${_normalizeForHash(fallback)}`);
+  if (!_shouldSend(digitsOnly(phoneNumber), hash)) return { suppressed: true };
 
   return whatsappPost(phone_number_id, apiToken, interactivePayload);
 }
 
 /* -------------------------
-   Dedupe helpers
+   Dedupe of incoming messages (prevent re-processing)
 ------------------------- */
 const SEEN_TTL_MS = 1000 * 60 * 5;
 const seenMap = new Map();
 function markSeenInMemory(id) { if (!id) return; seenMap.set(id, Date.now()); }
-function isSeenInMemory(id) {
-  if (!id) return false;
-  const now = Date.now();
-  for (const [k, t] of seenMap) if (now - t > SEEN_TTL_MS) seenMap.delete(k);
-  return seenMap.has(id);
-}
+function isSeenInMemory(id) { if (!id) return false; const now = Date.now(); for (const [k, t] of seenMap) if (now - t > SEEN_TTL_MS) seenMap.delete(k); return seenMap.has(id); }
 async function isAlreadyHandledMsg(dbAvailable, msgId) {
   if (!msgId) return false;
   if (dbAvailable && typeof Message?.findOne === "function") {
-    try { const existing = await Message.findOne({ wa_message_id: msgId, "meta.handledHiFlow": true }).lean().exec(); return Boolean(existing); } catch (e) { return false; }
+    try { const existing = await Message.findOne({ wa_message_id: msgId, "meta.handled": true }).lean().exec(); return Boolean(existing); } catch (e) { return false; }
   }
   return isSeenInMemory(msgId);
 }
 async function markHandledMsg(dbAvailable, msgId) {
   if (!msgId) return;
   if (dbAvailable && typeof Message?.findOneAndUpdate === "function") {
-    try { await Message.findOneAndUpdate({ wa_message_id: msgId }, { $set: { "meta.handledHiFlow": true } }, { upsert: true, setDefaultsOnInsert: true }).exec(); return; } catch (e) { markSeenInMemory(msgId); return; }
+    try { await Message.findOneAndUpdate({ wa_message_id: msgId }, { $set: { "meta.handled": true } }, { upsert: true, setDefaultsOnInsert: true }).exec(); return; } catch (e) { markSeenInMemory(msgId); return; }
   }
   markSeenInMemory(msgId);
 }
 
 /* -------------------------
-   In-memory selection map
+   In-memory selection map (phone -> { ids:[], results:[] })
 ------------------------- */
 const selectionMap = new Map();
 
 /* -------------------------
-   ID normalizer
+   ID normalizer (handles ObjectId shapes)
 ------------------------- */
 function getIdFromListing(l) {
   if (!l) return "";
@@ -280,13 +197,12 @@ function getIdFromListing(l) {
 }
 
 /* -------------------------
-   Flow detection / parsing
+   Flow detection & parsing helpers (safe)
 ------------------------- */
 function detectRequestedScreen(rawPayload = {}) {
   const v = rawPayload?.entry?.[0]?.changes?.[0]?.value || rawPayload || {};
   const interactiveType = _safeGet(v, ["messages", 0, "interactive", "type"]);
   if (interactiveType === "nfm_reply") return "SEARCH";
-
   const candidates = [
     _safeGet(v, ["data_exchange", "screen"]),
     _safeGet(v, ["flow", "screen"]),
@@ -294,8 +210,6 @@ function detectRequestedScreen(rawPayload = {}) {
     _safeGet(v, ["data", "screen"]),
     _safeGet(v, ["data_exchange"]),
     _safeGet(v, ["flow"]),
-    _safeGet(v, ["action"]),
-    _safeGet(v, ["data"]),
     _safeGet(v, ["messages", 0, "interactive", "flow", "screen"])
   ];
   for (const c of candidates) {
@@ -316,18 +230,12 @@ function getFlowDataFromPayload(payload) {
   try {
     const v = payload?.entry?.[0]?.changes?.[0]?.value || payload || {};
     const nfmJson = _safeGet(v, ["messages", 0, "interactive", "nfm_reply", "response_json"]);
-    if (nfmJson && typeof nfmJson === "string") { try { return JSON.parse(nfmJson); } catch (e) { } }
+    if (nfmJson && typeof nfmJson === "string") {
+      try { return JSON.parse(nfmJson); } catch (e) { /* ignore */ }
+    }
     const msgInteractiveFlowData = _safeGet(v, ["messages", 0, "interactive", "flow", "data"]) || _safeGet(v, ["messages", 0, "interactive", "data"]) || _safeGet(v, ["messages", 0, "interactive"]);
     if (msgInteractiveFlowData && typeof msgInteractiveFlowData === "object") return msgInteractiveFlowData;
-
-    const candidates = [
-      _safeGet(v, ["data_exchange", "data"]),
-      _safeGet(v, ["data_exchange"]),
-      _safeGet(v, ["flow", "data"]),
-      _safeGet(v, ["flow"]),
-      _safeGet(v, ["data"]),
-      payload?.data
-    ];
+    const candidates = [_safeGet(v, ["data_exchange", "data"]), _safeGet(v, ["data_exchange"]), _safeGet(v, ["flow", "data"]), _safeGet(v, ["flow"]), _safeGet(v, ["data"]), payload?.data];
     for (const c of candidates) {
       if (!c || typeof c !== "object") continue;
       const out = {};
@@ -360,7 +268,402 @@ function getCanonicalMessage(payload) {
 }
 
 /* -------------------------
-   GET: webhook verification
+   Helper: send main menu (single composed instruction)
+------------------------- */
+async function sendMainMenu(phone) {
+  const buttons = [
+    { id: "menu_list", title: "List a property" },
+    { id: "menu_search", title: "Search properties" },
+    { id: "menu_contacts", title: "View past messages" },
+    { id: "menu_report", title: "Report listing" },
+  ];
+  await sendInteractiveButtons(phone, "Welcome to CribMatch — choose an action:", buttons);
+}
+
+/* -------------------------
+   POST: webhook handler
+------------------------- */
+export async function POST(request) {
+  console.log("[webhook] POST invoked");
+
+  // read raw body safely into rawBody (avoid name collision with later user text)
+  let rawBody = "";
+  try { rawBody = await request.text(); } catch (e) { rawBody = ""; }
+  let payload = {};
+  if (rawBody) { try { payload = JSON.parse(rawBody); } catch (e) { payload = {}; } }
+
+  // optional signature verification (non-fatal)
+  try {
+    const appSecret = process.env.APP_SECRET;
+    const sigHeader = request.headers.get("x-hub-signature-256") || request.headers.get("X-Hub-Signature-256");
+    if (appSecret && sigHeader) {
+      const expectedSig = sigHeader.startsWith("sha256=") ? sigHeader.slice(7) : sigHeader;
+      const hmac = crypto.createHmac("sha256", appSecret).update(rawBody).digest("hex");
+      if (!crypto.timingSafeEqual(Buffer.from(expectedSig, "hex"), Buffer.from(hmac, "hex"))) {
+        console.warn("[webhook] signature mismatch");
+      }
+    }
+  } catch (e) { console.warn("[webhook] signature check error", e); }
+
+  // DB connect best-effort
+  let dbAvailable = true;
+  try { await dbConnect(); } catch (e) { dbAvailable = false; console.error("[webhook] DB connect failed", e); }
+
+  // save raw event best-effort
+  try {
+    if (dbAvailable && typeof WebhookEvent?.create === "function") {
+      const headersObj = Object.fromEntries(request.headers.entries());
+      await WebhookEvent.create({ provider: "whatsapp", headers: headersObj, payload, receivedAt: new Date() }).catch(() => null);
+    }
+  } catch (e) { /* ignore */ }
+
+  // canonicalize incoming
+  const { msg, id: msgId, from: phoneRaw, text: parsedText } = getCanonicalMessage(payload);
+  const phone = digitsOnly(phoneRaw || "");
+  console.log("[webhook] incoming:", { msgId, phone, parsedText: parsedText.slice(0, 200) });
+
+  if (!msgId && !phone) return NextResponse.json({ ok: true, note: "no-id-or-phone" });
+
+  // dedupe incoming event
+  try {
+    const already = await isAlreadyHandledMsg(dbAvailable, msgId);
+    if (already) return NextResponse.json({ ok: true, note: "duplicate-event" });
+    await markHandledMsg(dbAvailable, msgId);
+  } catch (e) { console.warn("[webhook] dedupe error", e); }
+
+  // persist incoming message as Message (best-effort)
+  let savedMsg = null;
+  try {
+    if (dbAvailable && typeof Message?.create === "function") {
+      const doc = {
+        phone,
+        from: msg?.from || "user",
+        wa_message_id: msgId || null,
+        type: parsedText ? "text" : "interactive",
+        text: parsedText || "",
+        raw: payload,
+        meta: {},
+      };
+      try {
+        savedMsg = await Message.create(doc);
+      } catch (e) {
+        // upsert fallback
+        try { savedMsg = await Message.findOneAndUpdate({ wa_message_id: msgId }, { $setOnInsert: doc }, { upsert: true, new: true }).exec(); } catch (e2) { savedMsg = null; }
+      }
+    }
+  } catch (e) { console.warn("[webhook] save message error", e); }
+
+  // get lastMeta (DB) or memory fallback
+  let lastMeta = null;
+  try {
+    if (dbAvailable && typeof Message?.findOne === "function") {
+      const doc = await Message.findOne({ phone, "meta.state": { $exists: true } }).sort({ createdAt: -1 }).lean().exec().catch(() => null);
+      lastMeta = doc?.meta || null;
+    }
+  } catch (e) { console.warn("[webhook] lastMeta lookup error", e); lastMeta = null; }
+  if (!lastMeta && selectionMap.has(phone)) {
+    const mem = selectionMap.get(phone);
+    lastMeta = { state: "AWAITING_LIST_SELECTION", listingIds: mem.ids || [], resultObjects: mem.results || [] };
+  }
+
+  // normalize user input
+  const userRaw = String(parsedText || "").trim();
+  const cmd = userRaw.toLowerCase();
+
+  /* -------------------------
+     PRIORITY: Global commands (menu, list, search, view contacts, report)
+  ------------------------- */
+
+  if (/^menu$|^menu_main$|^main menu$/i.test(userRaw)) {
+    await sendMainMenu(phone);
+    return NextResponse.json({ ok: true, note: "menu-sent" });
+  }
+
+  if (cmd === "list" || cmd === "list a property" || cmd === "menu_list") {
+    if (dbAvailable && savedMsg && savedMsg._id) {
+      await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.state": "LISTING_WAIT_TITLE", "meta.listingDraft": {} } }).catch(() => null);
+    }
+    await sendText(phone, "Let's list your property. Step 1 of 4 — What's the property title? (e.g. 2-bed garden flat, Glen Norah). Reply with the title.");
+    return NextResponse.json({ ok: true, note: "listing-started" });
+  }
+
+  if (cmd === "search" || cmd === "search properties" || cmd === "menu_search") {
+    const flowResp = await sendSearchFlow(phone, { headerText: "Find rentals — filters", bodyText: "Press Continue to open the search form.", footerText: "Search", screen: "SEARCH", cities: PREDEFINED_CITIES }).catch(() => ({ error: "flow-error" }));
+    if (flowResp?.error || flowResp?.suppressed) {
+      await sendText(phone, "Search opened (text fallback). Reply with area and budget (eg. Borrowdale, $200) or type 'open_search' to try the form.");
+    } else {
+      // interactive form opened — short instruction
+      await sendText(phone, "Search form opened. Fill and submit it. If you prefer, reply with area and budget (eg. Borrowdale, $200).");
+    }
+    return NextResponse.json({ ok: true, note: "search-invoked" });
+  }
+
+  if (cmd === "view past messages" || cmd === "view past" || cmd === "menu_contacts" || cmd === "view past messages") {
+    let listingIds = [];
+    if (dbAvailable && typeof Message?.find === "function") {
+      const docs = await Message.find({ phone, "meta.listingIdSelected": { $exists: true } }).lean().exec().catch(() => []);
+      listingIds = Array.from(new Set(docs.map((d) => d?.meta?.listingIdSelected).filter(Boolean)));
+    }
+    if ((!listingIds || listingIds.length === 0) && selectionMap.has(phone)) {
+      const mem = selectionMap.get(phone);
+      if (mem && Array.isArray(mem.ids)) listingIds = Array.from(new Set(mem.ids.filter(Boolean)));
+    }
+    if (!listingIds || listingIds.length === 0) {
+      await sendText(phone, "You haven't requested any contacts yet. Reply 'search' to look for listings.");
+      return NextResponse.json({ ok: true, note: "no-past-messages" });
+    }
+    let found = [];
+    if (dbAvailable && typeof Listing?.find === "function") {
+      try { found = await Listing.find({ _id: { $in: listingIds } }).lean().exec().catch(() => []); } catch (e) { found = []; }
+    }
+    const summaries = listingIds.map((id) => {
+      const f = found.find((x) => String(x._id) === String(id));
+      if (f) return { id, title: f.title || "Listing", suburb: f.suburb || "", price: f.pricePerMonth || f.price || 0 };
+      const mem = selectionMap.get(phone);
+      const r = mem?.results?.find((rr) => getIdFromListing(rr) === id) || null;
+      if (r) return { id, title: r.title || "Listing", suburb: r.suburb || "", price: r.pricePerMonth || r.price || 0 };
+      return { id, title: `Listing ${id.slice(0, 8)}`, suburb: "", price: 0 };
+    });
+    const text = ["Your recent contacts:"].concat(summaries.map((s, i) => `${i + 1}) ${s.title} — ${s.suburb} — $${s.price} — ID:${s.id}`)).join("\n\n");
+    const instruction = "\n\nReply with the number (e.g. 1) to view contact details again or type 'menu' to go back.";
+    await sendText(phone, `${text}${instruction}`);
+    selectionMap.set(phone, { ids: listingIds, results: summaries.map(s => ({ _id: s.id, title: s.title, suburb: s.suburb, price: s.price })) });
+    return NextResponse.json({ ok: true, note: "past-messages-sent" });
+  }
+
+  if (cmd === "report listing" || cmd === "menu_report" || cmd === "report") {
+    if (dbAvailable && savedMsg && savedMsg._id) await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.state": "REPORT_WAIT_ID" } }).catch(() => null);
+    await sendText(phone, "Report a listing — Step 1 of 2: Reply with the listing ID you want to report (e.g. 60df12ab...).");
+    return NextResponse.json({ ok: true, note: "report-started" });
+  }
+
+  /* -------------------------
+     Listing creation flow handling (unchanged names)
+  ------------------------- */
+  if (lastMeta && lastMeta.state && String(lastMeta.state).startsWith("LISTING_")) {
+    const state = lastMeta.state;
+    if (state === "LISTING_WAIT_TITLE") {
+      const title = userRaw;
+      if (!title) { await sendText(phone, "Please reply with a valid title."); return NextResponse.json({ ok: true }); }
+      if (dbAvailable && savedMsg && savedMsg._id) {
+        await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.listingDraft.title": title, "meta.state": "LISTING_WAIT_SUBURB" } }).catch(() => null);
+      }
+      await sendText(phone, "Step 2 of 4: What suburb is the property in?");
+      return NextResponse.json({ ok: true });
+    }
+    if (state === "LISTING_WAIT_SUBURB") {
+      const suburb = userRaw;
+      if (!suburb) { await sendText(phone, "Please reply with a valid suburb."); return NextResponse.json({ ok: true }); }
+      if (dbAvailable && savedMsg && savedMsg._id) {
+        await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.listingDraft.suburb": suburb, "meta.state": "LISTING_WAIT_PRICE" } }).catch(() => null);
+      }
+      await sendText(phone, "Step 3 of 4: What is the monthly price? (numbers only, e.g. 500)");
+      return NextResponse.json({ ok: true });
+    }
+    if (state === "LISTING_WAIT_PRICE") {
+      const priceMatch = userRaw.match(/(\d+(?:\.\d+)?)/);
+      if (!priceMatch) { await sendText(phone, "Please reply with a numeric price (e.g. 500)."); return NextResponse.json({ ok: true }); }
+      const price = Number(priceMatch[1]);
+      if (dbAvailable && savedMsg && savedMsg._id) {
+        await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.listingDraft.price": price, "meta.state": "LISTING_CONFIRM" } }).catch(() => null);
+      }
+      const draftDoc = (dbAvailable && savedMsg && savedMsg._id) ? (await Message.findById(savedMsg._id).lean().exec().catch(() => null)) : null;
+      const draft = draftDoc?.meta?.listingDraft || {};
+      const confirmText = `Please confirm your listing:\n\nTitle: ${draft.title || "<unknown>"}\nSuburb: ${draft.suburb || "<unknown>"}\nPrice: $${draft.price || price}\n\nReply YES to publish or NO to cancel.`;
+      await sendText(phone, confirmText);
+      return NextResponse.json({ ok: true });
+    }
+    if (state === "LISTING_CONFIRM") {
+      if (/^yes$/i.test(userRaw)) {
+        if (dbAvailable && savedMsg && savedMsg._id) {
+          const doc = await Message.findById(savedMsg._id).lean().exec().catch(() => null);
+          const draft = doc?.meta?.listingDraft || {};
+          try {
+            const created = await Listing.create({
+              title: draft.title || "Untitled",
+              listerPhoneNumber: phone,
+              suburb: draft.suburb || "",
+              propertyCategory: "residential",
+              propertyType: "house",
+              pricePerMonth: draft.price || 0,
+              bedrooms: 1,
+              status: "published",
+            });
+            await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.state": "LISTING_PUBLISHED", "meta.listingPublishedId": String(created._id) } }).catch(() => null);
+            await sendText(phone, `Listing created ✅ ID: ${String(created._id)}\n\nReply 'menu' to return to main menu.`);
+            return NextResponse.json({ ok: true, note: "listing-created" });
+          } catch (e) {
+            console.warn("[listing] create failed", e);
+            await sendText(phone, "Couldn't create the listing right now. Try again later.");
+            return NextResponse.json({ ok: true, note: "listing-create-failed" });
+          }
+        } else {
+          await sendText(phone, "No listing draft found. Reply 'list' to start a new listing.");
+          return NextResponse.json({ ok: true });
+        }
+      } else {
+        if (dbAvailable && savedMsg && savedMsg._id) await Message.findByIdAndUpdate(savedMsg._id, { $unset: { "meta.listingDraft": "", "meta.state": "" } }).catch(() => null);
+        await sendText(phone, "Listing cancelled. Reply 'menu' to return to main menu.");
+        return NextResponse.json({ ok: true, note: "listing-cancelled" });
+      }
+    }
+  }
+
+  /* -------------------------
+     Report flow
+  ------------------------- */
+  if (lastMeta && lastMeta.state && lastMeta.state === "REPORT_WAIT_ID") {
+    const listingId = userRaw;
+    if (!listingId) { await sendText(phone, "Please send a valid listing ID to report."); return NextResponse.json({ ok: true }); }
+    if (dbAvailable && savedMsg && savedMsg._id) await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.report.listingId": listingId, "meta.state": "REPORT_WAIT_REASON" } }).catch(() => null);
+    await sendText(phone, `Reporting ${listingId} — Step 2 of 2: Reply with the reason (e.g. 'spam', 'duplicate', 'wrong price', 'offensive').`);
+    return NextResponse.json({ ok: true, note: "report-step2" });
+  }
+  if (lastMeta && lastMeta.state && lastMeta.state === "REPORT_WAIT_REASON") {
+    const reason = userRaw || "unspecified";
+    const listingId = lastMeta.report?.listingId || (dbAvailable && savedMsg && savedMsg._id ? (await Message.findById(savedMsg._id).lean().exec().catch(() => null))?.meta?.report?.listingId : null);
+    if (dbAvailable && savedMsg && savedMsg._id) {
+      await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.report.reason": reason, "meta.report.submittedAt": new Date(), "meta.state": "REPORT_SUBMITTED" } }).catch(() => null);
+    }
+    await sendText(phone, `Thanks — your report for listing ${listingId || ""} has been received. Our team will review it. Reply 'menu' to return to main menu.`);
+    return NextResponse.json({ ok: true, note: "report-submitted" });
+  }
+
+  /* -------------------------
+     Simple handler for "images <id>" requests (deduped)
+  ------------------------- */
+  if (/^images?\b/i.test(userRaw)) {
+    const m = userRaw.match(/^images?\s+(.+)$/i);
+    const listingId = m ? m[1].trim() : null;
+    if (!listingId) {
+      // dedupe will prevent repeated "Image request missing listing id."
+      await sendText(phone, "Image request missing listing id.");
+      return NextResponse.json({ ok: true, note: "images-missing-id" });
+    }
+
+    // dedupe image requests per listing
+    const imgHash = _hash(`images:${listingId}`);
+    if (!_shouldSend(phone, imgHash)) return NextResponse.json({ ok: true, note: "images-suppressed" });
+
+    // try to fetch listing images and send a single combined message with URLs (or a friendly message)
+    let listing = null;
+    try { listing = await getListingById(listingId).catch(() => null); } catch (e) { listing = null; }
+    if (!listing && typeof Listing?.findById === "function") listing = await Listing.findById(listingId).lean().exec().catch(() => null);
+    const imgs = (listing && (listing.images || listing.photos || listing.photosUrls || [])) || [];
+    if (!imgs || imgs.length === 0) {
+      await sendText(phone, "No images found for this listing.");
+      return NextResponse.json({ ok: true, note: "images-not-found" });
+    }
+    // send a single message including image URLs to avoid loops; platforms that support media can replace this with media API calls
+    const imgText = [`Images for ${listing.title || "Listing"}:`].concat(imgs.slice(0, 6)).join("\n");
+    await sendText(phone, `${imgText}\n\nReply 'menu' to go back.`);
+    return NextResponse.json({ ok: true, note: "images-sent" });
+  }
+
+  /* -------------------------
+     Selection-by-number handlers (unchanged behavior, using userRaw)
+  ------------------------- */
+  if (/^[1-9]\d*$/.test(userRaw) || /^select_/.test(userRaw) || /^contact\s+/i.test(userRaw)) {
+    let listingId = null;
+    const mem = selectionMap.get(phone);
+    const lastIds = (lastMeta && Array.isArray(lastMeta.listingIds)) ? lastMeta.listingIds : (mem?.ids || []);
+    const lastResults = (lastMeta && Array.isArray(lastMeta.resultObjects)) ? lastMeta.resultObjects : (mem?.results || []);
+    if (/^select_/.test(userRaw)) {
+      listingId = userRaw.split("_", 2)[1];
+    } else if (/^contact\s+/i.test(userRaw)) {
+      const m = userRaw.match(/^contact\s+(.+)$/i);
+      listingId = m ? m[1].trim() : null;
+    } else {
+      const idx = parseInt(userRaw, 10) - 1;
+      if (Array.isArray(lastIds) && idx >= 0 && idx < lastIds.length) listingId = lastIds[idx];
+      else if (Array.isArray(lastResults) && idx >= 0 && idx < lastResults.length) listingId = getIdFromListing(lastResults[idx]) || lastResults[idx]._id;
+    }
+
+    if (!listingId) {
+      await sendText(phone, "Couldn't determine the listing ID from your reply. Please reply with the number shown (e.g. 1) or 'menu' for main menu.");
+      return NextResponse.json({ ok: true, note: "selection-unknown" });
+    }
+
+    // try to fetch listing
+    let listing = null;
+    try { listing = await getListingById(listingId).catch(() => null); } catch (e) { listing = null; }
+    if (!listing && dbAvailable && typeof Listing?.findById === "function") listing = await Listing.findById(listingId).lean().exec().catch(() => null);
+    if (!listing && Array.isArray(lastResults)) listing = lastResults.find((r) => getIdFromListing(r) === listingId || String(r._id) === listingId) || null;
+    if (!listing) {
+      await sendText(phone, "Sorry, listing not found. If you still see results, reply with the number shown (e.g. 1).");
+      return NextResponse.json({ ok: true, note: "listing-not-found" });
+    }
+
+    const title = listing.title || "Listing";
+    const suburb = listing.suburb || "";
+    const price = listing.pricePerMonth != null ? `$${listing.pricePerMonth}` : (listing.price != null ? `$${listing.price}` : "N/A");
+    const contactName = listing.contactName || listing.ownerName || "Owner";
+    const contactPhone = listing.contactPhone || listing.listerPhoneNumber || listing.contactWhatsApp || "N/A";
+
+    const msgText = [
+      `Contact for: ${title}`,
+      suburb ? `Suburb: ${suburb}` : null,
+      `Price: ${price}`,
+      "",
+      `Contact: ${contactName}`,
+      `Phone: ${contactPhone}`,
+      "",
+      `Reply 'menu' to go to main menu — Reply 'images ${getIdFromListing(listing)}' to view images (URLs), or reply with another result number.`,
+    ].filter(Boolean).join("\n");
+
+    await sendText(phone, msgText);
+
+    if (dbAvailable && savedMsg && savedMsg._id) {
+      await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.listingIdSelected": getIdFromListing(listing) } }).catch(() => null);
+    }
+
+    try {
+      const mem = selectionMap.get(phone) || { ids: [], results: [] };
+      const lid = getIdFromListing(listing);
+      if (!mem.ids.includes(lid)) mem.ids.unshift(lid);
+      if (!mem.results.find((r) => getIdFromListing(r) === lid)) mem.results.unshift({ _id: lid, title: listing.title || "Listing", suburb: listing.suburb || "", price: listing.pricePerMonth || listing.price || 0 });
+      mem.ids = mem.ids.slice(0, 20);
+      mem.results = mem.results.slice(0, 20);
+      selectionMap.set(phone, mem);
+    } catch (e) { /* ignore */ }
+
+    return NextResponse.json({ ok: true, note: "contact-sent" });
+  }
+
+  /* -------------------------
+     Simple text-search fallback (unchanged)
+  ------------------------- */
+  if (userRaw && !lastMeta) {
+    const budgetMatch = userRaw.match(/\$?(\d+(?:\.\d+)?)/);
+    const area = userRaw.split(",")[0].trim();
+    if (area || budgetMatch) {
+      const budget = budgetMatch ? Number(budgetMatch[1]) : null;
+      let results = { listings: [], total: 0 };
+      try { results = await searchPublishedListings({ q: area, minPrice: null, maxPrice: budget, perPage: 6 }); } catch (e) { console.warn("[webhook] searchPublishedListings error", e); results = { listings: [], total: 0 }; }
+      const items = (results.listings || []).slice(0, 6);
+      if (!items.length) {
+        await sendText(phone, "No matches found. Try a broader area or higher budget, or reply 'menu' to go back.");
+        return NextResponse.json({ ok: true, note: "search-no-results" });
+      }
+      const ids = items.map(getIdFromListing);
+      const numbered = items.map((l, i) => `${i + 1}) ${l.title || "Listing"} — ${l.suburb || ""} — $${l.pricePerMonth || l.price || "N/A"} — ID:${getIdFromListing(l)}`).join("\n\n");
+      const instruction = "\n\nReply with the number (e.g. 1) to view contact details, or 'menu' for main menu.";
+      await sendText(phone, `${numbered}${instruction}`);
+      selectionMap.set(phone, { ids, results: items });
+      if (dbAvailable && savedMsg && savedMsg._id) {
+        await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.state": "AWAITING_LIST_SELECTION", "meta.listingIds": ids, "meta.resultObjects": items } }).catch(() => null);
+      }
+      return NextResponse.json({ ok: true, note: "search-results-sent" });
+    }
+  }
+
+  // default fallback: send main menu so user isn't stuck
+  await sendMainMenu(phone);
+  return NextResponse.json({ ok: true, note: "default-menu" });
+}
+
+/* -------------------------
+   GET: webhook verification (Meta handshake)
 ------------------------- */
 export async function GET(request) {
   const url = new URL(request.url);
@@ -380,466 +683,4 @@ export async function GET(request) {
   if (!expectedToken) return new Response("Missing verify token", { status: 500 });
   if (mode === "subscribe" && token && challenge && token === expectedToken) return new Response(challenge, { status: 200 });
   return new Response("Forbidden", { status: 403 });
-}
-
-/* -------------------------
-   POST: main webhook
-------------------------- */
-export async function POST(request) {
-  console.log("[webhook] POST invoked");
-
-  let rawText = "";
-  try { rawText = await request.text(); } catch (e) { rawText = ""; }
-  let payload = {};
-  if (rawText) { try { payload = JSON.parse(rawText); } catch (e) { payload = {}; } }
-
-  try { console.log("[webhook] payload snippet:", JSON.stringify(payload, null, 2).slice(0, 12000)); } catch (e) { }
-
-  // optional signature validation (non-fatal)
-  try {
-    const appSecret = process.env.APP_SECRET;
-    const sigHeader = request.headers.get("x-hub-signature-256") || request.headers.get("X-Hub-Signature-256");
-    if (appSecret && sigHeader) {
-      const expectedSig = sigHeader.startsWith("sha256=") ? sigHeader.slice(7) : sigHeader;
-      const hmac = crypto.createHmac("sha256", appSecret).update(rawText).digest("hex");
-      if (!crypto.timingSafeEqual(Buffer.from(expectedSig, "hex"), Buffer.from(hmac, "hex"))) {
-        console.warn("[webhook] signature validation failed (hmac mismatch)");
-      }
-    }
-  } catch (e) { console.warn("[webhook] signature validation error:", e); }
-
-  // DB connect (best-effort)
-  let dbAvailable = true;
-  try { await dbConnect(); } catch (err) { dbAvailable = false; console.error("[webhook] DB connect failed (continuing without persistence):", err); }
-
-  // persist raw event (best-effort)
-  try {
-    if (dbAvailable && typeof WebhookEvent?.create === "function") {
-      const headersObj = Object.fromEntries(request.headers.entries());
-      await WebhookEvent.create({ provider: "whatsapp", headers: headersObj, payload, receivedAt: new Date() }).catch((e) => console.warn("[webhook] WebhookEvent.create error:", e));
-    }
-  } catch (e) { console.warn("[webhook] save raw event failed:", e); }
-
-  // canonicalize
-  const { msg, id: msgId, from: phone, text: parsedText } = getCanonicalMessage(payload);
-  console.log("[webhook] parsedMessage:", { msgId, phone, parsedText });
-
-  if (!msgId && !phone) return NextResponse.json({ ok: true, note: "no-id-or-phone" });
-
-  // save incoming message (best-effort)
-  let savedMsg = null;
-  try {
-    if (dbAvailable && typeof Message?.create === "function") {
-      const doc = { phone: digitsOnly(phone), from: msg?.from || "user", wa_message_id: msgId || null, type: parsedText ? "text" : "interactive", text: parsedText || "", raw: payload, status: null, meta: {}, conversationId: payload.conversation_id || null };
-      if (msgId) {
-        try { savedMsg = await Message.findOneAndUpdate({ wa_message_id: msgId }, { $setOnInsert: doc }, { upsert: true, new: true }).exec(); } catch (e) { savedMsg = await Message.create(doc).catch(() => null); }
-      } else {
-        savedMsg = await Message.create(doc).catch(() => null);
-      }
-    }
-  } catch (e) { console.warn("[webhook] save message error:", e); }
-
-  // fetch lastMeta (DB) or memory fallback
-  let lastMeta = null;
-  try {
-    if (dbAvailable && typeof Message?.findOne === "function") {
-      const doc = await Message.findOne({ phone: digitsOnly(phone), "meta.state": { $exists: true } }).sort({ createdAt: -1 }).lean().exec();
-      lastMeta = doc?.meta || null;
-    }
-  } catch (e) { console.warn("[webhook] lastMeta lookup failed:", e); lastMeta = null; }
-
-  try {
-    if (!lastMeta) {
-      const mem = selectionMap.get(digitsOnly(phone));
-      if (mem && (Array.isArray(mem.ids) || Array.isArray(mem.results))) lastMeta = { state: "AWAITING_LIST_SELECTION", listingIds: mem.ids || [], resultObjects: mem.results || [] };
-    }
-  } catch (e) { /* ignore */ }
-
-  // dedupe
-  try {
-    const alreadyHandled = await isAlreadyHandledMsg(dbAvailable, msgId);
-    if (alreadyHandled) return NextResponse.json({ ok: true, note: "dedupe-skip" });
-    await markHandledMsg(dbAvailable, msgId);
-  } catch (e) { console.warn("[webhook] dedupe error:", e); }
-
-  /* -------------------------
-     Global command handling (prioritized)
-     - menu_main, menu_search, menu_contacts, view_images_<id>
-     Return after handling to avoid overlapping with selection handler.
-  ------------------------- */
-  try {
-    const rawCmd = String(parsedText || "").trim();
-
-    // MAIN MENU
-    if (/^menu_main$/i.test(rawCmd) || /^menu$/i.test(rawCmd) || /^main\s*menu$/i.test(rawCmd)) {
-      await sendMainMenu(phone);
-      return NextResponse.json({ ok: true, note: "main-menu-sent" }, { status: 200 });
-    }
-
-    // SEARCH commands (explicit)
-    if (/^search\b/i.test(rawCmd) || /^search properties$/i.test(rawCmd) || rawCmd === "menu_search" || rawCmd === "open_search" || rawCmd === "msg_search") {
-      // send flow; if suppressed or failed, fallback once to buttons+instruction
-      const flowResp = await sendSearchFlow(phone, DEFAULT_FLOW_ID, {
-        headerText: "Find rentals — filters",
-        bodyText: "Please press continue to SEARCH.",
-        footerText: "Search",
-        screen: "SEARCH",
-        cities: PREDEFINED_CITIES,
-        suburbs: [{ id: "any", title: "Any" }, { id: "borrowdale", title: "Borrowdale" }, { id: "avondale", title: "Avondale" }],
-      }).catch((e) => { console.warn("[sendSearchFlow] error:", e); return { error: e }; });
-
-      if (flowResp?.error) {
-        await sendInteractiveButtons(phone, "Search options — choose:", [
-          { id: "msg_search", title: "Search by message" },
-          { id: "open_search", title: "Open search form" },
-        ]);
-      }
-
-      await sendText(phone, "Fill the form to search for rentals (city, suburb, budget). When results appear you can tap a result or reply with the number (e.g. 1).");
-      if (dbAvailable && savedMsg && savedMsg._id) await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.sentSearchFlow": true, "meta.sendResp": flowResp } }).catch(() => null);
-      return NextResponse.json({ ok: true, note: "search-invoked", flowResp }, { status: 200 });
-    }
-
-    // VIEW MY CONTACTS
-    if (/^menu_contacts$/i.test(rawCmd) || /^view my contacts$/i.test(rawCmd)) {
-      let listingIds = [];
-      if (dbAvailable && typeof Message?.find === "function") {
-        const docs = await Message.find({ phone: digitsOnly(phone), "meta.listingIdSelected": { $exists: true } }).lean().exec().catch(() => []);
-        listingIds = Array.from(new Set(docs.map((d) => d?.meta?.listingIdSelected).filter(Boolean)));
-      }
-      if ((!listingIds || listingIds.length === 0) && selectionMap.has(digitsOnly(phone))) {
-        const mem = selectionMap.get(digitsOnly(phone));
-        if (mem && Array.isArray(mem.ids)) listingIds = Array.from(new Set(mem.ids.filter(Boolean)));
-      }
-      if (!listingIds || listingIds.length === 0) {
-        await sendText(phone, "You haven't viewed any contacts yet. Reply 'hi' to start a search.");
-        return NextResponse.json({ ok: true, note: "no-contacts" }, { status: 200 });
-      }
-      let foundListings = [];
-      if (dbAvailable && typeof Listing?.find === "function") {
-        try { foundListings = await Listing.find({ _id: { $in: listingIds } }).lean().exec().catch(() => []); } catch (e) { foundListings = []; }
-      }
-      const results = [];
-      for (const id of listingIds) {
-        let l = foundListings.find((x) => String(x._id) === String(id));
-        if (!l) {
-          const mem = selectionMap.get(digitsOnly(phone));
-          if (mem && Array.isArray(mem.results)) l = mem.results.find((r) => getIdFromListing(r) === id);
-        }
-        if (l) results.push({ id, title: l.title || "Listing", suburb: l.suburb || "", price: l.pricePerMonth || l.price || 0 });
-      }
-      const numbered = results.length ? results.map((r, i) => `${i + 1}) ${r.title} — ${r.suburb} — $${r.price}`).join("\n\n") : "No contact listings found.";
-      await sendText(phone, `Your contacted listings:\n\n${numbered}`);
-      const lightweight = results.map((r) => ({ _id: r.id, title: r.title, suburb: r.suburb, price: r.price }));
-      selectionMap.set(digitsOnly(phone), { ids: listingIds, results: lightweight });
-      await sendText(phone, "Reply with the number (e.g. 1) to view contact details again, or reply 'menu_main' for the main menu.");
-      return NextResponse.json({ ok: true, note: "contacts-sent", count: listingIds.length }, { status: 200 });
-    }
-
-    // VIEW IMAGES (global button id "view_images_<id>")
-    if (/^view_images_/i.test(rawCmd)) {
-      const listingId = rawCmd.replace(/^view_images_/i, "").trim();
-      if (!listingId) { await sendText(phone, "Image request missing listing id."); return NextResponse.json({ ok: true, note: "view-images-missing-id" }, { status: 200 }); }
-      let listing = null;
-      try { listing = await getListingById(listingId).catch(() => null); } catch (e) { listing = null; }
-      if (!listing && typeof Listing?.findById === "function") listing = await Listing.findById(listingId).lean().exec().catch(() => null);
-      if (!listing) {
-        const mem = selectionMap.get(digitsOnly(phone));
-        if (mem && Array.isArray(mem.results)) listing = mem.results.find((r) => getIdFromListing(r) === listingId || String(r._id) === listingId);
-      }
-      if (!listing) { await sendText(phone, "Sorry, listing not found."); return NextResponse.json({ ok: true, note: "view-images-notfound" }, { status: 200 }); }
-      const images = Array.isArray(listing.images) ? listing.images.filter(Boolean) : (Array.isArray(listing.photos) ? listing.photos.filter(Boolean) : []);
-      if (!images || images.length === 0) { await sendText(phone, "No photos available for this listing."); return NextResponse.json({ ok: true, note: "no-images" }, { status: 200 }); }
-      // send images once (URLs). If you want media messages change here.
-      await sendText(phone, `Photos for ${listing.title || "listing"}:\n${images.join("\n")}`);
-      await sendInteractiveButtons(phone, "What next?", [
-        { id: "menu_main", title: "Main menu" },
-        { id: "menu_contacts", title: "View my contacts" },
-      ]);
-      return NextResponse.json({ ok: true, note: "images-sent", count: images.length }, { status: 200 });
-    }
-  } catch (e) {
-    console.warn("[global-commands] error:", e);
-    // continue to other handlers (but ensure nothing duplicates)
-  }
-
-  /* -------------------------
-     AWATING_LIST_SELECTION handling (numeric selection / select_<id> / CONTACT <id>)
-     This branch only runs if lastMeta indicates AWAITING_LIST_SELECTION
-  ------------------------- */
-  try {
-    if (lastMeta && lastMeta.state === "AWAITING_LIST_SELECTION") {
-      const raw = String(parsedText || "").trim();
-      const idsFromMeta = Array.isArray(lastMeta.listingIds) ? lastMeta.listingIds : (selectionMap.get(digitsOnly(phone))?.ids || []);
-      const resultsFromMeta = Array.isArray(lastMeta.resultObjects) ? lastMeta.resultObjects : (selectionMap.get(digitsOnly(phone))?.results || []);
-
-      // interactive select_<id>
-      if (/^select_/.test(raw)) {
-        const listingId = raw.split("_")[1];
-        if (listingId) {
-          const ok = await tryRevealByIdOrCached(listingId, phone, idsFromMeta, resultsFromMeta, dbAvailable);
-          selectionMap.delete(digitsOnly(phone));
-          return NextResponse.json({ ok: true, note: ok ? "selection-handled-interactive" : "selection-notfound" }, { status: 200 });
-        }
-      }
-
-      // numeric selection e.g. "1"
-      if (/^[1-9]\d*$/.test(raw)) {
-        const idx = parseInt(raw, 10) - 1;
-        const listingId = (idsFromMeta && idx >= 0 && idx < idsFromMeta.length) ? idsFromMeta[idx] : null;
-        const cachedObj = (resultsFromMeta && idx >= 0 && idx < resultsFromMeta.length) ? resultsFromMeta[idx] : null;
-
-        if (listingId) {
-          const ok = await tryRevealByIdOrCached(listingId, phone, idsFromMeta, resultsFromMeta, dbAvailable);
-          selectionMap.delete(digitsOnly(phone));
-          return NextResponse.json({ ok: true, note: ok ? "selection-handled-number" : "selection-notfound" }, { status: 200 });
-        }
-
-        if (!listingId && cachedObj) {
-          await revealFromObject(cachedObj, phone);
-          const theId = getIdFromListing(cachedObj) || String(cachedObj._id || "");
-          await sendInteractiveButtons(phone, "What next?", [
-            { id: "menu_main", title: "Main menu" },
-            { id: "menu_contacts", title: "View my contacts" },
-            { id: `view_images_${theId}`, title: "View images" },
-          ]);
-          selectionMap.delete(digitsOnly(phone));
-          return NextResponse.json({ ok: true, note: "selection-handled-number-cached" }, { status: 200 });
-        }
-
-        await sendText(phone, `Invalid selection. Reply with a number between 1 and ${idsFromMeta.length || resultsFromMeta.length || "N"}.`);
-        return NextResponse.json({ ok: true, note: "selection-invalid" }, { status: 200 });
-      }
-
-      // CONTACT <id>
-      const m = raw.match(/^contact\s+(.+)$/i);
-      if (m) {
-        const listingId = m[1].trim();
-        if (listingId) {
-          const ok = await tryRevealByIdOrCached(listingId, phone, idsFromMeta, resultsFromMeta, dbAvailable);
-          selectionMap.delete(digitsOnly(phone));
-          return NextResponse.json({ ok: true, note: ok ? "selection-handled-contactcmd" : "selection-notfound" }, { status: 200 });
-        }
-      }
-
-      // Not recognized -> instruct
-      await sendText(phone, "Please reply with the number of the listing (e.g. 1) or tap a result. Or send: CONTACT <LISTING_ID>.");
-      return NextResponse.json({ ok: true, note: "selection-expected-number" }, { status: 200 });
-    }
-  } catch (e) {
-    console.warn("[webhook] AWAITING_LIST_SELECTION error:", e);
-  }
-
-  /* -------------------------
-     Greeting: hi/hello -> send SEARCH flow + single instruction
-  ------------------------- */
-  try {
-    const isHi = /^(hi|hello|hey|start)$/i.test(String(parsedText || "").trim());
-    if (isHi) {
-      const flowResp = await sendSearchFlow(phone, DEFAULT_FLOW_ID, {
-        headerText: "Find rentals — filters",
-        bodyText: "Please press continue to SEARCH.",
-        footerText: "Search",
-        screen: "SEARCH",
-        cities: PREDEFINED_CITIES,
-        suburbs: [{ id: "any", title: "Any" }, { id: "borrowdale", title: "Borrowdale" }, { id: "avondale", title: "Avondale" }],
-      }).catch((e) => { console.warn("[sendSearchFlow] error:", e); return { error: e }; });
-
-      if (flowResp?.error) {
-        // fallback: show a single interactive buttons fallback
-        await sendInteractiveButtons(phone, "Search options:", [
-          { id: "msg_search", title: "Search by message" },
-          { id: "open_search", title: "Open search form" },
-        ]);
-      }
-
-      await sendText(phone, "Search opened ✅ Fill the form or reply with area and budget (e.g. Borrowdale, $200). When results appear you can tap a result or reply with the number (e.g. 1).");
-      if (dbAvailable && savedMsg && savedMsg._id) await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.sentSearchFlow": true, "meta.sendResp": flowResp } }).catch(() => null);
-      return NextResponse.json({ ok: true, note: "search-flow-sent", flowResp }, { status: 200 });
-    }
-  } catch (e) {
-    console.error("[webhook] greeting error:", e);
-    return NextResponse.json({ ok: true, note: "greeting-error" }, { status: 200 });
-  }
-
-  /* -------------------------
-     SEARCH -> RESULTS: parse flow submission, run search, send results flow + fallback
-  ------------------------- */
-  try {
-    const requestedScreen = detectRequestedScreen(payload);
-    if (requestedScreen === "SEARCH") {
-      const flowData = getFlowDataFromPayload(payload);
-      const q = String(flowData.q || flowData.keyword || flowData.query || `${flowData.suburb || ""} ${flowData.city || ""}`).trim();
-      const minPrice = flowData.min_price || flowData.minPrice || flowData.min || null;
-      const maxPrice = flowData.max_price || flowData.maxPrice || flowData.max || null;
-      const minP = minPrice ? Number(String(minPrice).replace(/[^\d.]/g, "")) : null;
-      const maxP = maxPrice ? Number(String(maxPrice).replace(/[^\d.]/g, "")) : null;
-
-      let results = { listings: [], total: 0 };
-      try { results = await searchPublishedListings({ q, minPrice: minP, maxPrice: maxP, perPage: 6 }); } catch (e) { console.warn("[webhook] searchPublishedListings failed:", e); results = { listings: [], total: 0 }; }
-
-      const resultObjs = (results.listings || []).slice(0, 6);
-      const ids = resultObjs.map(getIdFromListing);
-      const numberedText = resultObjs.length ? resultObjs.map((l, i) => `${i + 1}) ${l.title || "Listing"} — ${l.suburb || ""} — $${l.pricePerMonth || l.price || "N/A"}`).join("\n\n") : "No matches found. Try a broader area or higher budget.";
-
-      const resultsPayload = {
-        screen: "RESULTS",
-        headerText: "Search results",
-        bodyText: numberedText,
-        footerText: "Done",
-        data: { resultsCount: resultObjs.length, listings: resultObjs.map((l) => ({ id: getIdFromListing(l), title: l.title || "", suburb: l.suburb || "", pricePerMonth: l.pricePerMonth || l.price || 0, bedrooms: l.bedrooms || "" })) },
-      };
-
-      const flowResp = await sendResultsFlow(phone, DEFAULT_FLOW_ID, resultsPayload).catch((e) => { console.warn("[sendResultsFlow] error:", e); return { error: e }; });
-
-      // persist mapping memory + DB meta
-      try {
-        selectionMap.set(digitsOnly(phone), { ids, results: resultObjs });
-        if (dbAvailable && savedMsg && savedMsg._id) {
-          await Message.findByIdAndUpdate(savedMsg._id, {
-            $set: {
-              "meta.state": "AWAITING_LIST_SELECTION",
-              "meta.listingIds": ids,
-              "meta.resultObjects": resultObjs.map(r => ({
-                _id: getIdFromListing(r),
-                title: r.title || "",
-                suburb: r.suburb || "",
-                pricePerMonth: r.pricePerMonth || r.price || 0,
-                contactPhone: r.contactPhone || r.listerPhoneNumber || r.contactWhatsApp || "",
-                contactName: r.contactName || "",
-              })),
-              "meta.sendResp_resultsFlow": flowResp,
-            }
-          }, { upsert: true }).catch(() => null);
-        }
-      } catch (e) { console.warn("[webhook] save mapping failed:", e); }
-
-      // fallback text if flow failed or suppressed
-      if (flowResp?.error || flowResp?.suppressed) {
-        await sendText(phone, numberedText);
-      }
-      await sendText(phone, "To view contact details reply with the number (e.g. 1) or tap a result. Or send: CONTACT <LISTING_ID>.");
-      return NextResponse.json({ ok: true, note: "search-handled-results-sent", ids, flowResp }, { status: 200 });
-    }
-  } catch (e) { console.error("[webhook] SEARCH->RESULTS error:", e); return NextResponse.json({ ok: true, note: "flow-search-error-logged" }, { status: 200 }); }
-
-  // default no-op
-  return NextResponse.json({ ok: true, note: "ignored-non-hi-non-search" }, { status: 200 });
-}
-
-/* -------------------------
-   tryRevealByIdOrCached: attempts DB lookup then memory cached object
-   After revealing, sends post-selection buttons once and records the selection.
-------------------------- */
-async function tryRevealByIdOrCached(listingId, phone, idsFromMeta = [], resultsFromMeta = [], dbAvailable = true) {
-  try {
-    if (!listingId) return false;
-
-    // 1) try helper getListingById
-    try {
-      const listing = await getListingById(listingId).catch(() => null);
-      if (listing) { await revealFromObject(listing, phone); await sendPostSelectionButtons(listing, phone); await saveUserSelectedListing(phone, listingId, dbAvailable); return true; }
-    } catch (e) { console.warn("[tryReveal] getListingById failed:", e); }
-
-    // 2) Listing.findById
-    try {
-      if (typeof Listing?.findById === "function") {
-        const dbListing = await Listing.findById(listingId).lean().exec().catch(() => null);
-        if (dbListing) { await revealFromObject(dbListing, phone); await sendPostSelectionButtons(dbListing, phone); await saveUserSelectedListing(phone, listingId, dbAvailable); return true; }
-      }
-    } catch (e) { console.warn("[tryReveal] Listing.findById failed:", e); }
-
-    // 3) fallback to resultsFromMeta mapping
-    if (Array.isArray(idsFromMeta) && idsFromMeta.length > 0 && Array.isArray(resultsFromMeta)) {
-      const idx = idsFromMeta.indexOf(listingId);
-      if (idx >= 0 && resultsFromMeta[idx]) { await revealFromObject(resultsFromMeta[idx], phone); await sendPostSelectionButtons(resultsFromMeta[idx], phone); await saveUserSelectedListing(phone, listingId, dbAvailable); return true; }
-    }
-
-    // 4) defensive substring match
-    if (Array.isArray(resultsFromMeta) && resultsFromMeta.length) {
-      for (const r of resultsFromMeta) {
-        const candidateId = getIdFromListing(r);
-        if (candidateId && listingId && candidateId.includes(listingId)) { await revealFromObject(r, phone); await sendPostSelectionButtons(r, phone); await saveUserSelectedListing(phone, candidateId, dbAvailable); return true; }
-      }
-    }
-
-    await sendText(phone, "Sorry, listing not found. If you still see results, please reply again with the number shown (e.g. 1).");
-    return false;
-  } catch (e) {
-    console.error("[tryRevealByIdOrCached] unexpected error:", e);
-    try { await sendText(phone, "Sorry — couldn't fetch contact details right now."); } catch { }
-    return false;
-  }
-}
-
-/* -------------------------
-   send post-selection buttons (sent once)
-------------------------- */
-async function sendPostSelectionButtons(listing, phone) {
-  try {
-    const theId = getIdFromListing(listing) || String(listing._id || "");
-    await sendInteractiveButtons(phone, "What next?", [
-      { id: "menu_main", title: "Main menu" },
-      { id: "menu_contacts", title: "View my contacts" },
-      { id: `view_images_${theId}`, title: "View images" },
-    ]);
-  } catch (e) { console.warn("[sendPostSelectionButtons] error:", e); }
-}
-
-/* -------------------------
-   save user selected listing into Message.meta (latest message)
-------------------------- */
-async function saveUserSelectedListing(phone, listingId, dbAvailable) {
-  try {
-    if (!dbAvailable) return;
-    if (typeof Message?.findOneAndUpdate === "function") {
-      await Message.findOneAndUpdate({ phone: digitsOnly(phone) }, { $set: { "meta.listingIdSelected": listingId, "meta.state": "CONTACT_REVEALED" } }, { sort: { createdAt: -1 }, upsert: false }).exec().catch(() => null);
-    }
-  } catch (e) { /* ignore */ }
-}
-
-/* -------------------------
-   revealFromObject: sends contact + listing summary (single concise sends)
-   Uses sendText/sendInteractiveButtons which are cached to avoid duplicates.
-------------------------- */
-async function revealFromObject(listing, phone) {
-  try {
-    if (!listing) { await sendText(phone, "Sorry, listing not found."); return; }
-
-    const title = listing.title || listing.name || "Listing";
-    const suburb = listing.suburb || listing.location?.suburb || "";
-    const price = listing.pricePerMonth != null ? `$${listing.pricePerMonth}` : (listing.price != null ? `$${listing.price}` : "N/A");
-    const bedrooms = listing.bedrooms != null ? `${listing.bedrooms} bed(s)` : "";
-    const description = listing.description ? String(listing.description).slice(0, 800) : "";
-    const features = Array.isArray(listing.features) ? listing.features.filter(Boolean) : [];
-    const images = Array.isArray(listing.images) ? listing.images.filter(Boolean) : [];
-
-    const contactName = listing.contactName || listing.ownerName || "Owner";
-    const contactPhone = listing.contactPhone || listing.listerPhoneNumber || listing.contactWhatsApp || "N/A";
-    const contactWhatsApp = listing.contactWhatsApp || "";
-    const contactEmail = listing.contactEmail || listing.email || "";
-
-    const lines = [
-      `Contact for: ${title}`,
-      suburb ? `Suburb: ${suburb}` : null,
-      bedrooms ? `Bedrooms: ${bedrooms}` : null,
-      `Price: ${price}`,
-      "",
-      `Contact: ${contactName}`,
-      `Phone: ${contactPhone}`,
-    ].filter(Boolean);
-
-    if (contactWhatsApp) lines.push(`WhatsApp: ${contactWhatsApp}`);
-    if (contactEmail) lines.push(`Email: ${contactEmail}`);
-
-    await sendText(phone, lines.join("\n"));
-    if (description) await sendText(phone, `Description:\n${description}`);
-    if (features && features.length) await sendText(phone, `Features:\n• ${features.join("\n• ")}`);
-    if (images.length) await sendText(phone, `Photos: ${images.length} image(s) available.`);
-
-    await sendText(phone, "Reply CALL to contact the lister or reply with another result number (e.g. 2).");
-  } catch (e) {
-    console.error("[revealFromObject] error:", e);
-    try { await sendText(phone, "Sorry — couldn't fetch contact details right now."); } catch { }
-  }
 }
