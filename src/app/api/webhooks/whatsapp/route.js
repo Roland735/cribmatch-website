@@ -896,8 +896,13 @@ export async function POST(request) {
       await sendWithMainMenuButton(phone, "No images found for this listing.", "Tap Main menu.");
       return NextResponse.json({ ok: true, note: "images-not-found" });
     }
-    const imgText = [`Images for ${listing.title || "Listing"}:`].concat(imgs.slice(0, 6)).join("\n");
-    await sendWithMainMenuButton(phone, imgText, "Open an image link, or tap Main menu.");
+    const title = listing?.title ? String(listing.title) : "Listing";
+    const shown = imgs.slice(0, 8);
+    const more = Math.max(0, imgs.length - shown.length);
+    const lines = [`Images for ${title}:`].concat(shown.map((u, i) => `${i + 1}) ${u}`));
+    if (more) lines.push(`+${more} more`);
+    lines.push("", "Main menu: menu");
+    await sendTextWithInstructionHeader(phone, lines.join("\n"), "Open an image link to view.");
     return NextResponse.json({ ok: true, note: "images-sent" });
   }
 
@@ -984,7 +989,6 @@ export async function POST(request) {
 
     // reveal contact
     await revealFromObject(listing, phone);
-    await sendPostSelectionButtons(listing, phone);
 
     // save that user viewed this contact
     if (dbAvailable && savedMsg && savedMsg._id) {
@@ -1070,28 +1074,28 @@ async function tryRevealByIdOrCached(listingId, phone, idsFromMeta = [], results
     // 1) helper getListingById
     try {
       const listing = await getListingById(listingId).catch(() => null);
-      if (listing) { await revealFromObject(listing, phone); await sendPostSelectionButtons(listing, phone); await saveUserSelectedListing(phone, listingId, dbAvailable); return true; }
+      if (listing) { await revealFromObject(listing, phone); await saveUserSelectedListing(phone, listingId, dbAvailable); return true; }
     } catch (e) { console.warn("[tryReveal] getListingById failed:", e); }
 
     // 2) Listing.findById
     try {
       if (typeof Listing?.findById === "function") {
         const dbListing = await Listing.findById(listingId).lean().exec().catch(() => null);
-        if (dbListing) { await revealFromObject(dbListing, phone); await sendPostSelectionButtons(dbListing, phone); await saveUserSelectedListing(phone, listingId, dbAvailable); return true; }
+        if (dbListing) { await revealFromObject(dbListing, phone); await saveUserSelectedListing(phone, listingId, dbAvailable); return true; }
       }
     } catch (e) { console.warn("[tryReveal] Listing.findById failed:", e); }
 
     // 3) fallback to resultsFromMeta mapping
     if (Array.isArray(idsFromMeta) && idsFromMeta.length > 0 && Array.isArray(resultsFromMeta)) {
       const idx = idsFromMeta.indexOf(listingId);
-      if (idx >= 0 && resultsFromMeta[idx]) { await revealFromObject(resultsFromMeta[idx], phone); await sendPostSelectionButtons(resultsFromMeta[idx], phone); await saveUserSelectedListing(phone, listingId, dbAvailable); return true; }
+      if (idx >= 0 && resultsFromMeta[idx]) { await revealFromObject(resultsFromMeta[idx], phone); await saveUserSelectedListing(phone, listingId, dbAvailable); return true; }
     }
 
     // 4) defensive substring match
     if (Array.isArray(resultsFromMeta) && resultsFromMeta.length) {
       for (const r of resultsFromMeta) {
         const candidateId = getIdFromListing(r);
-        if (candidateId && listingId && candidateId.includes(listingId)) { await revealFromObject(r, phone); await sendPostSelectionButtons(r, phone); await saveUserSelectedListing(phone, candidateId, dbAvailable); return true; }
+        if (candidateId && listingId && candidateId.includes(listingId)) { await revealFromObject(r, phone); await saveUserSelectedListing(phone, candidateId, dbAvailable); return true; }
       }
     }
 
@@ -1128,11 +1132,15 @@ async function revealFromObject(listing, phone) {
   try {
     if (!listing) { await sendWithMainMenuButton(phone, "Sorry, listing not found.", "Tap Main menu."); return; }
 
+    const { listing: ensuredListing, id: ensuredId } = ensureListingHasId(listing, 0);
+    if (!ensuredListing) { await sendWithMainMenuButton(phone, "Sorry, listing not found.", "Tap Main menu."); return; }
+
+    listing = ensuredListing;
     const title = listing.title || listing.name || "Listing";
     const suburb = listing.suburb || listing.location?.suburb || "";
     const price = listing.pricePerMonth != null ? `$${listing.pricePerMonth}` : (listing.price != null ? `$${listing.price}` : "N/A");
     const bedrooms = listing.bedrooms != null ? `${listing.bedrooms} bed(s)` : "";
-    const description = listing.description ? String(listing.description).slice(0, 800) : "";
+    const description = listing.description ? String(listing.description).slice(0, 700) : "";
     const features = Array.isArray(listing.features) ? listing.features.filter(Boolean) : [];
     const images = Array.isArray(listing.images) ? listing.images.filter(Boolean) : [];
 
@@ -1141,23 +1149,42 @@ async function revealFromObject(listing, phone) {
     const contactWhatsApp = listing.contactWhatsApp || "";
     const contactEmail = listing.contactEmail || listing.email || "";
 
-    const lines = [
+    const detailsLines = [
       `Contact for: ${title}`,
+      ensuredId ? `Listing ID: ${ensuredId}` : null,
       suburb ? `Suburb: ${suburb}` : null,
       bedrooms ? `Bedrooms: ${bedrooms}` : null,
       `Price: ${price}`,
       "",
       `Contact: ${contactName}`,
       `Phone: ${contactPhone}`,
+      contactWhatsApp ? `WhatsApp: ${contactWhatsApp}` : null,
+      contactEmail ? `Email: ${contactEmail}` : null,
     ].filter(Boolean);
 
-    if (contactWhatsApp) lines.push(`WhatsApp: ${contactWhatsApp}`);
-    if (contactEmail) lines.push(`Email: ${contactEmail}`);
+    const blocks = [detailsLines.join("\n")];
 
-    await sendTextWithInstructionHeader(phone, lines.join("\n"), "Use the details below to contact the lister.");
-    if (description) await sendTextWithInstructionHeader(phone, `Description:\n${description}`, "Read the description below.");
-    if (features && features.length) await sendTextWithInstructionHeader(phone, `Features:\n• ${features.join("\n• ")}`, "Review the features below.");
-    if (images.length) await sendTextWithInstructionHeader(phone, `Photos: ${images.length} image(s) available.`, "Tap View images to see photos.");
+    if (description) {
+      blocks.push(`Description:\n${description}`);
+    }
+
+    if (features && features.length) {
+      blocks.push(`Features:\n• ${features.slice(0, 12).join("\n• ")}`);
+    }
+
+    if (images.length) {
+      const shown = images.slice(0, 6);
+      const more = Math.max(0, images.length - shown.length);
+      const photoLines = shown.map((u, i) => `${i + 1}) ${u}`);
+      if (more) photoLines.push(`+${more} more`);
+      blocks.push(`Photos:\n${photoLines.join("\n")}`);
+    }
+
+    blocks.push(`\nNext:\n- Reply with a number from your last results anytime\n- To see photos again: images ${ensuredId}\n- Main menu: menu`);
+
+    let body = blocks.join("\n\n").trim();
+    if (body.length > 3600) body = `${body.slice(0, 3580).trim()}\n…`;
+    await sendTextWithInstructionHeader(phone, body, "Use the details below to contact the lister.");
   } catch (e) {
     console.error("[revealFromObject] error:", e);
     try { await sendWithMainMenuButton(phone, "Sorry — couldn't fetch contact details right now.", "Tap Main menu."); } catch { }
