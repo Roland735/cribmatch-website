@@ -419,6 +419,20 @@ function getIdFromListing(l) {
   return "";
 }
 
+function ensureListingHasId(listing, indexHint = 0) {
+  if (!listing || typeof listing !== "object") return { listing: null, id: "" };
+  const existingId = getIdFromListing(listing);
+  if (existingId) return { listing, id: existingId };
+
+  const title = typeof listing.title === "string" ? listing.title.trim() : "";
+  const suburb = typeof listing.suburb === "string" ? listing.suburb.trim() : "";
+  const price = listing.pricePerMonth ?? listing.price ?? "";
+  const pseudoId = `seed_${_hash(`${title}|${suburb}|${price}|${indexHint}`).slice(0, 16)}`;
+
+  const patched = { ...listing, _id: pseudoId };
+  return { listing: patched, id: pseudoId };
+}
+
 /* -------------------------
    Flow detection & parsing helpers
 ------------------------- */
@@ -624,27 +638,29 @@ export async function POST(request) {
       return NextResponse.json({ ok: true, note: "flow-search-no-results" });
     }
 
-    const ids = items.map(getIdFromListing);
+    const ensured = items.map((item, i) => ensureListingHasId(item, i));
+    const ensuredItems = ensured.map((e) => e.listing).filter(Boolean);
+    const ids = ensured.map((e) => e.id).filter(Boolean);
     const numbered = items
       .map((l, i) => {
         const title = String(l.title || "Listing").trim();
         const suburb = String(l.suburb || "").trim();
         const price = l.pricePerMonth || l.price || "N/A";
-        const id = getIdFromListing(l);
+        const { id } = ensureListingHasId(l, i);
         return `${i + 1}) ${title} — ${suburb} — $${price} — ID:${id}`;
       })
       .join("\n\n");
 
-    await saveSearchContext(phone, ids, items, dbAvailable);
+    await saveSearchContext(phone, ids, ensuredItems, dbAvailable);
     await sendText(phone, `Reply with the number (e.g. 1) to get contact details.\n\n${numbered}`);
 
-    selectionMap.set(phone, { ids, results: items });
+    selectionMap.set(phone, { ids, results: ensuredItems });
     if (dbAvailable && savedMsg && savedMsg._id) {
       await Message.findByIdAndUpdate(savedMsg._id, {
         $set: {
           "meta.state": "AWAITING_LIST_SELECTION",
           "meta.listingIds": ids,
-          "meta.resultObjects": items,
+          "meta.resultObjects": ensuredItems,
           "meta.flowData": flowData
         }
       }).catch(() => null);
@@ -892,6 +908,7 @@ export async function POST(request) {
     console.log("[webhook] selection attempt:", { phone, userRaw, hasLastMeta: !!lastMeta, memSize: selectionMap.size });
 
     let listingId = null;
+    let listingFromResults = null;
     const mem = selectionMap.get(phone);
 
     let lastIds = (lastMeta && Array.isArray(lastMeta.listingIds) && lastMeta.listingIds.length > 0)
@@ -929,14 +946,19 @@ export async function POST(request) {
     } else if (/^contact\s+/i.test(userRaw)) {
       const m = userRaw.match(/^contact\s+(.+)$/i);
       listingId = m ? m[1].trim() : null;
+      if (listingId && listingId.startsWith("seed_") && Array.isArray(lastResults) && lastResults.length) {
+        listingFromResults = lastResults.find((r) => getIdFromListing(r) === listingId) || null;
+      }
     } else {
       const idx = parseInt(userRaw, 10) - 1;
       if (idx >= 0) {
-        if (idx < lastIds.length) {
-          listingId = lastIds[idx];
-        } else if (idx < lastResults.length) {
+        if (idx < lastResults.length) {
           const r = lastResults[idx];
-          listingId = getIdFromListing(r) || r._id;
+          const ensured = ensureListingHasId(r, idx);
+          listingFromResults = ensured.listing;
+          listingId = ensured.id;
+        } else if (idx < lastIds.length) {
+          listingId = lastIds[idx];
         }
       }
     }
@@ -949,8 +971,10 @@ export async function POST(request) {
     }
 
     // try to fetch listing (helper + DB)
-    let listing = null;
-    try { listing = await getListingById(listingId).catch(() => null); } catch (e) { listing = null; }
+    let listing = listingFromResults;
+    if (!listing && !String(listingId || "").startsWith("seed_")) {
+      try { listing = await getListingById(listingId).catch(() => null); } catch (e) { listing = null; }
+    }
     if (!listing && dbAvailable && typeof Listing?.findById === "function") listing = await Listing.findById(listingId).lean().exec().catch(() => null);
     if (!listing && Array.isArray(lastResults)) listing = lastResults.find((r) => getIdFromListing(r) === listingId || String(r._id) === listingId) || null;
     if (!listing) {
