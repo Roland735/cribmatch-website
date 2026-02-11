@@ -129,6 +129,51 @@ async function sendInteractiveButtons(phoneNumber, bodyText, buttons = [], opts 
   return res;
 }
 
+async function sendInteractiveList(phoneNumber, bodyText, rows = [], opts = {}) {
+  const apiToken = process.env.WHATSAPP_API_TOKEN;
+  const phone_number_id = process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_ID;
+  const phone = digitsOnly(phoneNumber);
+
+  const safeRows = Array.isArray(rows) ? rows.slice(0, 10) : [];
+  const fallbackText = `${bodyText}\n\n${safeRows.map((r, i) => `${i + 1}) ${r.title}${r.description ? ` — ${r.description}` : ""}`).join("\n")}\n\nReply with the number (e.g. 1) or type: contact <listing-id>.`;
+
+  const interactive = {
+    type: "list",
+    ...(opts?.headerText ? { header: { type: "text", text: String(opts.headerText).slice(0, 60) } } : {}),
+    body: { text: String(bodyText || "").slice(0, 1024) },
+    action: {
+      button: String(opts?.buttonText || "Choose").slice(0, 20),
+      sections: [
+        {
+          title: String(opts?.sectionTitle || "Results").slice(0, 24),
+          rows: safeRows.map((r) => ({
+            id: String(r.id || "").slice(0, 200),
+            title: String(r.title || "").slice(0, 24),
+            ...(r.description ? { description: String(r.description).slice(0, 72) } : {}),
+          })),
+        },
+      ],
+    },
+  };
+
+  const hash = _hash(`interactive_list:${_normalizeForHash(fallbackText)}`);
+  if (!_shouldSend(phone, hash, TTL_INTERACTIVE_MS)) {
+    console.log("[sendInteractiveList] suppressed duplicate interactive list to", phone);
+    return { suppressed: true };
+  }
+
+  if (!apiToken || !phone_number_id) {
+    return sendText(phoneNumber, fallbackText);
+  }
+
+  const payload = { messaging_product: "whatsapp", to: phone, type: "interactive", interactive };
+  const res = await whatsappPost(phone_number_id, apiToken, payload);
+  if (res?.error) {
+    await sendText(phoneNumber, fallbackText).catch(() => null);
+  }
+  return res;
+}
+
 /* -------------------------
    Flow helpers (search & results)
 ------------------------- */
@@ -411,7 +456,7 @@ function getCanonicalMessage(payload) {
   const id = (msg && (msg.id || msg._id || msg.message_id)) || payload?.message_id || payload?.wa_message_id || _safeGet(payload, ["entry", 0, "id"]) || null;
   const fromContact = _safeGet(payload, ["entry", 0, "changes", 0, "value", "contacts", 0, "wa_id"]);
   const from = (msg && (msg.from || msg.sender || msg.from_phone)) || fromContact || payload?.from || payload?.chat_id || payload?.phone_number || null;
-  const text = (msg && ((msg.text && (msg.text.body || msg.text)) || msg.body || msg.body?.text || msg?.interactive?.button_reply?.id || msg?.interactive?.button_reply?.title)) || (typeof payload?.user_message === "string" ? payload.user_message : "") || "";
+  const text = (msg && ((msg.text && (msg.text.body || msg.text)) || msg.body || msg.body?.text || msg?.interactive?.button_reply?.id || msg?.interactive?.button_reply?.title || msg?.interactive?.list_reply?.id || msg?.interactive?.list_reply?.title)) || (typeof payload?.user_message === "string" ? payload.user_message : "") || "";
   return { msg, id: String(id || ""), from: String(from || ""), text: String(text || "") };
 }
 
@@ -526,7 +571,6 @@ export async function POST(request) {
   if (screen === "SEARCH" || (flowData && (flowData.city || flowData.q || flowData.min_price || flowData.max_price))) {
     console.log("[webhook] flow search submission:", flowData);
 
-    // Execute search
     let results = { listings: [], total: 0 };
     try {
       results = await searchPublishedListings({
@@ -551,24 +595,20 @@ export async function POST(request) {
     }
 
     const ids = items.map(getIdFromListing);
-    const numbered = items.map((l, i) => `${i + 1}) ${l.title || "Listing"} — ${l.suburb || ""} — $${l.pricePerMonth || l.price || "N/A"}`).join("\n\n");
+    const listRows = items.map((l, i) => {
+      const listingId = getIdFromListing(l);
+      const title = `${i + 1}) ${String(l.title || "Listing")}`.slice(0, 24);
+      const description = `${String(l.suburb || "").trim()} — $${l.pricePerMonth || l.price || "N/A"}`.replace(/\s+/g, " ").trim();
+      return { id: `select_${listingId}`, title, description };
+    });
 
-    const resultBody = `${numbered}\n\nReply with the number (e.g. 1) to view details.`;
+    await sendInteractiveList(
+      phone,
+      "Search results — tap a listing to view contact details. You can also type menu anytime.",
+      listRows,
+      { headerText: "Search Results", buttonText: "View", sectionTitle: "Listings" }
+    );
 
-    // Attempt to send as single interactive message if length permits
-    if (resultBody.length < 1000) {
-      await sendInteractiveButtons(
-        phone,
-        resultBody,
-        [{ id: "menu_main", title: "Main menu" }],
-        { headerText: "Search Results" }
-      );
-    } else {
-      await sendTextWithInstructionHeader(phone, numbered, "Reply with the number (e.g. 1) to view contact details.");
-      await sendButtonsWithInstructionHeader(phone, "Return to main menu:", [{ id: "menu_main", title: "Main menu" }], "Tap Main menu.");
-    }
-
-    // Update memory
     selectionMap.set(phone, { ids, results: items });
     if (dbAvailable && savedMsg && savedMsg._id) {
       await Message.findByIdAndUpdate(savedMsg._id, {
@@ -820,13 +860,11 @@ export async function POST(request) {
      Selection-by-number
   ------------------------- */
   if (/^[1-9]\d*$/.test(userRaw) || /^select_/.test(userRaw) || /^contact\s+/i.test(userRaw)) {
-    // debug logging for selection
     console.log("[webhook] selection attempt:", { phone, userRaw, hasLastMeta: !!lastMeta, memSize: selectionMap.size });
 
     let listingId = null;
     const mem = selectionMap.get(phone);
 
-    // Robust retrieval: prefer lastMeta if it has valid arrays, else fallback to mem
     const lastIds = (lastMeta && Array.isArray(lastMeta.listingIds) && lastMeta.listingIds.length > 0)
       ? lastMeta.listingIds
       : (mem?.ids || []);
