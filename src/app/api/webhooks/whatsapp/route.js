@@ -135,7 +135,15 @@ async function sendInteractiveList(phoneNumber, bodyText, rows = [], opts = {}) 
   const phone = digitsOnly(phoneNumber);
 
   const safeRows = Array.isArray(rows) ? rows.slice(0, 10) : [];
-  const fallbackText = `${bodyText}\n\n${safeRows.map((r, i) => `${i + 1}) ${r.title}${r.description ? ` — ${r.description}` : ""}`).join("\n")}\n\nReply with the number (e.g. 1) or type: contact <listing-id>.`;
+  const fallbackText = `${bodyText}\n\n${safeRows
+    .map((r, i) => {
+      const id = typeof r?.id === "string" && r.id.startsWith("select_") ? r.id.slice("select_".length) : "";
+      const parts = [`${i + 1}) ${r.title}`];
+      if (r.description) parts.push(r.description);
+      if (id) parts.push(`ID:${id}`);
+      return parts.join(" — ");
+    })
+    .join("\n")}\n\nTap a listing above. If you can't tap, reply: contact <ID> (example: contact 60df...).`;
 
   const interactive = {
     type: "list",
@@ -597,7 +605,7 @@ export async function POST(request) {
     const ids = items.map(getIdFromListing);
     const listRows = items.map((l, i) => {
       const listingId = getIdFromListing(l);
-      const title = `${i + 1}) ${String(l.title || "Listing")}`.slice(0, 24);
+      const title = String(l.title || "Listing").slice(0, 24);
       const description = `${String(l.suburb || "").trim()} — $${l.pricePerMonth || l.price || "N/A"}`.replace(/\s+/g, " ").trim();
       return { id: `select_${listingId}`, title, description };
     });
@@ -865,18 +873,37 @@ export async function POST(request) {
     let listingId = null;
     const mem = selectionMap.get(phone);
 
-    const lastIds = (lastMeta && Array.isArray(lastMeta.listingIds) && lastMeta.listingIds.length > 0)
+    let lastIds = (lastMeta && Array.isArray(lastMeta.listingIds) && lastMeta.listingIds.length > 0)
       ? lastMeta.listingIds
       : (mem?.ids || []);
 
-    const lastResults = (lastMeta && Array.isArray(lastMeta.resultObjects) && lastMeta.resultObjects.length > 0)
+    let lastResults = (lastMeta && Array.isArray(lastMeta.resultObjects) && lastMeta.resultObjects.length > 0)
       ? lastMeta.resultObjects
       : (mem?.results || []);
+
+    if ((!lastIds.length && !lastResults.length) && dbAvailable && typeof Message?.findOne === "function") {
+      const doc = await Message.findOne({
+        phone,
+        $or: [
+          { "meta.listingIds.0": { $exists: true } },
+          { "meta.resultObjects.0": { $exists: true } },
+          { "meta.state": "AWAITING_LIST_SELECTION" },
+        ],
+      })
+        .sort({ createdAt: -1 })
+        .lean()
+        .exec()
+        .catch(() => null);
+
+      const meta = doc?.meta || null;
+      if (meta && Array.isArray(meta.listingIds) && meta.listingIds.length) lastIds = meta.listingIds;
+      if (meta && Array.isArray(meta.resultObjects) && meta.resultObjects.length) lastResults = meta.resultObjects;
+    }
 
     console.log("[webhook] selection candidates:", { idsLen: lastIds.length, resultsLen: lastResults.length });
 
     if (/^select_/.test(userRaw)) {
-      listingId = userRaw.split("_", 2)[1];
+      listingId = userRaw.slice("select_".length).trim();
     } else if (/^contact\s+/i.test(userRaw)) {
       const m = userRaw.match(/^contact\s+(.+)$/i);
       listingId = m ? m[1].trim() : null;
@@ -895,7 +922,7 @@ export async function POST(request) {
     console.log("[webhook] selection resolved:", { listingId });
 
     if (!listingId) {
-      await sendWithMainMenuButton(phone, "Couldn't determine the listing from your reply.", "Reply with the number shown (e.g. 1), or tap Main menu.");
+      await sendWithMainMenuButton(phone, "Couldn't determine the listing from your reply.", "Tap a listing from the results, or reply: contact <ID> (shown in the list).");
       return NextResponse.json({ ok: true, note: "selection-unknown" });
     }
 
