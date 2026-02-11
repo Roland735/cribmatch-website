@@ -93,7 +93,7 @@ async function sendText(phoneNumber, message) {
     return { error: "missing-credentials" };
   }
 
-  const payload = { messaging_product: "whatsapp", to: phone, type: "text", text: { body: normalizedMessage } };
+  const payload = { messaging_product: "whatsapp", to: phone, type: "text", text: { body: message } };
   return whatsappPost(phone_number_id, apiToken, payload);
 }
 
@@ -553,8 +553,20 @@ export async function POST(request) {
     const ids = items.map(getIdFromListing);
     const numbered = items.map((l, i) => `${i + 1}) ${l.title || "Listing"} — ${l.suburb || ""} — $${l.pricePerMonth || l.price || "N/A"}`).join("\n\n");
 
-    await sendTextWithInstructionHeader(phone, numbered, "Reply with the number (e.g. 1) to view contact details.");
-    await sendButtonsWithInstructionHeader(phone, "Return to main menu:", [{ id: "menu_main", title: "Main menu" }], "Tap Main menu.");
+    const resultBody = `${numbered}\n\nReply with the number (e.g. 1) to view details.`;
+
+    // Attempt to send as single interactive message if length permits
+    if (resultBody.length < 1000) {
+      await sendInteractiveButtons(
+        phone,
+        resultBody,
+        [{ id: "menu_main", title: "Main menu" }],
+        { headerText: "Search Results" }
+      );
+    } else {
+      await sendTextWithInstructionHeader(phone, numbered, "Reply with the number (e.g. 1) to view contact details.");
+      await sendButtonsWithInstructionHeader(phone, "Return to main menu:", [{ id: "menu_main", title: "Main menu" }], "Tap Main menu.");
+    }
 
     // Update memory
     selectionMap.set(phone, { ids, results: items });
