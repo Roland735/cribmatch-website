@@ -231,7 +231,7 @@ async function sendSearchFlow(phoneNumber, data = {}) {
     interactive: {
       type: "flow",
       header: { type: "text", text: data.headerText || "Find rentals — filters" },
-      body: { text: data.bodyText || "Press Continue to open the search form." },
+      body: { text: data.bodyText || "Only City is required. Other filters are optional." },
       footer: { text: data.footerText || "Search" },
       action: {
         name: "flow",
@@ -542,7 +542,7 @@ export async function POST(request) {
   }
 
   if (cmd === "open_search") {
-    const flowResp = await sendSearchFlow(phone, { headerText: "Instructions: Tap Continue", bodyText: "Open the search form to choose City, Suburb (optional), Bedrooms and Price.", footerText: "Search", screen: "SEARCH", cities: PREDEFINED_CITIES }).catch((e) => ({ error: e }));
+    const flowResp = await sendSearchFlow(phone, { headerText: "Instructions: Tap Continue", bodyText: "Only City is required. Other filters are optional.", footerText: "Search", screen: "SEARCH", cities: PREDEFINED_CITIES }).catch((e) => ({ error: e }));
     if (flowResp?.error || flowResp?.suppressed) {
       await sendWithMainMenuButton(phone, "Couldn't open the search form right now.", "Reply with area and optional budget, or tap Main menu.");
     } else {
@@ -563,7 +563,7 @@ export async function POST(request) {
   // SEARCH command (robust)
   if (cmd === "search" || cmd === "search properties" || cmd === "menu_search") {
     console.log("[webhook] search command invoked for", phone);
-    const flowResp = await sendSearchFlow(phone, { headerText: "Instructions: Tap Continue", bodyText: "Open the search form to choose City, Suburb (optional), Bedrooms and Price.", footerText: "Search", screen: "SEARCH", cities: PREDEFINED_CITIES }).catch((e) => { console.warn("[webhook] sendSearchFlow threw:", e); return { error: e }; });
+    const flowResp = await sendSearchFlow(phone, { headerText: "Instructions: Tap Continue", bodyText: "Only City is required. Other filters are optional.", footerText: "Search", screen: "SEARCH", cities: PREDEFINED_CITIES }).catch((e) => { console.warn("[webhook] sendSearchFlow threw:", e); return { error: e }; });
     console.log("[webhook] sendSearchFlow result:", flowResp);
 
     if (flowResp?.error || flowResp?.suppressed) {
