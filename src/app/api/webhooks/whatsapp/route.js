@@ -245,16 +245,37 @@ function detectRequestedScreen(rawPayload = {}) {
   if (flowData && (flowData.q || flowData.city || flowData.suburb || flowData.min_price || flowData.max_price)) return "SEARCH";
   return null;
 }
-
 function getFlowDataFromPayload(payload) {
   try {
-    const v = payload?.entry ? .0?.changes?.[0]?.value || payload || {};
-    const nfmJson = _safeGet(v, ["messages", 0, "interactive", "nfm_reply", "response_json"]);
+    const v =
+      payload?.entry?.[0]?.changes?.[0]?.value ||
+      payload ||
+      {};
+
+    const nfmJson = _safeGet(v, [
+      "messages",
+      0,
+      "interactive",
+      "nfm_reply",
+      "response_json",
+    ]);
+
     if (nfmJson && typeof nfmJson === "string") {
-      try { return JSON.parse(nfmJson); } catch (e) { /* ignore */ }
+      try {
+        return JSON.parse(nfmJson);
+      } catch (e) {
+        /* ignore */
+      }
     }
-    const msgInteractiveFlowData = _safeGet(v, ["messages", 0, "interactive", "flow", "data"]) || _safeGet(v, ["messages", 0, "interactive", "data"]) || _safeGet(v, ["messages", 0, "interactive"]);
-    if (msgInteractiveFlowData && typeof msgInteractiveFlowData === "object") return msgInteractiveFlowData;
+
+    const msgInteractiveFlowData =
+      _safeGet(v, ["messages", 0, "interactive", "flow", "data"]) ||
+      _safeGet(v, ["messages", 0, "interactive", "data"]) ||
+      _safeGet(v, ["messages", 0, "interactive"]);
+
+    if (msgInteractiveFlowData && typeof msgInteractiveFlowData === "object") {
+      return msgInteractiveFlowData;
+    }
 
     const candidates = [
       _safeGet(v, ["data_exchange", "data"]),
@@ -262,26 +283,40 @@ function getFlowDataFromPayload(payload) {
       _safeGet(v, ["flow", "data"]),
       _safeGet(v, ["flow"]),
       _safeGet(v, ["data"]),
-      payload?.data
+      payload?.data,
     ];
+
     for (const c of candidates) {
       if (!c || typeof c !== "object") continue;
+
       const out = {};
-      const maybe = (k) => c[k] ?? c[String(k)] ?? undefined;
+      const maybe = (k) => c[k] ?? c[String(k)];
+
       out.city = maybe("city") ?? maybe("selected_city");
       out.suburb = maybe("suburb") ?? maybe("selected_suburb");
-      out.property_category = maybe("property_category") ?? maybe("selected_category");
-      out.property_type = maybe("property_type") ?? maybe("selected_type");
-      out.bedrooms = maybe("bedrooms") ?? maybe("selected_bedrooms");
-      out.min_price = maybe("min_price") ?? maybe("minPrice") ?? maybe("min");
-      out.max_price = maybe("max_price") ?? maybe("maxPrice") ?? maybe("max");
-      out.q = maybe("q") ?? maybe("keyword") ?? maybe("query");
+      out.property_category =
+        maybe("property_category") ?? maybe("selected_category");
+      out.property_type =
+        maybe("property_type") ?? maybe("selected_type");
+      out.bedrooms =
+        maybe("bedrooms") ?? maybe("selected_bedrooms");
+      out.min_price =
+        maybe("min_price") ?? maybe("minPrice") ?? maybe("min");
+      out.max_price =
+        maybe("max_price") ?? maybe("maxPrice") ?? maybe("max");
+      out.q =
+        maybe("q") ?? maybe("keyword") ?? maybe("query");
+
       Object.assign(out, c);
       return out;
     }
+
     return {};
-  } catch (e) { return {}; }
+  } catch (e) {
+    return {};
+  }
 }
+
 
 /* -------------------------
    Canonicalize incoming message
