@@ -1,14 +1,16 @@
 // app/api/webhooks/whatsapp/route.js
 //
-// Updated: reliably send SEARCH flow when user says "search" (or variants).
-// Avoid duplicate interactive/text sends which caused garbled UI.
-// Keeps: selection-by-number, View My Contacts, View Images, Main Menu.
+// Full webhook with fixes to avoid duplicate messages and loops.
+// - messageSendCache prevents identical sends to the same phone within TTL
+// - handlers return immediately after handling to avoid overlapping sends
+// - view images and other flows are single-shot and non-repetitive
+//
 // Required env:
-//  - WHATSAPP_API_TOKEN
-//  - WHATSAPP_PHONE_NUMBER_ID (or WHATSAPP_PHONE_ID)
-//  - WHATSAPP_FLOW_ID
-//  - WHATSAPP_WEBHOOK_VERIFY_TOKEN
-//  - APP_SECRET (optional)
+// - WHATSAPP_API_TOKEN
+// - WHATSAPP_PHONE_NUMBER_ID or WHATSAPP_PHONE_ID
+// - WHATSAPP_FLOW_ID
+// - WHATSAPP_WEBHOOK_VERIFY_TOKEN
+// - APP_SECRET (optional)
 //
 import { NextResponse } from "next/server";
 import crypto from "crypto";
@@ -19,7 +21,7 @@ import { getListingById, searchPublishedListings } from "@/lib/getListings";
 export const runtime = "nodejs";
 
 /* -------------------------
-   Small utils
+   Utilities
 ------------------------- */
 function digitsOnly(v) {
   return String(v || "").replace(/\D/g, "");
@@ -29,7 +31,36 @@ function _safeGet(obj, path) {
 }
 
 /* -------------------------
-   WhatsApp helpers (graph)
+   Message send cache to prevent duplicate sends
+   - messageSendCache: Map<phone, Map<hash, timestamp>>
+   - TTL_TEXT_MS controls how long to suppress identical text messages (ms)
+   - TTL_INTERACTIVE_MS controls interactive payload duplicates (ms)
+------------------------- */
+const messageSendCache = new Map();
+const TTL_TEXT_MS = 3000;
+const TTL_INTERACTIVE_MS = 3000;
+
+function _now() { return Date.now(); }
+function _hashString(s) {
+  try { return crypto.createHash("md5").update(String(s)).digest("hex"); } catch (e) { return String(s).slice(0, 64); }
+}
+function _shouldSend(phone, hash, ttl) {
+  if (!phone) return true;
+  const p = messageSendCache.get(phone) || new Map();
+  const ts = p.get(hash);
+  const now = _now();
+  if (ts && now - ts < ttl) {
+    return false;
+  }
+  p.set(hash, now);
+  // cleanup stale entries occasionally
+  for (const [k, v] of p) if (now - v > Math.max(TTL_TEXT_MS, TTL_INTERACTIVE_MS) * 5) p.delete(k);
+  messageSendCache.set(phone, p);
+  return true;
+}
+
+/* -------------------------
+   WhatsApp Graph wrappers (use cache to avoid duplicates)
 ------------------------- */
 async function whatsappPost(phone_number_id, token, bodyObj) {
   const url = `https://graph.facebook.com/v24.0/${phone_number_id}/messages`;
@@ -44,25 +75,37 @@ async function whatsappPost(phone_number_id, token, bodyObj) {
 async function sendText(phoneNumber, message) {
   const apiToken = process.env.WHATSAPP_API_TOKEN;
   const phone_number_id = process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_ID;
+  const phone = digitsOnly(phoneNumber);
+  const payload = { messaging_product: "whatsapp", to: phone, type: "text", text: { body: message } };
+
+  // suppress empty messages
+  if (!message || String(message).trim() === "") return { error: "empty-message" };
+
+  // if missing env, log and pretend to send (prevents double fallback spam)
   if (!apiToken || !phone_number_id) {
-    console.log("[sendText] missing creds — message preview:", message.slice(0, 300));
+    const hash = _hashString(`text:${message}`);
+    if (!_shouldSend(phone, hash, TTL_TEXT_MS)) return { error: "suppressed-duplicate" };
+    console.log("[sendText] missing-credentials — preview:", message.slice(0, 400));
     return { error: "missing-credentials" };
   }
-  const payload = { messaging_product: "whatsapp", to: digitsOnly(phoneNumber), type: "text", text: { body: message } };
+
+  const hash = _hashString(`text:${message}`);
+  if (!_shouldSend(phone, hash, TTL_TEXT_MS)) {
+    console.log("[sendText] suppressed duplicate text to", phone, "hash", hash);
+    return { error: "suppressed-duplicate" };
+  }
+
   return whatsappPost(phone_number_id, apiToken, payload);
 }
 
 async function sendInteractiveButtons(phoneNumber, bodyText, buttons = []) {
   const apiToken = process.env.WHATSAPP_API_TOKEN;
   const phone_number_id = process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_ID;
-  const fallback = [bodyText, "", ...buttons.map((b, i) => `${i + 1}) ${b.title}`), "", "Reply with the number (e.g. 1) or the command."].join("\n");
-  if (!apiToken || !phone_number_id) {
-    await sendText(phoneNumber, fallback);
-    return { error: "missing-credentials" };
-  }
+  const phone = digitsOnly(phoneNumber);
+
   const interactivePayload = {
     messaging_product: "whatsapp",
-    to: digitsOnly(phoneNumber),
+    to: phone,
     type: "interactive",
     interactive: {
       type: "button",
@@ -70,15 +113,31 @@ async function sendInteractiveButtons(phoneNumber, bodyText, buttons = []) {
       action: { buttons: buttons.slice(0, 3).map((b) => ({ type: "reply", reply: { id: b.id, title: b.title } })) },
     },
   };
+
+  const hash = _hashString(`interactive:${JSON.stringify(interactivePayload.interactive)}`);
+  if (!_shouldSend(phone, hash, TTL_INTERACTIVE_MS)) {
+    console.log("[sendInteractiveButtons] suppressed duplicate interactive to", phone);
+    // still return a success-like object to the caller to avoid fallback
+    return { suppressed: true };
+  }
+
+  if (!apiToken || !phone_number_id) {
+    // fallback: send a single text fallback (but also subject to text dedupe)
+    const fallback = [bodyText, "", ...buttons.map((b, i) => `${i + 1}) ${b.title}`), "", "Reply with the number (e.g. 1) or the command."].join("\n");
+    return sendText(phoneNumber, fallback);
+  }
+
   const res = await whatsappPost(phone_number_id, apiToken, interactivePayload);
   if (res?.error) {
+    // fallback once to text
+    const fallback = [bodyText, "", ...buttons.map((b, i) => `${i + 1}) ${b.title}`), "", "Reply with the number (e.g. 1) or the command."].join("\n");
     await sendText(phoneNumber, fallback);
   }
   return res;
 }
 
 /* -------------------------
-   Flow helpers
+   Flow helpers (search & results)
 ------------------------- */
 const DEFAULT_FLOW_ID = process.env.WHATSAPP_FLOW_ID || "1534021024566343";
 const PREDEFINED_CITIES = [
@@ -123,6 +182,14 @@ async function sendSearchFlow(phoneNumber, flowId = DEFAULT_FLOW_ID, data = {}) 
     },
   };
 
+  // use same dedupe approach: interactive messages suppressed if duplicate
+  const phone = digitsOnly(phoneNumber);
+  const hash = _hashString(`flow:${JSON.stringify(interactivePayload.interactive)}`);
+  if (!_shouldSend(phone, hash, TTL_INTERACTIVE_MS)) {
+    console.log("[sendSearchFlow] suppressed duplicate flow send for", phone);
+    return { suppressed: true };
+  }
+
   return whatsappPost(phone_number_id, apiToken, interactivePayload);
 }
 
@@ -153,29 +220,28 @@ async function sendResultsFlow(phoneNumber, flowId = DEFAULT_FLOW_ID, resultsPay
     },
   };
 
+  const phone = digitsOnly(phoneNumber);
+  const hash = _hashString(`flow_results:${JSON.stringify(interactivePayload.interactive)}`);
+  if (!_shouldSend(phone, hash, TTL_INTERACTIVE_MS)) {
+    console.log("[sendResultsFlow] suppressed duplicate results flow for", phone);
+    return { suppressed: true };
+  }
+
   return whatsappPost(phone_number_id, apiToken, interactivePayload);
 }
 
 /* -------------------------
-   Main menu helper
-------------------------- */
-async function sendMainMenu(phone) {
-  const buttons = [
-    { id: "menu_list", title: "List a property" },
-    { id: "menu_search", title: "Search properties" },
-    { id: "menu_purchases", title: "View my purchases" },
-  ];
-  await sendInteractiveButtons(phone, "Main menu — choose an option:", buttons);
-  await sendText(phone, "Or reply with the number (e.g. 1) or the command (e.g. 'search').");
-}
-
-/* -------------------------
-   Dedupe + memory fallback
+   Dedupe helpers
 ------------------------- */
 const SEEN_TTL_MS = 1000 * 60 * 5;
 const seenMap = new Map();
 function markSeenInMemory(id) { if (!id) return; seenMap.set(id, Date.now()); }
-function isSeenInMemory(id) { if (!id) return false; const now = Date.now(); for (const [k, t] of seenMap) if (now - t > SEEN_TTL_MS) seenMap.delete(k); return seenMap.has(id); }
+function isSeenInMemory(id) {
+  if (!id) return false;
+  const now = Date.now();
+  for (const [k, t] of seenMap) if (now - t > SEEN_TTL_MS) seenMap.delete(k);
+  return seenMap.has(id);
+}
 async function isAlreadyHandledMsg(dbAvailable, msgId) {
   if (!msgId) return false;
   if (dbAvailable && typeof Message?.findOne === "function") {
@@ -192,12 +258,12 @@ async function markHandledMsg(dbAvailable, msgId) {
 }
 
 /* -------------------------
-   In-memory selection map: phone -> { ids:[], results:[] }
+   In-memory selection map
 ------------------------- */
 const selectionMap = new Map();
 
 /* -------------------------
-   Listing id normalizer
+   ID normalizer
 ------------------------- */
 function getIdFromListing(l) {
   if (!l) return "";
@@ -245,37 +311,14 @@ function detectRequestedScreen(rawPayload = {}) {
   if (flowData && (flowData.q || flowData.city || flowData.suburb || flowData.min_price || flowData.max_price)) return "SEARCH";
   return null;
 }
+
 function getFlowDataFromPayload(payload) {
   try {
-    const v =
-      payload?.entry?.[0]?.changes?.[0]?.value ||
-      payload ||
-      {};
-
-    const nfmJson = _safeGet(v, [
-      "messages",
-      0,
-      "interactive",
-      "nfm_reply",
-      "response_json",
-    ]);
-
-    if (nfmJson && typeof nfmJson === "string") {
-      try {
-        return JSON.parse(nfmJson);
-      } catch (e) {
-        /* ignore */
-      }
-    }
-
-    const msgInteractiveFlowData =
-      _safeGet(v, ["messages", 0, "interactive", "flow", "data"]) ||
-      _safeGet(v, ["messages", 0, "interactive", "data"]) ||
-      _safeGet(v, ["messages", 0, "interactive"]);
-
-    if (msgInteractiveFlowData && typeof msgInteractiveFlowData === "object") {
-      return msgInteractiveFlowData;
-    }
+    const v = payload?.entry?.[0]?.changes?.[0]?.value || payload || {};
+    const nfmJson = _safeGet(v, ["messages", 0, "interactive", "nfm_reply", "response_json"]);
+    if (nfmJson && typeof nfmJson === "string") { try { return JSON.parse(nfmJson); } catch (e) { } }
+    const msgInteractiveFlowData = _safeGet(v, ["messages", 0, "interactive", "flow", "data"]) || _safeGet(v, ["messages", 0, "interactive", "data"]) || _safeGet(v, ["messages", 0, "interactive"]);
+    if (msgInteractiveFlowData && typeof msgInteractiveFlowData === "object") return msgInteractiveFlowData;
 
     const candidates = [
       _safeGet(v, ["data_exchange", "data"]),
@@ -283,40 +326,26 @@ function getFlowDataFromPayload(payload) {
       _safeGet(v, ["flow", "data"]),
       _safeGet(v, ["flow"]),
       _safeGet(v, ["data"]),
-      payload?.data,
+      payload?.data
     ];
-
     for (const c of candidates) {
       if (!c || typeof c !== "object") continue;
-
       const out = {};
-      const maybe = (k) => c[k] ?? c[String(k)];
-
+      const maybe = (k) => c[k] ?? c[String(k)] ?? undefined;
       out.city = maybe("city") ?? maybe("selected_city");
       out.suburb = maybe("suburb") ?? maybe("selected_suburb");
-      out.property_category =
-        maybe("property_category") ?? maybe("selected_category");
-      out.property_type =
-        maybe("property_type") ?? maybe("selected_type");
-      out.bedrooms =
-        maybe("bedrooms") ?? maybe("selected_bedrooms");
-      out.min_price =
-        maybe("min_price") ?? maybe("minPrice") ?? maybe("min");
-      out.max_price =
-        maybe("max_price") ?? maybe("maxPrice") ?? maybe("max");
-      out.q =
-        maybe("q") ?? maybe("keyword") ?? maybe("query");
-
+      out.property_category = maybe("property_category") ?? maybe("selected_category");
+      out.property_type = maybe("property_type") ?? maybe("selected_type");
+      out.bedrooms = maybe("bedrooms") ?? maybe("selected_bedrooms");
+      out.min_price = maybe("min_price") ?? maybe("minPrice") ?? maybe("min");
+      out.max_price = maybe("max_price") ?? maybe("maxPrice") ?? maybe("max");
+      out.q = maybe("q") ?? maybe("keyword") ?? maybe("query");
       Object.assign(out, c);
       return out;
     }
-
     return {};
-  } catch (e) {
-    return {};
-  }
+  } catch (e) { return {}; }
 }
-
 
 /* -------------------------
    Canonicalize incoming message
@@ -362,13 +391,11 @@ export async function POST(request) {
   let rawText = "";
   try { rawText = await request.text(); } catch (e) { rawText = ""; }
   let payload = {};
-  if (rawText) {
-    try { payload = JSON.parse(rawText); } catch (e) { payload = {}; }
-  }
+  if (rawText) { try { payload = JSON.parse(rawText); } catch (e) { payload = {}; } }
 
   try { console.log("[webhook] payload snippet:", JSON.stringify(payload, null, 2).slice(0, 12000)); } catch (e) { }
 
-  // signature check (non-fatal)
+  // optional signature validation (non-fatal)
   try {
     const appSecret = process.env.APP_SECRET;
     const sigHeader = request.headers.get("x-hub-signature-256") || request.headers.get("X-Hub-Signature-256");
@@ -381,11 +408,11 @@ export async function POST(request) {
     }
   } catch (e) { console.warn("[webhook] signature validation error:", e); }
 
-  // DB connect best-effort
+  // DB connect (best-effort)
   let dbAvailable = true;
-  try { await dbConnect(); } catch (err) { dbAvailable = false; console.error("[webhook] DB connect failed:", err); }
+  try { await dbConnect(); } catch (err) { dbAvailable = false; console.error("[webhook] DB connect failed (continuing without persistence):", err); }
 
-  // persist raw event best-effort
+  // persist raw event (best-effort)
   try {
     if (dbAvailable && typeof WebhookEvent?.create === "function") {
       const headersObj = Object.fromEntries(request.headers.entries());
@@ -412,7 +439,7 @@ export async function POST(request) {
     }
   } catch (e) { console.warn("[webhook] save message error:", e); }
 
-  // lastMeta (DB) or memory fallback
+  // fetch lastMeta (DB) or memory fallback
   let lastMeta = null;
   try {
     if (dbAvailable && typeof Message?.findOne === "function") {
@@ -426,7 +453,7 @@ export async function POST(request) {
       const mem = selectionMap.get(digitsOnly(phone));
       if (mem && (Array.isArray(mem.ids) || Array.isArray(mem.results))) lastMeta = { state: "AWAITING_LIST_SELECTION", listingIds: mem.ids || [], resultObjects: mem.results || [] };
     }
-  } catch (e) { }
+  } catch (e) { /* ignore */ }
 
   // dedupe
   try {
@@ -436,22 +463,22 @@ export async function POST(request) {
   } catch (e) { console.warn("[webhook] dedupe error:", e); }
 
   /* -------------------------
-     Handle global menu/button commands:
-     - menu_main, menu_contacts, view_images_<id>, menu_search (open search)
-     These commands are handled immediately and return — preventing duplicate flows.
+     Global command handling (prioritized)
+     - menu_main, menu_search, menu_contacts, view_images_<id>
+     Return after handling to avoid overlapping with selection handler.
   ------------------------- */
   try {
     const rawCmd = String(parsedText || "").trim();
 
-    // main menu
+    // MAIN MENU
     if (/^menu_main$/i.test(rawCmd) || /^menu$/i.test(rawCmd) || /^main\s*menu$/i.test(rawCmd)) {
       await sendMainMenu(phone);
       return NextResponse.json({ ok: true, note: "main-menu-sent" }, { status: 200 });
     }
 
-    // search commands: user typed "search" or tapped a "Search properties" button
+    // SEARCH commands (explicit)
     if (/^search\b/i.test(rawCmd) || /^search properties$/i.test(rawCmd) || rawCmd === "menu_search" || rawCmd === "open_search" || rawCmd === "msg_search") {
-      // Single, consistent flow: try interactive flow; if fail, send one fallback buttons message and one instruction text
+      // send flow; if suppressed or failed, fallback once to buttons+instruction
       const flowResp = await sendSearchFlow(phone, DEFAULT_FLOW_ID, {
         headerText: "Find rentals — filters",
         bodyText: "Please press continue to SEARCH.",
@@ -459,9 +486,8 @@ export async function POST(request) {
         screen: "SEARCH",
         cities: PREDEFINED_CITIES,
         suburbs: [{ id: "any", title: "Any" }, { id: "borrowdale", title: "Borrowdale" }, { id: "avondale", title: "Avondale" }],
-      }).catch((e) => { console.warn("[sendSearchFlow] err:", e); return { error: e }; });
+      }).catch((e) => { console.warn("[sendSearchFlow] error:", e); return { error: e }; });
 
-      // If flow failed, show a single interactive buttons fallback (not both flow+buttons)
       if (flowResp?.error) {
         await sendInteractiveButtons(phone, "Search options — choose:", [
           { id: "msg_search", title: "Search by message" },
@@ -469,16 +495,13 @@ export async function POST(request) {
         ]);
       }
 
-      // single instruction text
       await sendText(phone, "Fill the form to search for rentals (city, suburb, budget). When results appear you can tap a result or reply with the number (e.g. 1).");
-      // persist note
       if (dbAvailable && savedMsg && savedMsg._id) await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.sentSearchFlow": true, "meta.sendResp": flowResp } }).catch(() => null);
       return NextResponse.json({ ok: true, note: "search-invoked", flowResp }, { status: 200 });
     }
 
-    // view my contacts button
+    // VIEW MY CONTACTS
     if (/^menu_contacts$/i.test(rawCmd) || /^view my contacts$/i.test(rawCmd)) {
-      // fetch contacts (DB first, then memory). similar logic to previous version but concise
       let listingIds = [];
       if (dbAvailable && typeof Message?.find === "function") {
         const docs = await Message.find({ phone: digitsOnly(phone), "meta.listingIdSelected": { $exists: true } }).lean().exec().catch(() => []);
@@ -488,13 +511,10 @@ export async function POST(request) {
         const mem = selectionMap.get(digitsOnly(phone));
         if (mem && Array.isArray(mem.ids)) listingIds = Array.from(new Set(mem.ids.filter(Boolean)));
       }
-
       if (!listingIds || listingIds.length === 0) {
         await sendText(phone, "You haven't viewed any contacts yet. Reply 'hi' to start a search.");
         return NextResponse.json({ ok: true, note: "no-contacts" }, { status: 200 });
       }
-
-      // fetch small summaries
       let foundListings = [];
       if (dbAvailable && typeof Listing?.find === "function") {
         try { foundListings = await Listing.find({ _id: { $in: listingIds } }).lean().exec().catch(() => []); } catch (e) { foundListings = []; }
@@ -504,11 +524,10 @@ export async function POST(request) {
         let l = foundListings.find((x) => String(x._id) === String(id));
         if (!l) {
           const mem = selectionMap.get(digitsOnly(phone));
-          if (mem && Array.isArray(mem.results)) l = mem.results.find((r) => getIdFromListing(r) === id || String(r._id) === id);
+          if (mem && Array.isArray(mem.results)) l = mem.results.find((r) => getIdFromListing(r) === id);
         }
         if (l) results.push({ id, title: l.title || "Listing", suburb: l.suburb || "", price: l.pricePerMonth || l.price || 0 });
       }
-
       const numbered = results.length ? results.map((r, i) => `${i + 1}) ${r.title} — ${r.suburb} — $${r.price}`).join("\n\n") : "No contact listings found.";
       await sendText(phone, `Your contacted listings:\n\n${numbered}`);
       const lightweight = results.map((r) => ({ _id: r.id, title: r.title, suburb: r.suburb, price: r.price }));
@@ -517,7 +536,7 @@ export async function POST(request) {
       return NextResponse.json({ ok: true, note: "contacts-sent", count: listingIds.length }, { status: 200 });
     }
 
-    // view images commands: raw like view_images_<id> or button id
+    // VIEW IMAGES (global button id "view_images_<id>")
     if (/^view_images_/i.test(rawCmd)) {
       const listingId = rawCmd.replace(/^view_images_/i, "").trim();
       if (!listingId) { await sendText(phone, "Image request missing listing id."); return NextResponse.json({ ok: true, note: "view-images-missing-id" }, { status: 200 }); }
@@ -531,6 +550,7 @@ export async function POST(request) {
       if (!listing) { await sendText(phone, "Sorry, listing not found."); return NextResponse.json({ ok: true, note: "view-images-notfound" }, { status: 200 }); }
       const images = Array.isArray(listing.images) ? listing.images.filter(Boolean) : (Array.isArray(listing.photos) ? listing.photos.filter(Boolean) : []);
       if (!images || images.length === 0) { await sendText(phone, "No photos available for this listing."); return NextResponse.json({ ok: true, note: "no-images" }, { status: 200 }); }
+      // send images once (URLs). If you want media messages change here.
       await sendText(phone, `Photos for ${listing.title || "listing"}:\n${images.join("\n")}`);
       await sendInteractiveButtons(phone, "What next?", [
         { id: "menu_main", title: "Main menu" },
@@ -540,10 +560,12 @@ export async function POST(request) {
     }
   } catch (e) {
     console.warn("[global-commands] error:", e);
+    // continue to other handlers (but ensure nothing duplicates)
   }
 
   /* -------------------------
-     AWAITING_LIST_SELECTION handling (numeric selection / select_<id> / CONTACT <id>)
+     AWATING_LIST_SELECTION handling (numeric selection / select_<id> / CONTACT <id>)
+     This branch only runs if lastMeta indicates AWAITING_LIST_SELECTION
   ------------------------- */
   try {
     if (lastMeta && lastMeta.state === "AWAITING_LIST_SELECTION") {
@@ -561,7 +583,7 @@ export async function POST(request) {
         }
       }
 
-      // numeric selection
+      // numeric selection e.g. "1"
       if (/^[1-9]\d*$/.test(raw)) {
         const idx = parseInt(raw, 10) - 1;
         const listingId = (idsFromMeta && idx >= 0 && idx < idsFromMeta.length) ? idsFromMeta[idx] : null;
@@ -600,14 +622,16 @@ export async function POST(request) {
         }
       }
 
-      // not recognized
+      // Not recognized -> instruct
       await sendText(phone, "Please reply with the number of the listing (e.g. 1) or tap a result. Or send: CONTACT <LISTING_ID>.");
       return NextResponse.json({ ok: true, note: "selection-expected-number" }, { status: 200 });
     }
-  } catch (e) { console.warn("[webhook] awaiting-list-selection error:", e); }
+  } catch (e) {
+    console.warn("[webhook] AWAITING_LIST_SELECTION error:", e);
+  }
 
   /* -------------------------
-     Greeting: user typed hi/hello -> send SEARCH flow + instruction (single sends)
+     Greeting: hi/hello -> send SEARCH flow + single instruction
   ------------------------- */
   try {
     const isHi = /^(hi|hello|hey|start)$/i.test(String(parsedText || "").trim());
@@ -622,16 +646,24 @@ export async function POST(request) {
       }).catch((e) => { console.warn("[sendSearchFlow] error:", e); return { error: e }; });
 
       if (flowResp?.error) {
-        await sendInteractiveButtons(phone, "Search options:", [{ id: "msg_search", title: "Search by message" }, { id: "open_search", title: "Open search form" }]);
+        // fallback: show a single interactive buttons fallback
+        await sendInteractiveButtons(phone, "Search options:", [
+          { id: "msg_search", title: "Search by message" },
+          { id: "open_search", title: "Open search form" },
+        ]);
       }
+
       await sendText(phone, "Search opened ✅ Fill the form or reply with area and budget (e.g. Borrowdale, $200). When results appear you can tap a result or reply with the number (e.g. 1).");
       if (dbAvailable && savedMsg && savedMsg._id) await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.sentSearchFlow": true, "meta.sendResp": flowResp } }).catch(() => null);
       return NextResponse.json({ ok: true, note: "search-flow-sent", flowResp }, { status: 200 });
     }
-  } catch (e) { console.error("[webhook] greeting error:", e); return NextResponse.json({ ok: true, note: "greeting-error" }, { status: 200 }); }
+  } catch (e) {
+    console.error("[webhook] greeting error:", e);
+    return NextResponse.json({ ok: true, note: "greeting-error" }, { status: 200 });
+  }
 
   /* -------------------------
-     SEARCH -> RESULTS: parse flow submission, run search, send RESULTS flow + fallback
+     SEARCH -> RESULTS: parse flow submission, run search, send results flow + fallback
   ------------------------- */
   try {
     const requestedScreen = detectRequestedScreen(payload);
@@ -660,16 +692,30 @@ export async function POST(request) {
 
       const flowResp = await sendResultsFlow(phone, DEFAULT_FLOW_ID, resultsPayload).catch((e) => { console.warn("[sendResultsFlow] error:", e); return { error: e }; });
 
-      // persist mapping to in-memory & DB meta
+      // persist mapping memory + DB meta
       try {
         selectionMap.set(digitsOnly(phone), { ids, results: resultObjs });
         if (dbAvailable && savedMsg && savedMsg._id) {
-          await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.state": "AWAITING_LIST_SELECTION", "meta.listingIds": ids, "meta.resultObjects": resultObjs.map(r => ({ _id: getIdFromListing(r), title: r.title || "", suburb: r.suburb || "", pricePerMonth: r.pricePerMonth || r.price || 0, contactPhone: r.contactPhone || r.listerPhoneNumber || r.contactWhatsApp || "", contactName: r.contactName || "" })), "meta.sendResp_resultsFlow": flowResp } }, { upsert: true }).catch(() => null);
+          await Message.findByIdAndUpdate(savedMsg._id, {
+            $set: {
+              "meta.state": "AWAITING_LIST_SELECTION",
+              "meta.listingIds": ids,
+              "meta.resultObjects": resultObjs.map(r => ({
+                _id: getIdFromListing(r),
+                title: r.title || "",
+                suburb: r.suburb || "",
+                pricePerMonth: r.pricePerMonth || r.price || 0,
+                contactPhone: r.contactPhone || r.listerPhoneNumber || r.contactWhatsApp || "",
+                contactName: r.contactName || "",
+              })),
+              "meta.sendResp_resultsFlow": flowResp,
+            }
+          }, { upsert: true }).catch(() => null);
         }
       } catch (e) { console.warn("[webhook] save mapping failed:", e); }
 
-      // fallback numbered text + single instruction
-      if (flowResp?.error) {
+      // fallback text if flow failed or suppressed
+      if (flowResp?.error || flowResp?.suppressed) {
         await sendText(phone, numberedText);
       }
       await sendText(phone, "To view contact details reply with the number (e.g. 1) or tap a result. Or send: CONTACT <LISTING_ID>.");
@@ -683,13 +729,13 @@ export async function POST(request) {
 
 /* -------------------------
    tryRevealByIdOrCached: attempts DB lookup then memory cached object
-   After revealing, sends post-selection buttons (menu / contacts / images) once
+   After revealing, sends post-selection buttons once and records the selection.
 ------------------------- */
 async function tryRevealByIdOrCached(listingId, phone, idsFromMeta = [], resultsFromMeta = [], dbAvailable = true) {
   try {
     if (!listingId) return false;
 
-    // 1) helper
+    // 1) try helper getListingById
     try {
       const listing = await getListingById(listingId).catch(() => null);
       if (listing) { await revealFromObject(listing, phone); await sendPostSelectionButtons(listing, phone); await saveUserSelectedListing(phone, listingId, dbAvailable); return true; }
@@ -703,7 +749,7 @@ async function tryRevealByIdOrCached(listingId, phone, idsFromMeta = [], results
       }
     } catch (e) { console.warn("[tryReveal] Listing.findById failed:", e); }
 
-    // 3) resultsFromMeta mapping
+    // 3) fallback to resultsFromMeta mapping
     if (Array.isArray(idsFromMeta) && idsFromMeta.length > 0 && Array.isArray(resultsFromMeta)) {
       const idx = idsFromMeta.indexOf(listingId);
       if (idx >= 0 && resultsFromMeta[idx]) { await revealFromObject(resultsFromMeta[idx], phone); await sendPostSelectionButtons(resultsFromMeta[idx], phone); await saveUserSelectedListing(phone, listingId, dbAvailable); return true; }
@@ -746,7 +792,6 @@ async function sendPostSelectionButtons(listing, phone) {
 async function saveUserSelectedListing(phone, listingId, dbAvailable) {
   try {
     if (!dbAvailable) return;
-    // update the most recent message for this phone
     if (typeof Message?.findOneAndUpdate === "function") {
       await Message.findOneAndUpdate({ phone: digitsOnly(phone) }, { $set: { "meta.listingIdSelected": listingId, "meta.state": "CONTACT_REVEALED" } }, { sort: { createdAt: -1 }, upsert: false }).exec().catch(() => null);
     }
@@ -755,6 +800,7 @@ async function saveUserSelectedListing(phone, listingId, dbAvailable) {
 
 /* -------------------------
    revealFromObject: sends contact + listing summary (single concise sends)
+   Uses sendText/sendInteractiveButtons which are cached to avoid duplicates.
 ------------------------- */
 async function revealFromObject(listing, phone) {
   try {
@@ -786,7 +832,6 @@ async function revealFromObject(listing, phone) {
     if (contactWhatsApp) lines.push(`WhatsApp: ${contactWhatsApp}`);
     if (contactEmail) lines.push(`Email: ${contactEmail}`);
 
-    // single primary message, then optional smaller messages (keeps UI clean)
     await sendText(phone, lines.join("\n"));
     if (description) await sendText(phone, `Description:\n${description}`);
     if (features && features.length) await sendText(phone, `Features:\n• ${features.join("\n• ")}`);
