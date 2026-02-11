@@ -1,9 +1,18 @@
 // app/api/webhooks/whatsapp/route.js
 //
-// Updated: Robust ID mapping + numeric selection fallback to cached result objects.
-// Drop into app/api/webhooks/whatsapp/route.js
+// Full webhook with:
+//  - SEARCH flow sending (interactive flow) when user says "hi"
+//  - RESULTS flow sending on form submission (SEARCH -> RESULTS)
+//  - Persisting listingIds to DB.meta and in-memory selectionMap
+//  - Accepting numeric replies (1,2...), select_<id>, or "CONTACT <id>" and returning contact + address + listing summary
 //
-
+// Important env vars:
+//  - WHATSAPP_API_TOKEN
+//  - WHATSAPP_PHONE_NUMBER_ID (or WHATSAPP_PHONE_ID)
+//  - WHATSAPP_FLOW_ID (your flow ID for Meta flows)
+//  - WHATSAPP_WEBHOOK_VERIFY_TOKEN (for GET verification)
+//  - APP_SECRET (optional, for signature verification)
+//
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { dbConnect, WebhookEvent, Listing } from "@/lib/db";
@@ -13,39 +22,18 @@ import { getListingById, searchPublishedListings } from "@/lib/getListings";
 export const runtime = "nodejs";
 
 /* -------------------------
-   Small helpers
+   Utilities
 ------------------------- */
 function digitsOnly(v) {
   return String(v || "").replace(/\D/g, "");
 }
 
-/**
- * Robustly extract a string ID from a listing object returned by searchPublishedListings.
- * Handles:
- * - l._id as string
- * - l._id as ObjectId (with .toString)
- * - l._id as { $oid: "..." }
- * - l.id
- */
-function getIdFromListing(l) {
-  if (!l) return "";
-  if (typeof l._id === "string" && l._id) return l._id;
-  if (l._id && typeof l._id === "object") {
-    if (typeof l._id.toString === "function") {
-      try {
-        const s = l._id.toString();
-        if (s && s !== "[object Object]") return s;
-      } catch (e) { /* ignore */ }
-    }
-    if (l._id.$oid) return String(l._id.$oid);
-  }
-  if (l.id && typeof l.id === "string") return l.id;
-  if (l._id && typeof l._id === "number") return String(l._id);
-  return "";
+function _safeGet(obj, path) {
+  try { return path.reduce((o, k) => (o && o[k] != null ? o[k] : undefined), obj); } catch (e) { return undefined; }
 }
 
 /* -------------------------
-   WhatsApp API wrappers (best-effort)
+   WhatsApp Graph wrappers
 ------------------------- */
 async function whatsappPost(phone_number_id, token, bodyObj) {
   const url = `https://graph.facebook.com/v24.0/${phone_number_id}/messages`;
@@ -68,26 +56,100 @@ async function sendText(phoneNumber, message) {
   const apiToken = process.env.WHATSAPP_API_TOKEN;
   const phone_number_id = process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_ID;
   if (!apiToken || !phone_number_id) {
-    console.log("[sendText] missing credentials — would send:", message.slice(0, 500));
+    console.log("[sendText] missing credentials - would send:", message.slice(0, 400));
     return { error: "missing-credentials" };
   }
-
   const payload = {
     messaging_product: "whatsapp",
     to: digitsOnly(phoneNumber),
     type: "text",
     text: { body: message },
   };
-
   return whatsappPost(phone_number_id, apiToken, payload);
 }
 
-async function sendFlowStart(phoneNumber, flowId, data = {}) {
+async function sendInteractiveButtons(phoneNumber, bodyText, buttons = []) {
+  const apiToken = process.env.WHATSAPP_API_TOKEN;
+  const phone_number_id = process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_ID;
+  if (!apiToken || !phone_number_id) {
+    // fallback to text list
+    const fallback = [
+      bodyText,
+      "",
+      ...buttons.map((b, i) => `${i + 1}) ${b.title}`),
+      "",
+      "Reply with the number (e.g. 1) or the word (e.g. 'list').",
+    ].join("\n");
+    await sendText(phoneNumber, fallback);
+    return { error: "missing-credentials" };
+  }
+
+  const interactivePayload = {
+    messaging_product: "whatsapp",
+    to: digitsOnly(phoneNumber),
+    type: "interactive",
+    interactive: {
+      type: "button",
+      body: { text: bodyText },
+      action: {
+        buttons: buttons.slice(0, 3).map((b) => ({ type: "reply", reply: { id: b.id, title: b.title } })),
+      },
+    },
+  };
+
+  const res = await whatsappPost(phone_number_id, apiToken, interactivePayload);
+  if (res?.error) {
+    const fallback = [
+      bodyText,
+      "",
+      ...buttons.map((b, i) => `${i + 1}) ${b.title}`),
+      "",
+      "Reply with the number (e.g. 1) or the word (e.g. 'list').",
+    ].join("\n");
+    await sendText(phoneNumber, fallback);
+  }
+  return res;
+}
+
+/* -------------------------
+   Flow helpers (explicit)
+   - sendSearchFlow: sends an interactive flow that opens the SEARCH screen
+   - sendResultsFlow: sends a flow navigate to RESULTS with search results
+------------------------- */
+const DEFAULT_FLOW_ID = process.env.WHATSAPP_FLOW_ID || "1534021024566343";
+const PREDEFINED_CITIES = [
+  { id: "harare", title: "Harare" },
+  { id: "bulawayo", title: "Bulawayo" },
+  { id: "mutare", title: "Mutare" },
+];
+
+async function sendSearchFlow(phoneNumber, flowId = DEFAULT_FLOW_ID, data = {}) {
+  // build payloadData
+  const payloadData = {
+    cities: (data.cities || PREDEFINED_CITIES).map((c) => ({ id: c.id, title: c.title })),
+    suburbs: data.suburbs || [],
+    propertyCategories: data.propertyCategories || [
+      { id: "residential", title: "Residential" },
+      { id: "commercial", title: "Commercial" },
+    ],
+    propertyTypes: data.propertyTypes || [
+      { id: "house", title: "House" },
+      { id: "flat", title: "Flat" },
+      { id: "studio", title: "Studio" },
+    ],
+    bedrooms: data.bedrooms || [
+      { id: "any", title: "Any" },
+      { id: "1", title: "1" },
+      { id: "2", title: "2" },
+      { id: "3", title: "3" },
+    ],
+    ...data,
+  };
+
   const apiToken = process.env.WHATSAPP_API_TOKEN;
   const phone_number_id = process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_ID;
   if (!apiToken || !phone_number_id) return { error: "missing-credentials" };
 
-  const payloadData = data.payloadData || data;
   const interactivePayload = {
     messaging_product: "whatsapp",
     to: digitsOnly(phoneNumber),
@@ -116,12 +178,42 @@ async function sendFlowStart(phoneNumber, flowId, data = {}) {
   return whatsappPost(phone_number_id, apiToken, interactivePayload);
 }
 
-async function sendFlowNavigate(phoneNumber, flowId, screen = "RESULTS", data = {}) {
-  return sendFlowStart(phoneNumber, flowId, { screen, ...data });
+async function sendResultsFlow(phoneNumber, flowId = DEFAULT_FLOW_ID, resultsPayload = {}) {
+  // resultsPayload should include data: { resultsCount, listings, ... } and header/body/footer texts
+  const apiToken = process.env.WHATSAPP_API_TOKEN;
+  const phone_number_id = process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_ID;
+  if (!apiToken || !phone_number_id) return { error: "missing-credentials" };
+
+  const interactivePayload = {
+    messaging_product: "whatsapp",
+    to: digitsOnly(phoneNumber),
+    type: "interactive",
+    interactive: {
+      type: "flow",
+      header: { type: "text", text: resultsPayload.headerText || "Search results" },
+      body: { text: resultsPayload.bodyText || (resultsPayload.data && resultsPayload.data.listingText0) || "Results" },
+      footer: { text: resultsPayload.footerText || "Done" },
+      action: {
+        name: "flow",
+        parameters: {
+          flow_message_version: "3",
+          flow_id: String(flowId),
+          flow_cta: resultsPayload.flow_cta || "View",
+          flow_action: "navigate",
+          flow_action_payload: {
+            screen: resultsPayload.screen || "RESULTS",
+            data: resultsPayload.data || {},
+          },
+        },
+      },
+    },
+  };
+
+  return whatsappPost(phone_number_id, apiToken, interactivePayload);
 }
 
 /* -------------------------
-   Dedupe helpers (DB backed, memory fallback)
+   Dedupe helpers
 ------------------------- */
 const SEEN_TTL_MS = 1000 * 60 * 5;
 const seenMap = new Map();
@@ -164,20 +256,34 @@ async function markHandledMsg(dbAvailable, msgId) {
 
 /* -------------------------
    In-memory selection map (phone -> { ids:[], results:[] })
-   Stored as:
-     selectionMap.set(phone, { ids: ['id1','id2'], results: [<original listing objects>] })
-   This is used as fallback when DB/meta not accessible or when id shape is unexpected.
+   We always populate this when sending RESULTS to improve reliability.
 ------------------------- */
 const selectionMap = new Map();
 
 /* -------------------------
-   Flow detection & parsing helpers
-   (same robust detection used earlier)
+   Listing id normalizer
 ------------------------- */
-function _safeGet(obj, path) {
-  try { return path.reduce((o, k) => (o && o[k] != null ? o[k] : undefined), obj); } catch (e) { return undefined; }
+function getIdFromListing(l) {
+  if (!l) return "";
+  if (typeof l._id === "string" && l._id) return l._id;
+  if (l._id && typeof l._id === "object") {
+    // ObjectId-like
+    if (typeof l._id.toString === "function") {
+      try {
+        const s = l._id.toString();
+        if (s && s !== "[object Object]") return s;
+      } catch (e) { }
+    }
+    if (l._id.$oid) return String(l._id.$oid);
+  }
+  if (l.id && typeof l.id === "string") return l.id;
+  if (l._id && typeof l._id === "number") return String(l._id);
+  return "";
 }
 
+/* -------------------------
+   Flow detection & parsing (same robust approach)
+------------------------- */
 function detectRequestedScreen(rawPayload = {}) {
   const v = rawPayload?.entry?.[0]?.changes?.[0]?.value || rawPayload || {};
   const interactiveType = _safeGet(v, ["messages", 0, "interactive", "type"]);
@@ -192,7 +298,7 @@ function detectRequestedScreen(rawPayload = {}) {
     _safeGet(v, ["flow"]),
     _safeGet(v, ["action"]),
     _safeGet(v, ["data"]),
-    _safeGet(v, ["messages", 0, "interactive", "flow", "screen"]),
+    _safeGet(v, ["messages", 0, "interactive", "flow", "screen"])
   ];
 
   for (const c of candidates) {
@@ -201,32 +307,29 @@ function detectRequestedScreen(rawPayload = {}) {
       const s = c.trim();
       if (s) return s.toUpperCase();
     } else if (typeof c === "object") {
-      if (c.screen && typeof c.screen === "string") return c.screen.toUpperCase();
-      if (Object.keys(c).some(k => ["city", "q", "min_price"].includes(k))) return "SEARCH";
+      if (c.screen && typeof c.screen === "string") return String(c.screen).toUpperCase();
+      const keys = Object.keys(c);
+      if (keys.includes("city") || keys.includes("selected_city") || keys.includes("q") || keys.includes("min_price")) return "SEARCH";
     }
   }
 
-  // also infer by presence of flow data
   const flowData = getFlowDataFromPayload(rawPayload);
   if (flowData && (flowData.q || flowData.city || flowData.suburb || flowData.min_price || flowData.max_price)) return "SEARCH";
-
   return null;
 }
 
 function getFlowDataFromPayload(payload) {
   try {
     const v = payload?.entry?.[0]?.changes?.[0]?.value || payload || {};
-
     const nfmJson = _safeGet(v, ["messages", 0, "interactive", "nfm_reply", "response_json"]);
     if (nfmJson && typeof nfmJson === "string") {
-      try { return JSON.parse(nfmJson); } catch (e) { /* ignore */ }
+      try { return JSON.parse(nfmJson); } catch (e) { }
     }
-
-    const interactiveData = _safeGet(v, ["messages", 0, "interactive", "flow", "data"]) ||
+    const msgInteractiveFlowData = _safeGet(v, ["messages", 0, "interactive", "flow", "data"]) ||
       _safeGet(v, ["messages", 0, "interactive", "data"]) ||
       _safeGet(v, ["messages", 0, "interactive"]);
 
-    if (interactiveData && typeof interactiveData === "object") return interactiveData;
+    if (msgInteractiveFlowData && typeof msgInteractiveFlowData === "object") return msgInteractiveFlowData;
 
     const candidates = [
       _safeGet(v, ["data_exchange", "data"]),
@@ -243,13 +346,15 @@ function getFlowDataFromPayload(payload) {
       const maybe = (k) => c[k] ?? c[String(k)] ?? undefined;
       out.city = maybe("city") ?? maybe("selected_city");
       out.suburb = maybe("suburb") ?? maybe("selected_suburb");
-      out.q = maybe("q") ?? maybe("keyword") ?? maybe("query");
+      out.property_category = maybe("property_category") ?? maybe("selected_category");
+      out.property_type = maybe("property_type") ?? maybe("selected_type");
+      out.bedrooms = maybe("bedrooms") ?? maybe("selected_bedrooms");
       out.min_price = maybe("min_price") ?? maybe("minPrice") ?? maybe("min");
       out.max_price = maybe("max_price") ?? maybe("maxPrice") ?? maybe("max");
+      out.q = maybe("q") ?? maybe("keyword") ?? maybe("query");
       Object.assign(out, c);
       return out;
     }
-
     return {};
   } catch (e) {
     return {};
@@ -269,7 +374,7 @@ function getCanonicalMessage(payload) {
 }
 
 /* -------------------------
-   GET: webhook verification
+   GET: webhook verification (Meta handshake)
 ------------------------- */
 export async function GET(request) {
   const url = new URL(request.url);
@@ -298,23 +403,24 @@ export async function GET(request) {
 }
 
 /* -------------------------
-   POST: main webhook flow
+   POST: main webhook handler
 ------------------------- */
 export async function POST(request) {
   console.log("[webhook] POST invoked");
 
-  // 1) read raw body
+  // read raw body
   let rawText = "";
   try { rawText = await request.text(); } catch (e) { rawText = ""; }
+
   let payload = {};
   if (rawText) {
     try { payload = JSON.parse(rawText); } catch (e) { payload = {}; }
   }
 
-  // debug snippet
-  try { console.log("[webhook] snippet:", JSON.stringify(payload, null, 2).slice(0, 12000)); } catch (e) { /* ignore */ }
+  // log snippet for debugging
+  try { console.log("[webhook] payload snippet:", JSON.stringify(payload, null, 2).slice(0, 12000)); } catch (e) { }
 
-  // 2) optional signature validation
+  // optional signature validation (non-fatal)
   try {
     const appSecret = process.env.APP_SECRET;
     const sigHeader = request.headers.get("x-hub-signature-256") || request.headers.get("X-Hub-Signature-256");
@@ -327,30 +433,28 @@ export async function POST(request) {
     }
   } catch (e) { console.warn("[webhook] signature validation error:", e); }
 
-  // 3) DB connect best-effort
+  // connect to DB (best-effort)
   let dbAvailable = true;
   try { await dbConnect(); } catch (err) { dbAvailable = false; console.error("[webhook] DB connect failed (continuing without persistence):", err); }
 
-  // 4) persist raw event
+  // persist raw event (best-effort)
   try {
     if (dbAvailable && typeof WebhookEvent?.create === "function") {
       const headersObj = Object.fromEntries(request.headers.entries());
-      await WebhookEvent.create({ provider: "whatsapp", headers: headersObj, payload, receivedAt: new Date() }).catch((e) => {
-        console.warn("[webhook] WebhookEvent.create error:", e);
-      });
+      await WebhookEvent.create({ provider: "whatsapp", headers: headersObj, payload, receivedAt: new Date() }).catch((e) => { console.warn("[webhook] WebhookEvent.create error:", e); });
     }
   } catch (e) { console.warn("[webhook] save raw event failed:", e); }
 
-  // 5) canonicalize message
+  // canonicalize message
   const { msg, id: msgId, from: phone, text: parsedText } = getCanonicalMessage(payload);
   console.log("[webhook] parsedMessage:", { msgId, phone, parsedText });
 
   if (!msgId && !phone) {
-    console.log("[webhook] no id or phone found — ignoring");
+    console.log("[webhook] no usable message id or phone — ignoring");
     return NextResponse.json({ ok: true, note: "no-id-or-phone" });
   }
 
-  // 6) save incoming Message (best-effort)
+  // save incoming message (best-effort)
   let savedMsg = null;
   try {
     if (dbAvailable && typeof Message?.create === "function") {
@@ -377,7 +481,7 @@ export async function POST(request) {
     }
   } catch (e) { console.warn("[webhook] save message error:", e); }
 
-  // 7) get lastMeta for this phone (DB) and fallback to selectionMap
+  // fetch lastMeta for this phone (DB) and fallback to in-memory selectionMap
   let lastMeta = null;
   try {
     if (dbAvailable && typeof Message?.findOne === "function") {
@@ -395,57 +499,50 @@ export async function POST(request) {
     }
   } catch (e) { /* ignore */ }
 
-  // 8) dedupe
+  // dedupe
   try {
-    const already = await isAlreadyHandledMsg(dbAvailable, msgId);
-    if (already) return NextResponse.json({ ok: true, note: "dedupe-skip" });
+    const alreadyHandled = await isAlreadyHandledMsg(dbAvailable, msgId);
+    if (alreadyHandled) {
+      console.log("[webhook] message already handled (dedupe) — skipping", msgId);
+      return NextResponse.json({ ok: true, note: "dedupe-skip" });
+    }
     await markHandledMsg(dbAvailable, msgId);
   } catch (e) { console.warn("[webhook] dedupe error:", e); }
 
   /* -------------------------
-     9) If waiting for list selection: handle numeric / select_<id> / CONTACT <id>
+     If waiting for a list selection: accept numeric / select_<id> / CONTACT <id>
   ------------------------- */
   try {
     if (lastMeta && lastMeta.state === "AWAITING_LIST_SELECTION") {
       const raw = String(parsedText || "").trim();
-      // try to get ids/resultObjects from meta or memory
       const idsFromMeta = Array.isArray(lastMeta.listingIds) ? lastMeta.listingIds : (selectionMap.get(digitsOnly(phone))?.ids || []);
       const resultsFromMeta = Array.isArray(lastMeta.resultObjects) ? lastMeta.resultObjects : (selectionMap.get(digitsOnly(phone))?.results || []);
 
-      console.log("[webhook] AWAITING_LIST_SELECTION: idsFromMeta:", idsFromMeta);
+      console.log("[webhook] AWAITING_LIST_SELECTION idsFromMeta:", idsFromMeta);
 
-      // interactive reply id like select_<id>
+      // interactive select_<id>
       if (/^select_/.test(raw)) {
         const listingId = raw.split("_")[1];
         if (listingId) {
-          console.log("[webhook] interactive select for id:", listingId);
-          // Try to reveal using DB first, else fallback to cached result object
           const ok = await tryRevealByIdOrCached(listingId, phone, idsFromMeta, resultsFromMeta);
           selectionMap.delete(digitsOnly(phone));
-          return NextResponse.json({ ok: true, note: ok ? "selection-handled-interactive" : "selection-handled-interactive-notfound" }, { status: 200 });
+          return NextResponse.json({ ok: true, note: ok ? "selection-handled-interactive" : "selection-notfound" }, { status: 200 });
         }
       }
 
-      // numeric selection e.g., "1"
+      // numeric selection
       if (/^[1-9]\d*$/.test(raw)) {
         const idx = parseInt(raw, 10) - 1;
-        if (!Array.isArray(idsFromMeta) || idsFromMeta.length === 0) {
-          console.log("[webhook] No idsFromMeta available; resultsFromMeta length:", resultsFromMeta.length);
-        }
-        const listingId = idsFromMeta && idx >= 0 && idx < idsFromMeta.length ? idsFromMeta[idx] : null;
-        const cachedObj = resultsFromMeta && idx >= 0 && idx < resultsFromMeta.length ? resultsFromMeta[idx] : null;
-
-        console.log("[webhook] numeric selection idx:", idx, "listingId:", listingId, "hasCachedObj:", !!cachedObj);
+        const listingId = (idsFromMeta && idx >= 0 && idx < idsFromMeta.length) ? idsFromMeta[idx] : null;
+        const cachedObj = (resultsFromMeta && idx >= 0 && idx < resultsFromMeta.length) ? resultsFromMeta[idx] : null;
 
         if (listingId) {
           const ok = await tryRevealByIdOrCached(listingId, phone, idsFromMeta, resultsFromMeta);
           selectionMap.delete(digitsOnly(phone));
-          return NextResponse.json({ ok: true, note: ok ? "selection-handled-number" : "selection-handled-number-notfound" }, { status: 200 });
+          return NextResponse.json({ ok: true, note: ok ? "selection-handled-number" : "selection-notfound" }, { status: 200 });
         }
 
-        // if no listingId string but we have cached object with contact fields, use it
         if (!listingId && cachedObj) {
-          console.log("[webhook] falling back to cached object for numeric selection");
           await revealFromObject(cachedObj, phone);
           selectionMap.delete(digitsOnly(phone));
           return NextResponse.json({ ok: true, note: "selection-handled-number-cached" }, { status: 200 });
@@ -459,43 +556,75 @@ export async function POST(request) {
       const m = raw.match(/^contact\s+(.+)$/i);
       if (m) {
         const listingId = m[1].trim();
-        if (listingId) {
-          const ok = await tryRevealByIdOrCached(listingId, phone, idsFromMeta, resultsFromMeta);
-          selectionMap.delete(digitsOnly(phone));
-          return NextResponse.json({ ok: true, note: ok ? "selection-handled-contactcmd" : "selection-handled-contactcmd-notfound" }, { status: 200 });
-        }
+        const ok = await tryRevealByIdOrCached(listingId, phone, idsFromMeta, resultsFromMeta);
+        selectionMap.delete(digitsOnly(phone));
+        return NextResponse.json({ ok: true, note: ok ? "selection-handled-contactcmd" : "selection-notfound" }, { status: 200 });
       }
 
-      // Not recognised
+      // Not recognised -> instruct
       await sendText(phone, "To view contact details reply with the number of the listing (e.g. 1) or tap a result. Or send: CONTACT <LISTING_ID>.");
       return NextResponse.json({ ok: true, note: "selection-expected-number" }, { status: 200 });
     }
   } catch (e) {
-    console.warn("[webhook] AWAITING_LIST_SELECTION error:", e);
+    console.warn("[webhook] AWAITING_LIST_SELECTION handler error:", e);
   }
 
   /* -------------------------
-     10) If user sends "hi" -> open SEARCH flow and instruct
+     Greeting: user typed hi/hello -> send SEARCH flow + instructions
+     NOTE: sendSearchFlow is explicit and robust
   ------------------------- */
   try {
     const isHi = /^(hi|hello|hey|start)$/i.test(String(parsedText || "").trim());
     if (isHi) {
-      const flowId = process.env.WHATSAPP_FLOW_ID || "1534021024566343";
-      const resp = await sendFlowNavigate(phone, flowId, {
+      // Try to send the interactive SEARCH flow
+      const flowResp = await sendSearchFlow(phone, DEFAULT_FLOW_ID, {
         headerText: "Find rentals — filters",
         bodyText: "Please press continue to SEARCH.",
         footerText: "Search",
-        payloadData: { cities: [{ id: "harare", title: "Harare" }, { id: "bulawayo", title: "Bulawayo" }] },
+        screen: "SEARCH",
+        cities: PREDEFINED_CITIES,
+        suburbs: [
+          { id: "any", title: "Any" },
+          { id: "borrowdale", title: "Borrowdale" },
+          { id: "mount_pleasant", title: "Mount Pleasant" },
+          { id: "avondale", title: "Avondale" },
+        ],
       });
-      console.log("[webhook] search flow sent resp:", resp);
 
-      // explicit instruction message (user-visible)
-      await sendText(phone, "Search opened ✅\nFill the form to search (city, suburb, budget). When results appear reply with the number (e.g. 1) to view contact details.");
+      console.log("[webhook] sendSearchFlow response:", flowResp);
+
+      // Always send clear instructions after (so users who don't get flow still know what to do)
+      const instruct = [
+        "Search opened ✅",
+        "Fill the form to search for rentals (city, suburb, budget).",
+        "",
+        "When results appear you can:",
+        "• Tap a result, OR",
+        "• Reply with the result number (e.g. 1) to view contact details, OR",
+        "• Reply: CONTACT <LISTING_ID> (if you have the ID).",
+      ].join("\n");
+
+      // If sending the flow failed (missing creds or API error), send interactive button fallback
+      if (flowResp?.error) {
+        // fallback: interactive buttons to open a text-based search option (best-effort)
+        try {
+          await sendInteractiveButtons(phone, "Search by message or open form:", [
+            { id: "msg_search", title: "Search by message" },
+            { id: "open_search", title: "Open search form" },
+          ]);
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      // send instructions regardless
+      await sendText(phone, instruct);
 
       if (dbAvailable && savedMsg && savedMsg._id) {
-        await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.sentSearchFlow": true, "meta.sendResp": resp } }).catch(() => null);
+        await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.sentSearchFlow": true, "meta.sendResp": flowResp } }).catch(() => null);
       }
-      return NextResponse.json({ ok: true, note: "search-flow-sent", sendResp: resp }, { status: 200 });
+
+      return NextResponse.json({ ok: true, note: "search-flow-sent", flowResp }, { status: 200 });
     }
   } catch (e) {
     console.error("[webhook] error sending search flow:", e);
@@ -503,14 +632,18 @@ export async function POST(request) {
   }
 
   /* -------------------------
-     11) Handle SEARCH flow submission -> run search -> send RESULTS
+     Handle SEARCH -> RESULTS (form submission)
+     - detectRequestedScreen(payload) should return "SEARCH"
+     - We parse flow data, run searchPublishedListings, send RESULTS flow, persist mapping
   ------------------------- */
   try {
-    const requested = detectRequestedScreen(payload);
-    console.log("[webhook] detectRequestedScreen ->", requested);
-    if (requested === "SEARCH") {
+    const requestedScreen = detectRequestedScreen(payload);
+    console.log("[webhook] detectRequestedScreen ->", requestedScreen);
+
+    if (requestedScreen === "SEARCH") {
+      // parse flow data
       const flowData = getFlowDataFromPayload(payload);
-      console.log("[webhook] flowData:", flowData);
+      console.log("[webhook] flowData (SEARCH):", flowData);
 
       const q = String(flowData.q || flowData.keyword || flowData.query || `${flowData.suburb || ""} ${flowData.city || ""}`).trim();
       const minPrice = flowData.min_price || flowData.minPrice || flowData.min || null;
@@ -518,34 +651,45 @@ export async function POST(request) {
       const minP = minPrice ? Number(String(minPrice).replace(/[^\d.]/g, "")) : null;
       const maxP = maxPrice ? Number(String(maxPrice).replace(/[^\d.]/g, "")) : null;
 
-      // run your search helper
+      // run search (your helper)
       let results = { listings: [], total: 0 };
       try {
         results = await searchPublishedListings({ q, minPrice: minP, maxPrice: maxP, perPage: 6 });
       } catch (e) {
-        console.warn("[webhook] searchPublishedListings failed:", e);
+        console.warn("[webhook] searchPublishedListings error:", e);
+        results = { listings: [], total: 0 };
       }
 
       const resultObjs = (results.listings || []).slice(0, 6);
       const ids = resultObjs.map(getIdFromListing);
-      // build friendly numbered text for fallback
+
       const numberedText = resultObjs.length
         ? resultObjs.map((l, i) => `${i + 1}) ${l.title || "Listing"} — ${l.suburb || ""} — $${l.pricePerMonth || l.price || "N/A"}`).join("\n\n")
         : "No matches found. Try a broader area or higher budget.";
 
-      // Send RESULTS flow (if using flows)
-      const flowResp = await sendFlowNavigate(phone, process.env.WHATSAPP_FLOW_ID || "1534021024566343", {
+      // send RESULTS flow
+      const resultsPayload = {
         screen: "RESULTS",
         headerText: "Search results",
         bodyText: numberedText,
         footerText: "Done",
-        payloadData: { resultsCount: resultObjs.length, listings: resultObjs },
-      });
-      console.log("[webhook] sendFlowNavigate(RESULTS) resp:", flowResp);
+        data: {
+          resultsCount: resultObjs.length,
+          listings: resultObjs.map((l) => ({
+            id: getIdFromListing(l),
+            title: l.title || "",
+            suburb: l.suburb || "",
+            pricePerMonth: l.pricePerMonth || l.price || 0,
+            bedrooms: l.bedrooms || "",
+          })),
+        },
+      };
 
-      // Persist mapping (DB meta + in-memory)
+      const flowResp = await sendResultsFlow(phone, DEFAULT_FLOW_ID, resultsPayload).catch((e) => { console.warn("[webhook] sendResultsFlow error:", e); return { error: "send-results-error" }; });
+      console.log("[webhook] sendResultsFlow resp:", flowResp);
+
+      // persist mapping: always into memory map, and to DB.meta when available
       try {
-        // always update in-memory map for immediate use
         selectionMap.set(digitsOnly(phone), { ids, results: resultObjs });
 
         if (dbAvailable && savedMsg && savedMsg._id) {
@@ -554,7 +698,6 @@ export async function POST(request) {
               "meta.state": "AWAITING_LIST_SELECTION",
               "meta.listingIds": ids,
               "meta.resultObjects": resultObjs.map(r => ({
-                // store only lightweight fields to avoid huge payloads
                 _id: getIdFromListing(r),
                 title: r.title || "",
                 suburb: r.suburb || "",
@@ -567,81 +710,83 @@ export async function POST(request) {
           }, { upsert: true }).catch(() => null);
         }
       } catch (e) {
-        console.warn("[webhook] saving mapping failed:", e);
+        console.warn("[webhook] persisting listing mapping failed:", e);
       }
 
-      // Always send fallback numbered text + instructions so user knows how to pick
+      // fallback text so the user sees the numbered list and knows how to reply
       try {
         await sendText(phone, numberedText);
-        await sendText(phone, "To view contact details reply with the number of the listing (e.g. 1) or tap a result. Or reply: CONTACT <LISTING_ID>.");
+        await sendText(phone, "To view contact details reply with the number of the listing (e.g. 1) or tap a result. Or: CONTACT <LISTING_ID>.");
       } catch (e) {
-        console.warn("[webhook] sending fallback text failed:", e);
+        console.warn("[webhook] fallback text sending failed:", e);
       }
 
       return NextResponse.json({ ok: true, note: "search-handled-results-sent", ids, flowResp }, { status: 200 });
     }
   } catch (e) {
-    console.error("[webhook] SEARCH -> RESULTS error:", e);
+    console.error("[webhook] SEARCH->RESULTS error:", e);
     return NextResponse.json({ ok: true, note: "flow-search-error-logged" }, { status: 200 });
   }
 
-  // default safe no-op
+  // default no-op
+  console.log("[webhook] no auto-reply configured for this message.");
   return NextResponse.json({ ok: true, note: "ignored-non-hi-non-search" }, { status: 200 });
 }
 
 /* -------------------------
-   Try reveal by DB id, if that fails fall back to cached result object
-   Returns true if something was sent, false if not.
+   tryRevealByIdOrCached: try DB lookup then fall back to cached result object
+   returns true if something was sent, false otherwise
 ------------------------- */
 async function tryRevealByIdOrCached(listingId, phone, idsFromMeta = [], resultsFromMeta = []) {
   try {
-    if (listingId) {
-      console.log("[tryRevealByIdOrCached] Attempting DB lookup for id:", listingId);
-      // prefer your helper
-      try {
-        const listing = await getListingById(listingId);
-        if (listing) {
-          await revealFromObject(listing, phone);
+    if (!listingId) return false;
+
+    // 1) try helper getListingById if available
+    try {
+      const listing = await getListingById(listingId).catch(() => null);
+      if (listing) {
+        await revealFromObject(listing, phone);
+        return true;
+      }
+    } catch (e) {
+      console.warn("[tryReveal] getListingById failed:", e);
+    }
+
+    // 2) try direct Listing.findById
+    try {
+      if (typeof Listing?.findById === "function") {
+        const dbListing = await Listing.findById(listingId).lean().exec().catch(() => null);
+        if (dbListing) {
+          await revealFromObject(dbListing, phone);
           return true;
         }
-      } catch (e) {
-        console.warn("[tryRevealByIdOrCached] getListingById failed:", e);
       }
+    } catch (e) {
+      console.warn("[tryReveal] Listing.findById failed:", e);
+    }
 
-      // fallback: try Listing.findById
-      try {
-        if (typeof Listing?.findById === "function") {
-          const dbListing = await Listing.findById(listingId).lean().exec().catch(() => null);
-          if (dbListing) {
-            await revealFromObject(dbListing, phone);
-            return true;
-          }
-        }
-      } catch (e) {
-        console.warn("[tryRevealByIdOrCached] Listing.findById failed:", e);
-      }
-
-      // fallback: maybe listingId is a short id or present as string in resultsFromMeta
-      const idx = (idsFromMeta || []).indexOf(listingId);
-      if (idx >= 0 && resultsFromMeta && resultsFromMeta[idx]) {
+    // 3) try mapping from idsFromMeta -> resultsFromMeta
+    if (Array.isArray(idsFromMeta) && idsFromMeta.length > 0 && Array.isArray(resultsFromMeta)) {
+      const idx = idsFromMeta.indexOf(listingId);
+      if (idx >= 0 && resultsFromMeta[idx]) {
         await revealFromObject(resultsFromMeta[idx], phone);
         return true;
       }
+    }
 
-      // fallback: try to find by matching id substring in result objects (defensive)
-      if (resultsFromMeta && resultsFromMeta.length) {
-        for (const r of resultsFromMeta) {
-          const candidateId = getIdFromListing(r);
-          if (candidateId && candidateId.includes(listingId)) {
-            await revealFromObject(r, phone);
-            return true;
-          }
+    // 4) defensive: match substring
+    if (Array.isArray(resultsFromMeta) && resultsFromMeta.length) {
+      for (const r of resultsFromMeta) {
+        const candidateId = getIdFromListing(r);
+        if (candidateId && listingId && candidateId.includes(listingId)) {
+          await revealFromObject(r, phone);
+          return true;
         }
       }
     }
 
     // nothing found
-    console.warn("[tryRevealByIdOrCached] listing not found for id:", listingId, "idsFromMeta:", idsFromMeta, "resultsLen:", (resultsFromMeta || []).length);
+    console.warn("[tryRevealByIdOrCached] listing not found for id:", listingId);
     await sendText(phone, "Sorry, listing not found. If you still see results, please reply again with the number shown (e.g. 1).");
     return false;
   } catch (e) {
@@ -652,8 +797,8 @@ async function tryRevealByIdOrCached(listingId, phone, idsFromMeta = [], results
 }
 
 /* -------------------------
-   Build and send contact/listing info from a listing-like object
-   This accepts either a DB Listing doc or a "search result" object and sends user-friendly messages.
+   revealFromObject: build & send user-friendly messages for a listing object
+   Accepts DB doc or search result object
 ------------------------- */
 async function revealFromObject(listing, phone) {
   try {
@@ -662,7 +807,6 @@ async function revealFromObject(listing, phone) {
       return;
     }
 
-    // Prefer canonical fields from your Listing schema
     const title = listing.title || listing.name || "Listing";
     const suburb = listing.suburb || listing.location?.suburb || "";
     const price = listing.pricePerMonth != null ? `$${listing.pricePerMonth}` : (listing.price != null ? `$${listing.price}` : "N/A");
@@ -673,13 +817,12 @@ async function revealFromObject(listing, phone) {
     const features = Array.isArray(listing.features) ? listing.features.filter(Boolean) : [];
     const images = Array.isArray(listing.images) ? listing.images.filter(Boolean) : [];
 
-    // contact fields
     const contactName = listing.contactName || listing.ownerName || "Owner";
     const contactPhone = listing.contactPhone || listing.listerPhoneNumber || listing.contactWhatsApp || "N/A";
     const contactWhatsApp = listing.contactWhatsApp || "";
     const contactEmail = listing.contactEmail || listing.email || "";
 
-    const primary = [
+    const lines = [
       `Contact for: ${title}`,
       suburb ? `Suburb: ${suburb}` : null,
       propertyType ? `Type: ${propertyType}` : null,
@@ -691,10 +834,10 @@ async function revealFromObject(listing, phone) {
       `Phone: ${contactPhone}`,
     ].filter(Boolean);
 
-    if (contactWhatsApp) primary.push(`WhatsApp: ${contactWhatsApp}`);
-    if (contactEmail) primary.push(`Email: ${contactEmail}`);
+    if (contactWhatsApp) lines.push(`WhatsApp: ${contactWhatsApp}`);
+    if (contactEmail) lines.push(`Email: ${contactEmail}`);
 
-    await sendText(phone, primary.join("\n"));
+    await sendText(phone, lines.join("\n"));
 
     if (description) await sendText(phone, `Description:\n${description}`);
     if (features && features.length) await sendText(phone, `Features:\n• ${features.join("\n• ")}`);
