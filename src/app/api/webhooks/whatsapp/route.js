@@ -820,10 +820,23 @@ export async function POST(request) {
      Selection-by-number
   ------------------------- */
   if (/^[1-9]\d*$/.test(userRaw) || /^select_/.test(userRaw) || /^contact\s+/i.test(userRaw)) {
+    // debug logging for selection
+    console.log("[webhook] selection attempt:", { phone, userRaw, hasLastMeta: !!lastMeta, memSize: selectionMap.size });
+
     let listingId = null;
     const mem = selectionMap.get(phone);
-    const lastIds = (lastMeta && Array.isArray(lastMeta.listingIds)) ? lastMeta.listingIds : (mem?.ids || []);
-    const lastResults = (lastMeta && Array.isArray(lastMeta.resultObjects)) ? lastMeta.resultObjects : (mem?.results || []);
+
+    // Robust retrieval: prefer lastMeta if it has valid arrays, else fallback to mem
+    const lastIds = (lastMeta && Array.isArray(lastMeta.listingIds) && lastMeta.listingIds.length > 0)
+      ? lastMeta.listingIds
+      : (mem?.ids || []);
+
+    const lastResults = (lastMeta && Array.isArray(lastMeta.resultObjects) && lastMeta.resultObjects.length > 0)
+      ? lastMeta.resultObjects
+      : (mem?.results || []);
+
+    console.log("[webhook] selection candidates:", { idsLen: lastIds.length, resultsLen: lastResults.length });
+
     if (/^select_/.test(userRaw)) {
       listingId = userRaw.split("_", 2)[1];
     } else if (/^contact\s+/i.test(userRaw)) {
@@ -831,9 +844,17 @@ export async function POST(request) {
       listingId = m ? m[1].trim() : null;
     } else {
       const idx = parseInt(userRaw, 10) - 1;
-      if (Array.isArray(lastIds) && idx >= 0 && idx < lastIds.length) listingId = lastIds[idx];
-      else if (Array.isArray(lastResults) && idx >= 0 && idx < lastResults.length) listingId = getIdFromListing(lastResults[idx]) || lastResults[idx]._id;
+      if (idx >= 0) {
+        if (idx < lastIds.length) {
+          listingId = lastIds[idx];
+        } else if (idx < lastResults.length) {
+          const r = lastResults[idx];
+          listingId = getIdFromListing(r) || r._id;
+        }
+      }
     }
+
+    console.log("[webhook] selection resolved:", { listingId });
 
     if (!listingId) {
       await sendWithMainMenuButton(phone, "Couldn't determine the listing from your reply.", "Reply with the number shown (e.g. 1), or tap Main menu.");
