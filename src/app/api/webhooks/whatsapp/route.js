@@ -255,7 +255,7 @@ async function saveSearchContext(phone, listingIds, resultObjects, dbAvailable) 
 /* -------------------------
    Flow helpers (search & results)
 ------------------------- */
-// fallback ID restored from your earlier working file
+// fallback ID restored from your earlier working
 const DEFAULT_FLOW_ID = process.env.WHATSAPP_FLOW_ID || "1534021024566343";
 const PREDEFINED_CITIES = [
   { id: "harare", title: "Harare" },
