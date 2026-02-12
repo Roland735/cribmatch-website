@@ -287,6 +287,7 @@ function toOptionId(prefix, title) {
 function toSlugId(value) {
   return String(value || "")
     .toLowerCase()
+    .replace(/['’]/g, "")
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "")
     .slice(0, 48);
@@ -348,59 +349,52 @@ async function sendSearchFlow(phoneNumber, data = {}) {
   }
 
   const facets = await getListingFacetsCached().catch(() => null);
+
   const citiesFromFacets = Array.isArray(facets?.cities)
-    ? facets.cities.slice(0, 250).map((c) => ({ id: toSlugId(c), title: String(c) }))
-    : (data.cities || PREDEFINED_CITIES).map((c) => ({ id: c.id, title: c.title }));
+    ? facets.cities.slice(0, 80).map((c) => ({ id: toSlugId(c), title: String(c) }))
+    : PREDEFINED_CITIES.map((c) => ({ id: c.id, title: c.title }));
 
   const suburbsFromFacets = Array.isArray(facets?.suburbs)
-    ? [{ id: "any", title: "Any" }].concat(facets.suburbs.slice(0, 250).map((s) => ({ id: toSuburbId(s), title: String(s) })))
-    : (Array.isArray(data.suburbs) ? data.suburbs : []);
-
-  const suburbsByCityFromFacets = (facets && facets.suburbsByCity && typeof facets.suburbsByCity === "object")
-    ? Object.keys(facets.suburbsByCity).reduce((acc, city) => {
-      const list = Array.isArray(facets.suburbsByCity[city]) ? facets.suburbsByCity[city] : [];
-      acc[toSlugId(city)] = [{ id: "any", title: "Any" }].concat(list.slice(0, 250).map((s) => ({ id: toSuburbId(s), title: String(s) })));
-      return acc;
-    }, {})
-    : (data.suburbsByCity || {});
+    ? [{ id: "any", title: "Any" }].concat(
+      facets.suburbs.slice(0, 120).map((s) => ({ id: toSuburbId(s), title: String(s) })),
+    )
+    : [{ id: "any", title: "Any" }];
 
   const propertyCategoriesFromFacets = Array.isArray(facets?.propertyCategories)
-    ? facets.propertyCategories.map((c) => ({ id: toSlugId(c), title: String(c).slice(0, 1).toUpperCase() + String(c).slice(1) }))
-    : (data.propertyCategories || [{ id: "residential", title: "Residential" }, { id: "commercial", title: "Commercial" }]);
+    ? facets.propertyCategories.slice(0, 12).map((c) => ({ id: toSlugId(c), title: String(c).slice(0, 1).toUpperCase() + String(c).slice(1) }))
+    : [{ id: "residential", title: "Residential" }, { id: "commercial", title: "Commercial" }];
 
   const propertyTypesFromFacets = Array.isArray(facets?.propertyTypes)
-    ? facets.propertyTypes.slice(0, 250).map((t) => ({ id: toSlugId(t), title: String(t) }))
-    : (data.propertyTypes || [{ id: "house", title: "House" }, { id: "flat", title: "Flat" }]);
+    ? facets.propertyTypes.slice(0, 120).map((t) => ({ id: toSlugId(t), title: String(t) }))
+    : [{ id: "house", title: "House" }, { id: "flat", title: "Flat" }];
 
   const featuresOptionsFromFacets = Array.isArray(facets?.features)
-    ? facets.features.slice(0, 250).map((f) => ({ id: toSlugId(f), title: String(f) }))
-    : (data.featuresOptions || []);
+    ? facets.features.slice(0, 80).map((f) => ({ id: toSlugId(f), title: String(f) }))
+    : [];
 
-  const selectedCity = String(data.selected_city || data.city || "harare");
-  const selectedSuburb = String(data.selected_suburb || data.suburb || "any");
-  const selectedCategory = String(data.selected_category || data.property_category || "residential");
-  const selectedType = String(data.selected_type || data.property_type || "house");
-  const selectedBedrooms = String(data.selected_bedrooms || data.bedrooms || "any");
-  const selectedFeatures = Array.isArray(data.selected_features || data.features) ? (data.selected_features || data.features) : [];
+  const selectedCity = String(data.selected_city || "harare");
+  const selectedSuburb = String(data.selected_suburb || "any");
+  const selectedCategory = String(data.selected_category || "residential");
+  const selectedType = String(data.selected_type || "house");
+  const selectedBedrooms = String(data.selected_bedrooms || "any");
+  const selectedFeatures = Array.isArray(data.selected_features) ? data.selected_features : [];
 
   const payloadData = {
     cities: citiesFromFacets,
     suburbs: suburbsFromFacets,
-    suburbsByCity: suburbsByCityFromFacets,
     propertyCategories: propertyCategoriesFromFacets,
     propertyTypes: propertyTypesFromFacets,
-    bedrooms: data.bedrooms || [{ id: "any", title: "Any" }, { id: "1", title: "1" }, { id: "2", title: "2" }, { id: "3", title: "3" }, { id: "4plus", title: "4+" }],
+    bedrooms: [{ id: "any", title: "Any" }, { id: "1", title: "1" }, { id: "2", title: "2" }, { id: "3", title: "3" }, { id: "4plus", title: "4+" }],
     featuresOptions: featuresOptionsFromFacets,
+    min_price: typeof data.min_price === "string" ? data.min_price : "0",
+    max_price: typeof data.max_price === "string" ? data.max_price : "0",
+    q: typeof data.q === "string" ? data.q : "",
     selected_city: selectedCity,
     selected_suburb: selectedSuburb,
     selected_category: selectedCategory,
     selected_type: selectedType,
     selected_bedrooms: selectedBedrooms,
     selected_features: selectedFeatures,
-    min_price: data.min_price || "0",
-    max_price: data.max_price || "0",
-    q: data.q || "",
-    ...data,
   };
 
   const interactivePayload = {
