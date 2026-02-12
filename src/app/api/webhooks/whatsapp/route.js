@@ -257,7 +257,84 @@ async function saveSearchContext(phone, listingIds, resultObjects, dbAvailable) 
 ------------------------- */
 // fallback ID restored from your earlier working file
 const DEFAULT_FLOW_ID = process.env.WHATSAPP_FLOW_ID || "1534021024566343";
-const PREDEFINED_CITIES = [{ id: "harare", title: "Harare" }, { id: "bulawayo", title: "Bulawayo" }, { id: "mutare", title: "Mutare" }];
+const PREDEFINED_CITIES = [
+  { id: "harare", title: "Harare" },
+  { id: "chitungwiza", title: "Chitungwiza" },
+  { id: "bulawayo", title: "Bulawayo" },
+  { id: "mutare", title: "Mutare" },
+  { id: "gweru", title: "Gweru" },
+  { id: "masvingo", title: "Masvingo" },
+  { id: "victoria_falls", title: "Victoria Falls" },
+  { id: "norton", title: "Norton" },
+];
+
+const PREDEFINED_SUBURBS = [
+  { id: "any", title: "Any" },
+  { id: "borrowdale", title: "Borrowdale" },
+  { id: "mount_pleasant", title: "Mount Pleasant" },
+  { id: "avondale", title: "Avondale" },
+  { id: "highlands", title: "Highlands" },
+  { id: "belgravia", title: "Belgravia" },
+  { id: "mabelreign", title: "Mabelreign" },
+  { id: "eastlea", title: "Eastlea" },
+  { id: "chisipite", title: "Chisipite" },
+  { id: "glen_lorne", title: "Glen Lorne" },
+  { id: "greendale", title: "Greendale" },
+  { id: "gunhill", title: "Gunhill" },
+  { id: "chitungwiza_central", title: "Chitungwiza Central" },
+  { id: "zengeza", title: "Zengeza" },
+  { id: "seke", title: "Seke" },
+  { id: "st_marys", title: "St Mary's" },
+  { id: "hillside", title: "Hillside (Bulawayo)" },
+  { id: "entumbane", title: "Entumbane" },
+  { id: "famona", title: "Famona" },
+  { id: "burnside", title: "Burnside" },
+  { id: "belmont_byo", title: "Belmont" },
+  { id: "nkulumane", title: "Nkulumane" },
+  { id: "dangamvura", title: "Dangamvura (Mutare)" },
+  { id: "sakubva", title: "Sakubva" },
+  { id: "morningside", title: "Morningside" },
+  { id: "fern_valley", title: "Fern Valley" },
+  { id: "mkoba", title: "Mkoba (Gweru)" },
+  { id: "ascot", title: "Ascot (Gweru)" },
+  { id: "mucheke", title: "Mucheke (Masvingo)" },
+  { id: "victoria_falls_town", title: "Victoria Falls Town" },
+  { id: "norton_town", title: "Norton Town" },
+];
+
+const PREDEFINED_PROPERTY_CATEGORIES = [
+  { id: "residential", title: "Residential" },
+  { id: "commercial", title: "Commercial" },
+];
+
+const PREDEFINED_PROPERTY_TYPES = [
+  { id: "house", title: "House" },
+  { id: "flat", title: "Flat" },
+  { id: "studio", title: "Studio" },
+  { id: "office", title: "Office" },
+  { id: "retail", title: "Retail" },
+];
+
+const PREDEFINED_BEDROOMS = [
+  { id: "any", title: "Any" },
+  { id: "1", title: "1" },
+  { id: "2", title: "2" },
+  { id: "3", title: "3" },
+  { id: "4plus", title: "4+" },
+];
+
+const PREDEFINED_FEATURES_OPTIONS = [
+  { id: "borehole", title: "Borehole" },
+  { id: "solar_backup", title: "Solar backup (inverter/UPS)" },
+  { id: "solar_geyser", title: "Solar geyser / water heater" },
+  { id: "internet", title: "Internet (fiber/Airtel/NetOne)" },
+  { id: "fenced", title: "Fenced / secure" },
+  { id: "garage", title: "Garage / covered parking" },
+  { id: "garden", title: "Garden / yard" },
+  { id: "furnished", title: "Furnished" },
+  { id: "pets_allowed", title: "Pets allowed" },
+  { id: "ac", title: "Air conditioning" },
+];
 
 const FACETS_CACHE_MS = 1000 * 60 * 10;
 const facetsCache = { ts: 0, value: null };
@@ -348,44 +425,35 @@ async function sendSearchFlow(phoneNumber, data = {}) {
     return { error: "no-flow", reason: "missing-credentials" };
   }
 
-  const facets = await getListingFacetsCached().catch(() => null);
+  const cities = Array.isArray(data.cities) && data.cities.length ? data.cities : PREDEFINED_CITIES;
+  const suburbs = Array.isArray(data.suburbs) && data.suburbs.length ? data.suburbs : PREDEFINED_SUBURBS;
+  const propertyCategories = Array.isArray(data.propertyCategories) && data.propertyCategories.length ? data.propertyCategories : PREDEFINED_PROPERTY_CATEGORIES;
+  const propertyTypes = Array.isArray(data.propertyTypes) && data.propertyTypes.length ? data.propertyTypes : PREDEFINED_PROPERTY_TYPES;
+  const bedrooms = Array.isArray(data.bedrooms) && data.bedrooms.length ? data.bedrooms : PREDEFINED_BEDROOMS;
+  const featuresOptions = Array.isArray(data.featuresOptions) && data.featuresOptions.length ? data.featuresOptions : PREDEFINED_FEATURES_OPTIONS;
 
-  const citiesFromFacets = Array.isArray(facets?.cities)
-    ? facets.cities.slice(0, 80).map((c) => ({ id: toSlugId(c), title: String(c) }))
-    : PREDEFINED_CITIES.map((c) => ({ id: c.id, title: c.title }));
+  const hasId = (list, id) => Array.isArray(list) && list.some((o) => o && o.id === id);
 
-  const suburbsFromFacets = Array.isArray(facets?.suburbs)
-    ? [{ id: "any", title: "Any" }].concat(
-      facets.suburbs.slice(0, 120).map((s) => ({ id: toSuburbId(s), title: String(s) })),
-    )
-    : [{ id: "any", title: "Any" }];
+  const selectedCityRaw = String(data.selected_city || "harare");
+  const selectedSuburbRaw = String(data.selected_suburb || "any");
+  const selectedCategoryRaw = String(data.selected_category || "residential");
+  const selectedTypeRaw = String(data.selected_type || "house");
+  const selectedBedroomsRaw = String(data.selected_bedrooms || "any");
 
-  const propertyCategoriesFromFacets = Array.isArray(facets?.propertyCategories)
-    ? facets.propertyCategories.slice(0, 12).map((c) => ({ id: toSlugId(c), title: String(c).slice(0, 1).toUpperCase() + String(c).slice(1) }))
-    : [{ id: "residential", title: "Residential" }, { id: "commercial", title: "Commercial" }];
-
-  const propertyTypesFromFacets = Array.isArray(facets?.propertyTypes)
-    ? facets.propertyTypes.slice(0, 120).map((t) => ({ id: toSlugId(t), title: String(t) }))
-    : [{ id: "house", title: "House" }, { id: "flat", title: "Flat" }];
-
-  const featuresOptionsFromFacets = Array.isArray(facets?.features)
-    ? facets.features.slice(0, 80).map((f) => ({ id: toSlugId(f), title: String(f) }))
-    : [];
-
-  const selectedCity = String(data.selected_city || "harare");
-  const selectedSuburb = String(data.selected_suburb || "any");
-  const selectedCategory = String(data.selected_category || "residential");
-  const selectedType = String(data.selected_type || "house");
-  const selectedBedrooms = String(data.selected_bedrooms || "any");
+  const selectedCity = hasId(cities, selectedCityRaw) ? selectedCityRaw : (cities[0]?.id || "harare");
+  const selectedSuburb = hasId(suburbs, selectedSuburbRaw) ? selectedSuburbRaw : "any";
+  const selectedCategory = hasId(propertyCategories, selectedCategoryRaw) ? selectedCategoryRaw : (propertyCategories[0]?.id || "residential");
+  const selectedType = hasId(propertyTypes, selectedTypeRaw) ? selectedTypeRaw : (propertyTypes[0]?.id || "house");
+  const selectedBedrooms = hasId(bedrooms, selectedBedroomsRaw) ? selectedBedroomsRaw : "any";
   const selectedFeatures = Array.isArray(data.selected_features) ? data.selected_features : [];
 
   const payloadData = {
-    cities: citiesFromFacets,
-    suburbs: suburbsFromFacets,
-    propertyCategories: propertyCategoriesFromFacets,
-    propertyTypes: propertyTypesFromFacets,
-    bedrooms: [{ id: "any", title: "Any" }, { id: "1", title: "1" }, { id: "2", title: "2" }, { id: "3", title: "3" }, { id: "4plus", title: "4+" }],
-    featuresOptions: featuresOptionsFromFacets,
+    cities,
+    suburbs,
+    propertyCategories,
+    propertyTypes,
+    bedrooms,
+    featuresOptions,
     min_price: typeof data.min_price === "string" ? data.min_price : "0",
     max_price: typeof data.max_price === "string" ? data.max_price : "0",
     q: typeof data.q === "string" ? data.q : "",
