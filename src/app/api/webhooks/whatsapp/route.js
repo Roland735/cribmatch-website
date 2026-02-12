@@ -75,6 +75,54 @@ async function whatsappPost(phone_number_id, token, bodyObj) {
   try { return await res.json(); } catch (e) { return { error: "invalid-json", status: res.status }; }
 }
 
+async function sendImage(phoneNumber, imageUrl, caption = "") {
+  const apiToken = process.env.WHATSAPP_API_TOKEN;
+  const phone_number_id = process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_ID;
+  const phone = digitsOnly(phoneNumber);
+  const url = String(imageUrl || "").trim();
+  if (!url) return { error: "empty" };
+
+  const normalizedCaption = String(caption || "").trim();
+  const hash = _hash(`image:${_normalizeForHash(url)}:${_normalizeForHash(normalizedCaption)}`);
+  if (!_shouldSend(phone, hash, TTL_INTERACTIVE_MS)) {
+    console.log("[sendImage] suppressed duplicate image to", phone);
+    return { suppressed: true };
+  }
+
+  if (!apiToken || !phone_number_id) {
+    const fallback = normalizedCaption ? `${normalizedCaption}\n${url}` : url;
+    return sendText(phoneNumber, fallback);
+  }
+
+  const payload = {
+    messaging_product: "whatsapp",
+    to: phone,
+    type: "image",
+    image: {
+      link: url,
+      ...(normalizedCaption ? { caption: normalizedCaption.slice(0, 1024) } : {}),
+    },
+  };
+  return whatsappPost(phone_number_id, apiToken, payload);
+}
+
+async function sendImages(phoneNumber, imageUrls = [], opts = {}) {
+  const urls = Array.isArray(imageUrls) ? imageUrls.filter(Boolean).map(String).map((u) => u.trim()).filter(Boolean) : [];
+  const max = typeof opts.max === "number" ? Math.max(1, Math.min(10, Math.floor(opts.max))) : 6;
+  const caption = String(opts.caption || "").trim();
+  const toSend = urls.slice(0, max);
+
+  if (!toSend.length) return { ok: false, sent: 0 };
+
+  let sent = 0;
+  for (let i = 0; i < toSend.length; i += 1) {
+    const cap = i === 0 && caption ? caption : "";
+    const res = await sendImage(phoneNumber, toSend[i], cap).catch(() => null);
+    if (res && !res.error) sent += 1;
+  }
+  return { ok: true, sent };
+}
+
 async function sendText(phoneNumber, message) {
   const apiToken = process.env.WHATSAPP_API_TOKEN;
   const phone_number_id = process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_ID;
@@ -921,12 +969,8 @@ export async function POST(request) {
       return NextResponse.json({ ok: true, note: "images-not-found" });
     }
     const title = listing?.title ? String(listing.title) : "Listing";
-    const shown = imgs.slice(0, 8);
-    const more = Math.max(0, imgs.length - shown.length);
-    const lines = [`Images for ${title}:`].concat(shown.map((u, i) => `${i + 1}) ${u}`));
-    if (more) lines.push(`+${more} more`);
-    lines.push("", "Main menu: menu");
-    await sendTextWithInstructionHeader(phone, lines.join("\n"), "Open an image link to view.");
+    await sendTextWithInstructionHeader(phone, `Sending photos for: ${title}`, "Photos are sent below.");
+    await sendImages(phone, imgs, { max: 6, caption: `Photos: ${title}` });
     return NextResponse.json({ ok: true, note: "images-sent" });
   }
 
@@ -1200,11 +1244,7 @@ async function revealFromObject(listing, phone) {
     }
 
     if (images.length) {
-      const shown = images.slice(0, 6);
-      const more = Math.max(0, images.length - shown.length);
-      const photoLines = shown.map((u, i) => `${i + 1}) ${u}`);
-      if (more) photoLines.push(`+${more} more`);
-      blocks.push(`Photos:\n${photoLines.join("\n")}`);
+      blocks.push(`Photos: ${images.length} image(s). Sending now...`);
     }
 
     blocks.push(`\nNext:\n- Reply with a number from your last results anytime\n- To see photos again: images ${ensuredId}\n- Main menu: menu`);
@@ -1212,6 +1252,9 @@ async function revealFromObject(listing, phone) {
     let body = blocks.join("\n\n").trim();
     if (body.length > 3600) body = `${body.slice(0, 3580).trim()}\n…`;
     await sendTextWithInstructionHeader(phone, body, "Use the details below to contact the lister.");
+    if (images.length) {
+      await sendImages(phone, images, { max: 6, caption: `Photos: ${title}` });
+    }
   } catch (e) {
     console.error("[revealFromObject] error:", e);
     try { await sendWithMainMenuButton(phone, "Sorry — couldn't fetch contact details right now.", "Tap Main menu."); } catch { }
