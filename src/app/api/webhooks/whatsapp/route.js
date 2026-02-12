@@ -284,6 +284,28 @@ function toOptionId(prefix, title) {
   return `${prefix}_${h.slice(0, 10)}`;
 }
 
+function toSlugId(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 48);
+}
+
+function toSuburbId(value) {
+  const raw = String(value || "").trim();
+  const first = raw.split(",")[0]?.trim() || raw;
+  const slug = toSlugId(first);
+  return slug || toSlugId(raw);
+}
+
+function resolveTitleById(id, options = []) {
+  const raw = String(id || "").trim();
+  if (!raw) return "";
+  const match = Array.isArray(options) ? options.find((o) => o && o.id === raw) : null;
+  return match ? String(match.title || "").trim() : raw;
+}
+
 function buildInstructionHeader(instructionText) {
   const raw = String(instructionText || "").trim();
   if (!raw) return "Instructions: Reply with your answer or tap Main menu.";
@@ -325,25 +347,59 @@ async function sendSearchFlow(phoneNumber, data = {}) {
     return { error: "no-flow", reason: "missing-credentials" };
   }
 
-  const facets = (!data.suburbs || (Array.isArray(data.suburbs) && data.suburbs.length === 0)) ? await getListingFacetsCached() : null;
+  const facets = await getListingFacetsCached().catch(() => null);
+  const citiesFromFacets = Array.isArray(facets?.cities)
+    ? facets.cities.slice(0, 250).map((c) => ({ id: toSlugId(c), title: String(c) }))
+    : (data.cities || PREDEFINED_CITIES).map((c) => ({ id: c.id, title: c.title }));
+
   const suburbsFromFacets = Array.isArray(facets?.suburbs)
-    ? facets.suburbs.slice(0, 250).map((s) => ({ id: toOptionId("suburb", s), title: String(s) }))
-    : [];
+    ? [{ id: "any", title: "Any" }].concat(facets.suburbs.slice(0, 250).map((s) => ({ id: toSuburbId(s), title: String(s) })))
+    : (Array.isArray(data.suburbs) ? data.suburbs : []);
+
   const suburbsByCityFromFacets = (facets && facets.suburbsByCity && typeof facets.suburbsByCity === "object")
     ? Object.keys(facets.suburbsByCity).reduce((acc, city) => {
       const list = Array.isArray(facets.suburbsByCity[city]) ? facets.suburbsByCity[city] : [];
-      acc[city] = list.slice(0, 250).map((s) => ({ id: toOptionId("suburb", s), title: String(s) }));
+      acc[toSlugId(city)] = [{ id: "any", title: "Any" }].concat(list.slice(0, 250).map((s) => ({ id: toSuburbId(s), title: String(s) })));
       return acc;
     }, {})
-    : {};
+    : (data.suburbsByCity || {});
+
+  const propertyCategoriesFromFacets = Array.isArray(facets?.propertyCategories)
+    ? facets.propertyCategories.map((c) => ({ id: toSlugId(c), title: String(c).slice(0, 1).toUpperCase() + String(c).slice(1) }))
+    : (data.propertyCategories || [{ id: "residential", title: "Residential" }, { id: "commercial", title: "Commercial" }]);
+
+  const propertyTypesFromFacets = Array.isArray(facets?.propertyTypes)
+    ? facets.propertyTypes.slice(0, 250).map((t) => ({ id: toSlugId(t), title: String(t) }))
+    : (data.propertyTypes || [{ id: "house", title: "House" }, { id: "flat", title: "Flat" }]);
+
+  const featuresOptionsFromFacets = Array.isArray(facets?.features)
+    ? facets.features.slice(0, 250).map((f) => ({ id: toSlugId(f), title: String(f) }))
+    : (data.featuresOptions || []);
+
+  const selectedCity = String(data.selected_city || data.city || "harare");
+  const selectedSuburb = String(data.selected_suburb || data.suburb || "any");
+  const selectedCategory = String(data.selected_category || data.property_category || "residential");
+  const selectedType = String(data.selected_type || data.property_type || "house");
+  const selectedBedrooms = String(data.selected_bedrooms || data.bedrooms || "any");
+  const selectedFeatures = Array.isArray(data.selected_features || data.features) ? (data.selected_features || data.features) : [];
 
   const payloadData = {
-    cities: (data.cities || PREDEFINED_CITIES).map((c) => ({ id: c.id, title: c.title })),
-    suburbs: (Array.isArray(data.suburbs) && data.suburbs.length) ? data.suburbs : suburbsFromFacets,
-    suburbsByCity: data.suburbsByCity || suburbsByCityFromFacets,
-    propertyCategories: data.propertyCategories || [{ id: "residential", title: "Residential" }, { id: "commercial", title: "Commercial" }],
-    propertyTypes: data.propertyTypes || [{ id: "house", title: "House" }, { id: "flat", title: "Flat" }],
-    bedrooms: data.bedrooms || [{ id: "any", title: "Any" }, { id: "1", title: "1" }, { id: "2", title: "2" }],
+    cities: citiesFromFacets,
+    suburbs: suburbsFromFacets,
+    suburbsByCity: suburbsByCityFromFacets,
+    propertyCategories: propertyCategoriesFromFacets,
+    propertyTypes: propertyTypesFromFacets,
+    bedrooms: data.bedrooms || [{ id: "any", title: "Any" }, { id: "1", title: "1" }, { id: "2", title: "2" }, { id: "3", title: "3" }, { id: "4plus", title: "4+" }],
+    featuresOptions: featuresOptionsFromFacets,
+    selected_city: selectedCity,
+    selected_suburb: selectedSuburb,
+    selected_category: selectedCategory,
+    selected_type: selectedType,
+    selected_bedrooms: selectedBedrooms,
+    selected_features: selectedFeatures,
+    min_price: data.min_price || "0",
+    max_price: data.max_price || "0",
+    q: data.q || "",
     ...data,
   };
 
@@ -560,6 +616,7 @@ function getFlowDataFromPayload(payload) {
       out.property_category = maybe("property_category") ?? maybe("selected_category");
       out.property_type = maybe("property_type") ?? maybe("selected_type");
       out.bedrooms = maybe("bedrooms") ?? maybe("selected_bedrooms");
+      out.features = maybe("features") ?? maybe("selected_features");
       out.min_price = maybe("min_price") ?? maybe("minPrice") ?? maybe("min");
       out.max_price = maybe("max_price") ?? maybe("maxPrice") ?? maybe("max");
       out.q = maybe("q") ?? maybe("keyword") ?? maybe("query");
@@ -695,15 +752,59 @@ export async function POST(request) {
 
     let results = { listings: [], total: 0 };
     try {
+      const facets = await getListingFacetsCached().catch(() => null);
+      const cityOptions = Array.isArray(facets?.cities)
+        ? facets.cities.slice(0, 250).map((c) => ({ id: toSlugId(c), title: String(c) }))
+        : [];
+      const suburbOptions = Array.isArray(facets?.suburbs)
+        ? [{ id: "any", title: "Any" }].concat(facets.suburbs.slice(0, 250).map((s) => ({ id: toSuburbId(s), title: String(s) })))
+        : [{ id: "any", title: "Any" }];
+      const propertyCategoryOptions = Array.isArray(facets?.propertyCategories)
+        ? facets.propertyCategories.map((c) => ({ id: toSlugId(c), title: String(c) }))
+        : [{ id: "residential", title: "residential" }, { id: "commercial", title: "commercial" }];
+      const propertyTypeOptions = Array.isArray(facets?.propertyTypes)
+        ? facets.propertyTypes.slice(0, 250).map((t) => ({ id: toSlugId(t), title: String(t) }))
+        : [];
+      const featuresOptions = Array.isArray(facets?.features)
+        ? facets.features.slice(0, 250).map((f) => ({ id: toSlugId(f), title: String(f) }))
+        : [];
+
+      const resolvedCity = resolveTitleById(flowData.city, cityOptions);
+      const resolvedSuburbRaw = String(flowData.suburb || "").trim();
+      const resolvedSuburb = resolvedSuburbRaw === "any" ? "" : resolveTitleById(resolvedSuburbRaw, suburbOptions);
+      const resolvedCategoryTitle = resolveTitleById(flowData.property_category, propertyCategoryOptions);
+      const resolvedPropertyCategory = resolvedCategoryTitle ? toSlugId(resolvedCategoryTitle) : "";
+      const resolvedPropertyType = resolveTitleById(flowData.property_type, propertyTypeOptions);
+
+      const bedroomsRaw = String(flowData.bedrooms || "").trim();
+      const minBeds =
+        bedroomsRaw === "any" || bedroomsRaw === ""
+          ? null
+          : (bedroomsRaw === "4plus" ? 4 : Number(bedroomsRaw));
+      const minBedsSafe = Number.isFinite(minBeds) ? minBeds : null;
+
+      const featuresRaw = Array.isArray(flowData.features) ? flowData.features : [];
+      const resolvedFeatures = featuresRaw
+        .map((fid) => resolveTitleById(fid, featuresOptions))
+        .map((v) => String(v || "").trim())
+        .filter(Boolean)
+        .slice(0, 12);
+
+      const minPriceRaw = String(flowData.min_price ?? "").trim();
+      const maxPriceRaw = String(flowData.max_price ?? "").trim();
+      const minPrice = minPriceRaw === "" || minPriceRaw === "0" ? null : minPriceRaw;
+      const maxPrice = maxPriceRaw === "" || maxPriceRaw === "0" ? null : maxPriceRaw;
+
       results = await searchPublishedListings({
         q: flowData.q || "",
-        city: flowData.city || "",
-        suburb: flowData.suburb || "",
-        minPrice: flowData.min_price || null,
-        maxPrice: flowData.max_price || null,
-        propertyCategory: flowData.property_category || "",
-        propertyType: flowData.property_type || "",
-        minBeds: flowData.bedrooms || null,
+        city: resolvedCity || "",
+        suburb: resolvedSuburb || "",
+        minPrice,
+        maxPrice,
+        propertyCategory: resolvedPropertyCategory || "",
+        propertyType: resolvedPropertyType || "",
+        minBeds: minBedsSafe,
+        features: resolvedFeatures,
         perPage: 6
       });
     } catch (e) {
