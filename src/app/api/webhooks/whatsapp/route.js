@@ -433,6 +433,36 @@ function ensureListingHasId(listing, indexHint = 0) {
   return { listing: patched, id: pseudoId };
 }
 
+function formatListingResultText(listing, indexHint = 0) {
+  const { listing: ensured, id } = ensureListingHasId(listing, indexHint);
+  if (!ensured) return "";
+
+  const title = String(ensured.title || "Listing").trim();
+  const suburb = String(ensured.suburb || "").trim();
+  const price = ensured.pricePerMonth ?? ensured.price ?? "N/A";
+
+  const description = ensured.description ? String(ensured.description).replace(/\s+/g, " ").trim() : "";
+  const descriptionShort = description ? description.slice(0, 220) : "";
+
+  const features = Array.isArray(ensured.features)
+    ? ensured.features.map((f) => String(f || "").trim()).filter(Boolean)
+    : [];
+
+  const featuresShort = features.slice(0, 6);
+
+  const lines = [`${indexHint + 1}) ${title} — ${suburb} — $${price} — ID:${id}`];
+
+  if (descriptionShort) {
+    lines.push("", "Description:", ` ${descriptionShort}`);
+  }
+
+  if (featuresShort.length) {
+    lines.push("", "Features:", featuresShort.map((f) => ` * ${f}`).join("\n"));
+  }
+
+  return lines.join("\n");
+}
+
 /* -------------------------
    Flow detection & parsing helpers
 ------------------------- */
@@ -641,18 +671,12 @@ export async function POST(request) {
     const ensured = items.map((item, i) => ensureListingHasId(item, i));
     const ensuredItems = ensured.map((e) => e.listing).filter(Boolean);
     const ids = ensured.map((e) => e.id).filter(Boolean);
-    const numbered = items
-      .map((l, i) => {
-        const title = String(l.title || "Listing").trim();
-        const suburb = String(l.suburb || "").trim();
-        const price = l.pricePerMonth || l.price || "N/A";
-        const { id } = ensureListingHasId(l, i);
-        return `${i + 1}) ${title} — ${suburb} — $${price} — ID:${id}`;
-      })
-      .join("\n\n");
+    const numbered = ensuredItems.map((l, i) => formatListingResultText(l, i)).filter(Boolean).join("\n\n");
 
     await saveSearchContext(phone, ids, ensuredItems, dbAvailable);
-    await sendText(phone, `Reply with the number (e.g. 1) to get contact details.\n\n${numbered}`);
+    let msgText = `Reply with the number (e.g. 1) to get contact details.\n\n${numbered}`.trim();
+    if (msgText.length > 3900) msgText = `${msgText.slice(0, 3880).trim()}\n…`;
+    await sendText(phone, msgText);
 
     selectionMap.set(phone, { ids, results: ensuredItems });
     if (dbAvailable && savedMsg && savedMsg._id) {
@@ -1024,13 +1048,16 @@ export async function POST(request) {
         await sendWithMainMenuButton(phone, "No matches found.", "Try a broader area or higher budget, or tap Main menu.");
         return NextResponse.json({ ok: true, note: "search-no-results" });
       }
-      const ids = items.map(getIdFromListing);
-      const numbered = items.map((l, i) => `${i + 1}) ${l.title || "Listing"} — ${l.suburb || ""} — $${l.pricePerMonth || l.price || "N/A"} — ID:${getIdFromListing(l)}`).join("\n\n");
+      const ensured = items.map((item, i) => ensureListingHasId(item, i));
+      const ensuredItems = ensured.map((e) => e.listing).filter(Boolean);
+      const ids = ensured.map((e) => e.id).filter(Boolean);
+      const numbered = ensuredItems.map((l, i) => formatListingResultText(l, i)).filter(Boolean).join("\n\n");
+      await saveSearchContext(phone, ids, ensuredItems, dbAvailable);
       await sendTextWithInstructionHeader(phone, numbered, "Reply with the number (e.g. 1) to view contact details.");
       await sendButtonsWithInstructionHeader(phone, "Return to main menu:", [{ id: "menu_main", title: "Main menu" }], "Tap Main menu.");
-      selectionMap.set(phone, { ids, results: items });
+      selectionMap.set(phone, { ids, results: ensuredItems });
       if (dbAvailable && savedMsg && savedMsg._id) {
-        await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.state": "AWAITING_LIST_SELECTION", "meta.listingIds": ids, "meta.resultObjects": items } }).catch(() => null);
+        await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.state": "AWAITING_LIST_SELECTION", "meta.listingIds": ids, "meta.resultObjects": ensuredItems } }).catch(() => null);
       }
       return NextResponse.json({ ok: true, note: "search-results-sent" });
     }
