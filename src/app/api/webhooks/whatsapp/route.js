@@ -971,6 +971,7 @@ export async function POST(request) {
     const title = listing?.title ? String(listing.title) : "Listing";
     await sendTextWithInstructionHeader(phone, `Sending photos for: ${title}`, "Photos are sent below.");
     await sendImages(phone, imgs, { max: 6, caption: `Photos: ${title}` });
+    await sendButtonsWithInstructionHeader(phone, "Return to main menu:", [{ id: "menu_main", title: "Main menu" }], "Tap Main menu.");
     return NextResponse.json({ ok: true, note: "images-sent" });
   }
 
@@ -1254,6 +1255,7 @@ async function revealFromObject(listing, phone) {
     await sendTextWithInstructionHeader(phone, body, "Use the details below to contact the lister.");
     if (images.length) {
       await sendImages(phone, images, { max: 6, caption: `Photos: ${title}` });
+      await sendButtonsWithInstructionHeader(phone, "Return to main menu:", [{ id: "menu_main", title: "Main menu" }], "Tap Main menu.");
     }
   } catch (e) {
     console.error("[revealFromObject] error:", e);
