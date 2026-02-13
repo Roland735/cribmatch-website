@@ -814,28 +814,16 @@ export async function POST(request) {
 
     let results = { listings: [], total: 0 };
     try {
-      const facets = await getListingFacetsCached().catch(() => null);
-      const cityOptions = Array.isArray(facets?.cities)
-        ? facets.cities.slice(0, 250).map((c) => ({ id: toSlugId(c), title: String(c) }))
-        : [];
-      const suburbOptions = Array.isArray(facets?.suburbs)
-        ? [{ id: "any", title: "Any" }].concat(facets.suburbs.slice(0, 250).map((s) => ({ id: toSuburbId(s), title: String(s) })))
-        : [{ id: "any", title: "Any" }];
-      const propertyCategoryOptions = Array.isArray(facets?.propertyCategories)
-        ? facets.propertyCategories.map((c) => ({ id: toSlugId(c), title: String(c) }))
-        : [{ id: "residential", title: "residential" }, { id: "commercial", title: "commercial" }];
-      const propertyTypeOptions = Array.isArray(facets?.propertyTypes)
-        ? facets.propertyTypes.slice(0, 250).map((t) => ({ id: toSlugId(t), title: String(t) }))
-        : [];
-      const featuresOptions = Array.isArray(facets?.features)
-        ? facets.features.slice(0, 250).map((f) => ({ id: toSlugId(f), title: String(f) }))
-        : [];
+      const cityOptions = PREDEFINED_CITIES;
+      const suburbOptions = PREDEFINED_SUBURBS;
+      const propertyCategoryOptions = PREDEFINED_PROPERTY_CATEGORIES;
+      const propertyTypeOptions = PREDEFINED_PROPERTY_TYPES;
+      const featuresOptions = PREDEFINED_FEATURES_OPTIONS;
 
       const resolvedCity = resolveTitleById(flowData.city, cityOptions);
       const resolvedSuburbRaw = String(flowData.suburb || "").trim();
       const resolvedSuburb = resolvedSuburbRaw === "any" ? "" : resolveTitleById(resolvedSuburbRaw, suburbOptions);
-      const resolvedCategoryTitle = resolveTitleById(flowData.property_category, propertyCategoryOptions);
-      const resolvedPropertyCategory = resolvedCategoryTitle ? toSlugId(resolvedCategoryTitle) : "";
+      const resolvedPropertyCategory = String(flowData.property_category || "").trim();
       const resolvedPropertyType = resolveTitleById(flowData.property_type, propertyTypeOptions);
 
       const bedroomsRaw = String(flowData.bedrooms || "").trim();
