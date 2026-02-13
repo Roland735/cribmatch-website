@@ -62,6 +62,49 @@ function _shouldSend(phone, hash, ttl = TTL_TEXT_MS) {
   return true;
 }
 
+async function _shouldSendDb(phone, hash) {
+  try {
+    if (!phone || !hash) return true;
+    if (!process.env.MONGODB_URI) return true;
+    await dbConnect();
+
+    const lastInbound = await Message.findOne({ phone, "meta.direction": "inbound" })
+      .sort({ createdAt: -1 })
+      .select({ createdAt: 1 })
+      .lean()
+      .exec()
+      .catch(() => null);
+
+    const q = { phone, "meta.direction": "outbound", "meta.hash": hash };
+    if (lastInbound?.createdAt) q.createdAt = { $gt: lastInbound.createdAt };
+
+    const existing = await Message.findOne(q).select({ _id: 1 }).lean().exec().catch(() => null);
+    return !existing;
+  } catch (e) {
+    return true;
+  }
+}
+
+async function _recordOutboundMessage({ phone, wa_message_id, type, text, raw, meta }) {
+  try {
+    if (!process.env.MONGODB_URI) return null;
+    await dbConnect();
+    if (typeof Message?.create !== "function") return null;
+
+    return await Message.create({
+      phone: digitsOnly(phone),
+      from: "system",
+      wa_message_id: wa_message_id || null,
+      type: type || "text",
+      text: String(text || "").slice(0, 4000),
+      raw: raw || null,
+      meta: { ...(meta || {}), direction: "outbound" },
+    });
+  } catch (e) {
+    return null;
+  }
+}
+
 /* -------------------------
    WhatsApp Graph wrappers
 ------------------------- */
@@ -88,6 +131,10 @@ async function sendImage(phoneNumber, imageUrl, caption = "") {
     console.log("[sendImage] suppressed duplicate image to", phone);
     return { suppressed: true };
   }
+  if (!(await _shouldSendDb(phone, hash))) {
+    console.log("[sendImage] suppressed duplicate image (db) to", phone);
+    return { suppressed: true };
+  }
 
   if (!apiToken || !phone_number_id) {
     const fallback = normalizedCaption ? `${normalizedCaption}\n${url}` : url;
@@ -103,7 +150,19 @@ async function sendImage(phoneNumber, imageUrl, caption = "") {
       ...(normalizedCaption ? { caption: normalizedCaption.slice(0, 1024) } : {}),
     },
   };
-  return whatsappPost(phone_number_id, apiToken, payload);
+  const res = await whatsappPost(phone_number_id, apiToken, payload);
+  const waid = res?.messages?.[0]?.id || null;
+  if (!res?.error) {
+    await _recordOutboundMessage({
+      phone,
+      wa_message_id: waid,
+      type: "image",
+      text: normalizedCaption,
+      raw: payload,
+      meta: { hash, imageUrl: url },
+    });
+  }
+  return res;
 }
 
 async function sendImages(phoneNumber, imageUrls = [], opts = {}) {
@@ -135,6 +194,10 @@ async function sendText(phoneNumber, message) {
     console.log("[sendText] suppressed duplicate text to", phone);
     return { suppressed: true };
   }
+  if (!(await _shouldSendDb(phone, hash))) {
+    console.log("[sendText] suppressed duplicate text (db) to", phone);
+    return { suppressed: true };
+  }
 
   if (!apiToken || !phone_number_id) {
     console.log("[sendText preview]", phone, normalizedMessage.slice(0, 300));
@@ -142,7 +205,19 @@ async function sendText(phoneNumber, message) {
   }
 
   const payload = { messaging_product: "whatsapp", to: phone, type: "text", text: { body: message } };
-  return whatsappPost(phone_number_id, apiToken, payload);
+  const res = await whatsappPost(phone_number_id, apiToken, payload);
+  const waid = res?.messages?.[0]?.id || null;
+  if (!res?.error) {
+    await _recordOutboundMessage({
+      phone,
+      wa_message_id: waid,
+      type: "text",
+      text: message,
+      raw: payload,
+      meta: { hash },
+    });
+  }
+  return res;
 }
 
 async function sendInteractiveButtons(phoneNumber, bodyText, buttons = [], opts = {}) {
@@ -163,6 +238,10 @@ async function sendInteractiveButtons(phoneNumber, bodyText, buttons = [], opts 
     console.log("[sendInteractiveButtons] suppressed duplicate interactive to", phone);
     return { suppressed: true };
   }
+  if (!(await _shouldSendDb(phone, hash))) {
+    console.log("[sendInteractiveButtons] suppressed duplicate interactive (db) to", phone);
+    return { suppressed: true };
+  }
 
   if (!apiToken || !phone_number_id) {
     return sendText(phoneNumber, fallbackText);
@@ -170,6 +249,17 @@ async function sendInteractiveButtons(phoneNumber, bodyText, buttons = [], opts 
 
   const payload = { messaging_product: "whatsapp", to: phone, type: "interactive", interactive };
   const res = await whatsappPost(phone_number_id, apiToken, payload);
+  const waid = res?.messages?.[0]?.id || null;
+  if (!res?.error) {
+    await _recordOutboundMessage({
+      phone,
+      wa_message_id: waid,
+      type: "interactive",
+      text: fallbackText,
+      raw: payload,
+      meta: { hash, interactiveType: "button" },
+    });
+  }
   if (res?.error) {
     // fallback once to text
     await sendText(phoneNumber, fallbackText).catch(() => null);
@@ -217,6 +307,10 @@ async function sendInteractiveList(phoneNumber, bodyText, rows = [], opts = {}) 
     console.log("[sendInteractiveList] suppressed duplicate interactive list to", phone);
     return { suppressed: true };
   }
+  if (!(await _shouldSendDb(phone, hash))) {
+    console.log("[sendInteractiveList] suppressed duplicate interactive list (db) to", phone);
+    return { suppressed: true };
+  }
 
   if (!apiToken || !phone_number_id) {
     return sendText(phoneNumber, fallbackText);
@@ -224,6 +318,17 @@ async function sendInteractiveList(phoneNumber, bodyText, rows = [], opts = {}) 
 
   const payload = { messaging_product: "whatsapp", to: phone, type: "interactive", interactive };
   const res = await whatsappPost(phone_number_id, apiToken, payload);
+  const waid = res?.messages?.[0]?.id || null;
+  if (!res?.error) {
+    await _recordOutboundMessage({
+      phone,
+      wa_message_id: waid,
+      type: "interactive",
+      text: fallbackText,
+      raw: payload,
+      meta: { hash, interactiveType: "list" },
+    });
+  }
   if (res?.error) {
     await sendText(phoneNumber, fallbackText).catch(() => null);
   }
@@ -635,7 +740,21 @@ function formatListingResultText(listing, indexHint = 0) {
 function detectRequestedScreen(rawPayload = {}) {
   const v = rawPayload?.entry?.[0]?.changes?.[0]?.value || rawPayload || {};
   const interactiveType = _safeGet(v, ["messages", 0, "interactive", "type"]);
-  if (interactiveType === "nfm_reply") return "SEARCH";
+  if (interactiveType === "nfm_reply") {
+    const d = getFlowDataFromPayload(rawPayload) || {};
+    const keys = d && typeof d === "object" ? Object.keys(d) : [];
+    if (
+      keys.includes("title") ||
+      keys.includes("listerPhoneNumber") ||
+      keys.includes("pricePerMonth") ||
+      keys.includes("propertyCategory") ||
+      keys.includes("propertyType") ||
+      keys.includes("imageUrls")
+    ) {
+      return "LIST_PROPERTY";
+    }
+    return "SEARCH";
+  }
   const candidates = [
     _safeGet(v, ["data_exchange", "screen"]),
     _safeGet(v, ["flow", "screen"]),
@@ -651,11 +770,13 @@ function detectRequestedScreen(rawPayload = {}) {
     if (typeof c === "object") {
       if (c.screen && typeof c.screen === "string") return c.screen.toUpperCase();
       const keys = Object.keys(c);
+      if (keys.includes("title") || keys.includes("listerPhoneNumber") || keys.includes("pricePerMonth")) return "LIST_PROPERTY";
       if (keys.includes("city") || keys.includes("selected_city") || keys.includes("q") || keys.includes("min_price")) return "SEARCH";
     }
   }
   const flowData = getFlowDataFromPayload(rawPayload);
   if (flowData && (flowData.q || flowData.city || flowData.suburb || flowData.min_price || flowData.max_price)) return "SEARCH";
+  if (flowData && (flowData.title || flowData.listerPhoneNumber || flowData.pricePerMonth)) return "LIST_PROPERTY";
   return null;
 }
 
@@ -771,12 +892,12 @@ export async function POST(request) {
     if (dbAvailable && typeof Message?.create === "function") {
       const doc = {
         phone,
-        from: msg?.from || "user",
+        from: "user",
         wa_message_id: msgId || null,
         type: parsedText ? "text" : "interactive",
         text: parsedText || "",
         raw: payload,
-        meta: {},
+        meta: { direction: "inbound" },
       };
       try {
         savedMsg = await Message.create(doc);
