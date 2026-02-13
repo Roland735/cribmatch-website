@@ -362,6 +362,7 @@ async function saveSearchContext(phone, listingIds, resultObjects, dbAvailable) 
 ------------------------- */
 // fallback ID restored from your earlier working
 const DEFAULT_FLOW_ID = process.env.WHATSAPP_FLOW_ID || "1534021024566343";
+const LIST_PROPERTY_FLOW_ID = process.env.WHATSAPP_LIST_FLOW_ID || "2038464217012262";
 const PREDEFINED_CITIES = [
   { id: "harare", title: "Harare" },
   { id: "chitungwiza", title: "Chitungwiza" },
@@ -439,6 +440,30 @@ const PREDEFINED_FEATURES_OPTIONS = [
   { id: "furnished", title: "Furnished" },
   { id: "pets_allowed", title: "Pets allowed" },
   { id: "ac", title: "Air conditioning" },
+];
+
+const LIST_PROPERTY_SUBURBS = PREDEFINED_SUBURBS.filter((s) => s.id !== "any");
+const LIST_PROPERTY_CATEGORIES = [
+  { id: "residential", title: "Residential" },
+  { id: "commercial", title: "Commercial" },
+  { id: "boarding", title: "Boarding" },
+  { id: "land", title: "Land" },
+];
+const LIST_PROPERTY_TYPES = [
+  { id: "house", title: "House" },
+  { id: "flat", title: "Flat" },
+  { id: "studio", title: "Studio" },
+  { id: "office", title: "Office" },
+  { id: "retail", title: "Retail" },
+  { id: "room", title: "Room" },
+  { id: "land", title: "Land" },
+];
+const LIST_PROPERTY_BEDROOMS = [
+  { id: "0", title: "0 (no bedrooms / land/office)" },
+  { id: "1", title: "1" },
+  { id: "2", title: "2" },
+  { id: "3", title: "3" },
+  { id: "4plus", title: "4+" },
 ];
 
 const FACETS_CACHE_MS = 1000 * 60 * 10;
@@ -599,13 +624,131 @@ async function sendSearchFlow(phoneNumber, data = {}) {
     console.log("[sendSearchFlow] suppressed duplicate flow send for", digitsOnly(phoneNumber));
     return { suppressed: true };
   }
+  if (!(await _shouldSendDb(digitsOnly(phoneNumber), hash))) {
+    console.log("[sendSearchFlow] suppressed duplicate flow send (db) for", digitsOnly(phoneNumber));
+    return { suppressed: true };
+  }
 
   const res = await whatsappPost(phone_number_id, apiToken, interactivePayload).catch((e) => {
     console.warn("[sendSearchFlow] whatsappPost error:", e);
     return { error: e };
   });
 
+  const waid = res?.messages?.[0]?.id || null;
+  if (!res?.error) {
+    await _recordOutboundMessage({
+      phone: digitsOnly(phoneNumber),
+      wa_message_id: waid,
+      type: "interactive",
+      text: JSON.stringify(payloadData),
+      raw: interactivePayload,
+      meta: { hash, interactiveType: "flow", screen: data.screen || "SEARCH", flowId: String(DEFAULT_FLOW_ID) },
+    });
+  }
+
   console.log("[sendSearchFlow] send response:", res && (res.error ? JSON.stringify(res) : "ok"));
+  return res;
+}
+
+async function sendListPropertyFlow(phoneNumber, data = {}) {
+  const apiToken = process.env.WHATSAPP_API_TOKEN;
+  const phone_number_id = process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_ID;
+
+  if (!LIST_PROPERTY_FLOW_ID) {
+    console.warn("[sendListPropertyFlow] no LIST_PROPERTY_FLOW_ID configured.");
+    return { error: "no-flow", reason: "no-list-flow-id" };
+  }
+  if (!apiToken || !phone_number_id) {
+    console.warn("[sendListPropertyFlow] missing WHATSAPP_API_TOKEN or PHONE_NUMBER_ID");
+    return { error: "no-flow", reason: "missing-credentials" };
+  }
+
+  const cities = PREDEFINED_CITIES;
+  const suburbs = LIST_PROPERTY_SUBURBS;
+  const propertyCategories = LIST_PROPERTY_CATEGORIES;
+  const propertyTypes = LIST_PROPERTY_TYPES;
+  const bedrooms = LIST_PROPERTY_BEDROOMS;
+  const featuresOptions = PREDEFINED_FEATURES_OPTIONS;
+
+  const hasId = (list, id) => Array.isArray(list) && list.some((o) => o && o.id === id);
+
+  const selectedCityRaw = String(data.selected_city || "harare");
+  const selectedSuburbRaw = String(data.selected_suburb || (suburbs[0]?.id || "borrowdale"));
+  const selectedCategoryRaw = String(data.selected_category || "residential");
+  const selectedTypeRaw = String(data.selected_type || "house");
+  const selectedBedroomsRaw = String(data.selected_bedrooms || "1");
+
+  const selected_city = hasId(cities, selectedCityRaw) ? selectedCityRaw : (cities[0]?.id || "harare");
+  const selected_suburb = hasId(suburbs, selectedSuburbRaw) ? selectedSuburbRaw : (suburbs[0]?.id || "borrowdale");
+  const selected_category = hasId(propertyCategories, selectedCategoryRaw) ? selectedCategoryRaw : (propertyCategories[0]?.id || "residential");
+  const selected_type = hasId(propertyTypes, selectedTypeRaw) ? selectedTypeRaw : (propertyTypes[0]?.id || "house");
+  const selected_bedrooms = hasId(bedrooms, selectedBedroomsRaw) ? selectedBedroomsRaw : (bedrooms[1]?.id || "1");
+  const selected_features = Array.isArray(data.selected_features) ? data.selected_features : [];
+
+  const payloadData = {
+    cities,
+    suburbs,
+    propertyCategories,
+    propertyTypes,
+    bedrooms,
+    featuresOptions,
+    selected_city,
+    selected_suburb,
+    selected_category,
+    selected_type,
+    selected_bedrooms,
+    selected_features,
+  };
+
+  const interactivePayload = {
+    messaging_product: "whatsapp",
+    to: digitsOnly(phoneNumber),
+    type: "interactive",
+    interactive: {
+      type: "flow",
+      header: { type: "text", text: data.headerText || "List a property — lister flow" },
+      body: { text: data.bodyText || "Fill the form and submit to publish your listing." },
+      footer: { text: data.footerText || "Publish listing" },
+      action: {
+        name: "flow",
+        parameters: {
+          flow_message_version: "3",
+          flow_id: String(LIST_PROPERTY_FLOW_ID),
+          flow_cta: data.flow_cta || "Publish listing",
+          flow_action: "navigate",
+          flow_action_payload: { screen: "LIST_PROPERTY", data: payloadData },
+        },
+      },
+    },
+  };
+
+  const hash = _hash(`flow_list_property:${JSON.stringify(interactivePayload.interactive)}`);
+  if (!_shouldSend(digitsOnly(phoneNumber), hash, TTL_INTERACTIVE_MS)) {
+    console.log("[sendListPropertyFlow] suppressed duplicate list flow for", digitsOnly(phoneNumber));
+    return { suppressed: true };
+  }
+  if (!(await _shouldSendDb(digitsOnly(phoneNumber), hash))) {
+    console.log("[sendListPropertyFlow] suppressed duplicate list flow (db) for", digitsOnly(phoneNumber));
+    return { suppressed: true };
+  }
+
+  const res = await whatsappPost(phone_number_id, apiToken, interactivePayload).catch((e) => {
+    console.warn("[sendListPropertyFlow] whatsappPost error:", e);
+    return { error: e };
+  });
+
+  const waid = res?.messages?.[0]?.id || null;
+  if (!res?.error) {
+    await _recordOutboundMessage({
+      phone: digitsOnly(phoneNumber),
+      wa_message_id: waid,
+      type: "interactive",
+      text: JSON.stringify(payloadData),
+      raw: interactivePayload,
+      meta: { hash, interactiveType: "flow", screen: "LIST_PROPERTY", flowId: String(LIST_PROPERTY_FLOW_ID) },
+    });
+  }
+
   return res;
 }
 
@@ -642,8 +785,24 @@ async function sendResultsFlow(phoneNumber, resultsPayload = {}) {
     console.log("[sendResultsFlow] suppressed duplicate results flow for", phone);
     return { suppressed: true };
   }
+  if (!(await _shouldSendDb(phone, hash))) {
+    console.log("[sendResultsFlow] suppressed duplicate results flow (db) for", phone);
+    return { suppressed: true };
+  }
 
-  return whatsappPost(phone_number_id, apiToken, interactivePayload);
+  const res = await whatsappPost(phone_number_id, apiToken, interactivePayload);
+  const waid = res?.messages?.[0]?.id || null;
+  if (!res?.error) {
+    await _recordOutboundMessage({
+      phone,
+      wa_message_id: waid,
+      type: "interactive",
+      text: JSON.stringify(resultsPayload?.data || {}),
+      raw: interactivePayload,
+      meta: { hash, interactiveType: "flow", screen: resultsPayload.screen || "RESULTS", flowId: String(DEFAULT_FLOW_ID) },
+    });
+  }
+  return res;
 }
 
 /* -------------------------
@@ -930,6 +1089,108 @@ export async function POST(request) {
   const flowData = getFlowDataFromPayload(payload);
   const screen = detectRequestedScreen(payload);
 
+  if (
+    screen === "LIST_PROPERTY" ||
+    (flowData && (flowData.title || flowData.listerPhoneNumber || flowData.pricePerMonth))
+  ) {
+    try {
+      const cityId = String(flowData.city || flowData.selected_city || "").trim();
+      const suburbId = String(flowData.suburb || flowData.selected_suburb || "").trim();
+      const propertyCategoryId = String(flowData.propertyCategory || flowData.property_category || flowData.selected_category || "").trim();
+      const propertyTypeId = String(flowData.propertyType || flowData.property_type || flowData.selected_type || "").trim();
+      const bedroomsId = String(flowData.bedrooms || flowData.selected_bedrooms || "").trim();
+
+      const cityTitle = resolveTitleById(cityId, PREDEFINED_CITIES);
+      const suburbTitle = resolveTitleById(suburbId, LIST_PROPERTY_SUBURBS);
+      const propertyTypeTitle = resolveTitleById(propertyTypeId, LIST_PROPERTY_TYPES);
+
+      const title = String(flowData.title || "").trim();
+      const listerPhoneNumber = digitsOnly(flowData.listerPhoneNumber || phone);
+      const contactName = String(flowData.contactName || "").trim();
+      const contactPhone = String(flowData.contactPhone || "").trim();
+      const contactWhatsApp = String(flowData.contactWhatsApp || "").trim();
+      const contactEmail = String(flowData.contactEmail || "").trim();
+
+      const priceRaw = String(flowData.pricePerMonth || "").trim();
+      const depositRaw = String(flowData.deposit || "").trim();
+      const description = String(flowData.description || "").trim();
+
+      const pricePerMonth = Number(priceRaw);
+      const deposit = depositRaw ? Number(depositRaw) : null;
+
+      const bedrooms =
+        bedroomsId === "4plus"
+          ? 4
+          : Number(bedroomsId || "0");
+
+      const featuresIds = Array.isArray(flowData.features) ? flowData.features : [];
+      const features = featuresIds
+        .map((fid) => resolveTitleById(fid, PREDEFINED_FEATURES_OPTIONS))
+        .map((v) => String(v || "").trim())
+        .filter(Boolean)
+        .slice(0, 20);
+
+      const imageUrlsRaw = String(flowData.imageUrls || "").trim();
+      const images = imageUrlsRaw
+        ? imageUrlsRaw
+          .split(/[\s,]+/g)
+          .map((u) => u.trim())
+          .filter((u) => /^https?:\/\//i.test(u))
+          .slice(0, 10)
+        : [];
+
+      if (!title || !listerPhoneNumber || !cityId || !suburbId || !propertyCategoryId || !propertyTypeId || !bedroomsId || !Number.isFinite(pricePerMonth)) {
+        await sendWithMainMenuButton(phone, "Some required fields are missing. Please open the listing form again and submit.", "Tap Main menu, then List a property.");
+        return NextResponse.json({ ok: true, note: "list-flow-missing-required" });
+      }
+
+      if (!dbAvailable || !process.env.MONGODB_URI || typeof Listing?.create !== "function") {
+        await sendWithMainMenuButton(phone, "Listing received, but publishing is not available (database not configured).", "Tap Main menu.");
+        return NextResponse.json({ ok: true, note: "list-flow-no-db" });
+      }
+
+      const suburb = `${suburbTitle}${cityTitle ? `, ${cityTitle}` : ""}`.trim();
+      const created = await Listing.create({
+        title,
+        listerPhoneNumber,
+        suburb,
+        propertyCategory: propertyCategoryId,
+        propertyType: propertyTypeTitle || propertyTypeId,
+        pricePerMonth,
+        deposit: deposit && Number.isFinite(deposit) ? deposit : null,
+        bedrooms: Number.isFinite(bedrooms) ? bedrooms : 0,
+        description,
+        features,
+        images,
+        contactName,
+        contactPhone,
+        contactWhatsApp,
+        contactEmail,
+        status: "published",
+      });
+
+      const listingId = created?._id?.toString?.() ?? String(created?._id || "");
+      const confirmText = [
+        `Listing published.`,
+        listingId ? `ID: ${listingId}` : null,
+        `Title: ${title}`,
+        `Suburb: ${suburb}`,
+        `Category: ${propertyCategoryId}`,
+        `Type: ${propertyTypeTitle || propertyTypeId}`,
+        `Bedrooms: ${bedroomsId}`,
+        `Price: ${pricePerMonth}`,
+      ].filter(Boolean).join("\n");
+
+      await sendTextWithInstructionHeader(phone, confirmText, "Listing published.");
+      await sendButtonsWithInstructionHeader(phone, "Return to main menu:", [{ id: "menu_main", title: "Main menu" }], "Tap Main menu.");
+      return NextResponse.json({ ok: true, note: "list-flow-published", listingId });
+    } catch (e) {
+      console.warn("[webhook] list property flow error", e);
+      await sendWithMainMenuButton(phone, "Something went wrong while publishing your listing.", "Tap Main menu and try again.");
+      return NextResponse.json({ ok: true, note: "list-flow-error" });
+    }
+  }
+
   if (screen === "SEARCH" || (flowData && (flowData.city || flowData.q || flowData.min_price || flowData.max_price))) {
     console.log("[webhook] flow search submission:", flowData);
 
@@ -1025,11 +1286,20 @@ export async function POST(request) {
 
   // list a property
   if (cmd === "list" || cmd === "list a property" || cmd === "menu_list") {
-    if (dbAvailable && savedMsg && savedMsg._id) {
-      await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.state": "LISTING_WAIT_TITLE", "meta.listingDraft": {} } }).catch(() => null);
+    const flowResp = await sendListPropertyFlow(phone, {
+      headerText: "List a property — lister flow",
+      bodyText: "Fill the fields below. Required fields are marked.",
+      footerText: "Publish listing",
+      flow_cta: "Publish listing",
+    }).catch((e) => ({ error: e }));
+
+    if (flowResp?.error || flowResp?.suppressed) {
+      await sendWithMainMenuButton(phone, "Couldn't open the listing form right now.", "Tap Main menu and try again.");
+      return NextResponse.json({ ok: true, note: "list-flow-open-failed" });
     }
-    await sendWithMainMenuButton(phone, "Let's list your property.\n\nStep 1 of 4: What's the property title? (e.g. 2-bed garden flat, Glen Norah)", "Reply with the title.");
-    return NextResponse.json({ ok: true, note: "listing-started" });
+
+    await sendWithMainMenuButton(phone, "Listing form opened.", "Fill and submit the form to publish your listing.");
+    return NextResponse.json({ ok: true, note: "list-flow-opened" });
   }
 
   if (cmd === "msg_search") {
