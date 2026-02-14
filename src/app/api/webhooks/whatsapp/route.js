@@ -1302,21 +1302,6 @@ export async function POST(request) {
     return NextResponse.json({ ok: true, note: "list-flow-opened" });
   }
 
-  if (cmd === "msg_search") {
-    await sendWithMainMenuButton(phone, "Search by message.\n\nSend: Area, optional budget\n\nExample:\nBorrowdale, $200", "Reply with the area and optional budget.");
-    return NextResponse.json({ ok: true, note: "msg-search" });
-  }
-
-  if (cmd === "open_search") {
-    const flowResp = await sendSearchFlow(phone, { headerText: "Instructions: Tap Continue", bodyText: "Only City is required. Other filters are optional.", footerText: "Search", screen: "SEARCH", cities: PREDEFINED_CITIES }).catch((e) => ({ error: e }));
-    if (flowResp?.error || flowResp?.suppressed) {
-      await sendWithMainMenuButton(phone, "Couldn't open the search form right now.", "Reply with area and optional budget, or tap Main menu.");
-    } else {
-      await sendWithMainMenuButton(phone, "Search form opened.", "Fill and submit the form, or reply with area and optional budget.");
-    }
-    return NextResponse.json({ ok: true, note: "open-search", flowResp });
-  }
-
   if (cmd === "help") {
     await sendWithMainMenuButton(
       phone,
@@ -1333,16 +1318,9 @@ export async function POST(request) {
     console.log("[webhook] sendSearchFlow result:", flowResp);
 
     if (flowResp?.error || flowResp?.suppressed) {
-      console.log("[webhook] sending fallback interactive/buttons for search");
-      await sendInteractiveButtons(phone, "Search options — choose one:", [
-        { id: "msg_search", title: "Search by message" },
-        { id: "open_search", title: "Open search form" },
-        { id: "help", title: "Help" },
-      ], { headerText: "Instructions: Tap an option" }).catch((e) => console.warn("[webhook] sendInteractiveButtons error:", e));
-
-      await sendWithMainMenuButton(phone, "You can fill the form, or send a message like:\n\nBorrowdale, $200", "Reply with area and optional budget.").catch((e) => console.warn("[webhook] sendText fallback error:", e));
+      await sendWithMainMenuButton(phone, "Couldn't open the search form right now.", "Tap Main menu and try again.").catch((e) => console.warn("[webhook] search flow open failed:", e));
     } else {
-      await sendWithMainMenuButton(phone, "Search form opened.\n\nIf you prefer, you can also send a message like:\n\nBorrowdale, $200", "Fill and submit the form, or reply with area and optional budget.").catch((err) => console.warn("[webhook] sendText after flow error:", err));
+      await sendWithMainMenuButton(phone, "Search form opened.", "Fill and submit the form.").catch((err) => console.warn("[webhook] sendText after flow error:", err));
     }
 
     if (dbAvailable && savedMsg && savedMsg._id) {
@@ -1396,77 +1374,11 @@ export async function POST(request) {
      Listing creation flow
   ------------------------- */
   if (lastMeta && lastMeta.state && String(lastMeta.state).startsWith("LISTING_")) {
-    const state = lastMeta.state;
-    if (state === "LISTING_WAIT_TITLE") {
-      const title = userRaw;
-      if (!title) { await sendWithMainMenuButton(phone, "Title missing.", "Reply with the property title."); return NextResponse.json({ ok: true }); }
-      if (dbAvailable && savedMsg && savedMsg._id) {
-        await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.listingDraft.title": title, "meta.state": "LISTING_WAIT_SUBURB" } }).catch(() => null);
-      }
-      await sendWithMainMenuButton(phone, "Step 2 of 4: What suburb is the property in? (optional)", "Reply with the suburb, or type SKIP.");
-      return NextResponse.json({ ok: true });
+    if (dbAvailable && savedMsg && savedMsg._id) {
+      await Message.findByIdAndUpdate(savedMsg._id, { $unset: { "meta.listingDraft": "", "meta.state": "" } }).catch(() => null);
     }
-    if (state === "LISTING_WAIT_SUBURB") {
-      const suburb = userRaw;
-      if (!suburb) { await sendWithMainMenuButton(phone, "Suburb missing.", "Reply with the suburb, or type SKIP."); return NextResponse.json({ ok: true }); }
-      if (dbAvailable && savedMsg && savedMsg._id) {
-        const storedSuburb = /^skip$/i.test(suburb) ? "" : suburb;
-        await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.listingDraft.suburb": storedSuburb, "meta.state": "LISTING_WAIT_PRICE" } }).catch(() => null);
-      }
-      await sendWithMainMenuButton(phone, "Step 3 of 4: What is the monthly price? (numbers only, e.g. 500)", "Reply with the monthly price.");
-      return NextResponse.json({ ok: true });
-    }
-    if (state === "LISTING_WAIT_PRICE") {
-      const priceMatch = userRaw.match(/(\d+(?:\.\d+)?)/);
-      if (!priceMatch) { await sendWithMainMenuButton(phone, "Price missing.", "Reply with a numeric price (e.g. 500)."); return NextResponse.json({ ok: true }); }
-      const price = Number(priceMatch[1]);
-      if (dbAvailable && savedMsg && savedMsg._id) {
-        await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.listingDraft.price": price, "meta.state": "LISTING_CONFIRM" } }).catch(() => null);
-      }
-      const draftDoc = (dbAvailable && savedMsg && savedMsg._id) ? (await Message.findById(savedMsg._id).lean().exec().catch(() => null)) : null;
-      const draft = draftDoc?.meta?.listingDraft || {};
-      const confirmText = `Please confirm your listing:\n\nTitle: ${draft.title || "<unknown>"}\nSuburb: ${draft.suburb || "<optional>"}\nPrice: $${draft.price || price}\n\nTap YES to publish or NO to cancel.`;
-      await sendButtonsWithInstructionHeader(phone, confirmText, [
-        { id: "confirm_yes", title: "YES" },
-        { id: "confirm_no", title: "NO" },
-        { id: "menu_main", title: "Main menu" },
-      ], "Tap YES to publish, NO to cancel.");
-      return NextResponse.json({ ok: true });
-    }
-    if (state === "LISTING_CONFIRM") {
-      if (/^yes$/i.test(userRaw) || userRaw === "confirm_yes") {
-        if (dbAvailable && savedMsg && savedMsg._id) {
-          const doc = await Message.findById(savedMsg._id).lean().exec().catch(() => null);
-          const draft = doc?.meta?.listingDraft || {};
-          try {
-            const created = await Listing.create({
-              title: draft.title || "Untitled",
-              listerPhoneNumber: phone,
-              suburb: draft.suburb || "",
-              propertyCategory: "residential",
-              propertyType: "house",
-              pricePerMonth: draft.price || 0,
-              bedrooms: 1,
-              status: "published",
-            });
-            await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.state": "LISTING_PUBLISHED", "meta.listingPublishedId": String(created._id) } }).catch(() => null);
-            await sendInteractiveButtons(phone, `ID: ${String(created._id)}`, [{ id: "menu_main", title: "Main menu" }], { headerText: "Listing created ✅" });
-            return NextResponse.json({ ok: true, note: "listing-created" });
-          } catch (e) {
-            console.warn("[listing] create failed", e);
-            await sendWithMainMenuButton(phone, "Couldn't create the listing right now.", "Tap Main menu, then try again later.");
-            return NextResponse.json({ ok: true, note: "listing-create-failed" });
-          }
-        } else {
-          await sendWithMainMenuButton(phone, "No listing draft found.", "Tap Main menu, then choose List a property.");
-          return NextResponse.json({ ok: true });
-        }
-      } else {
-        if (dbAvailable && savedMsg && savedMsg._id) await Message.findByIdAndUpdate(savedMsg._id, { $unset: { "meta.listingDraft": "", "meta.state": "" } }).catch(() => null);
-        await sendWithMainMenuButton(phone, "Listing cancelled.", "Tap Main menu.");
-        return NextResponse.json({ ok: true, note: "listing-cancelled" });
-      }
-    }
+    await sendWithMainMenuButton(phone, "Listing is done using the form only.", "Tap Main menu, then choose List a property.");
+    return NextResponse.json({ ok: true, note: "listing-form-only" });
   }
 
   /* -------------------------
@@ -1624,30 +1536,8 @@ export async function POST(request) {
      Simple search fallback (area, $budget)
   ------------------------- */
   if (userRaw && !lastMeta) {
-    const budgetMatch = userRaw.match(/\$?(\d+(?:\.\d+)?)/);
-    const area = userRaw.split(",")[0].trim();
-    if (area || budgetMatch) {
-      const budget = budgetMatch ? Number(budgetMatch[1]) : null;
-      let results = { listings: [], total: 0 };
-      try { results = await searchPublishedListings({ q: area, minPrice: null, maxPrice: budget, perPage: 6 }); } catch (e) { console.warn("[webhook] searchPublishedListings error", e); results = { listings: [], total: 0 }; }
-      const items = (results.listings || []).slice(0, 6);
-      if (!items.length) {
-        await sendWithMainMenuButton(phone, "No matches found.", "Try a broader area or higher budget, or tap Main menu.");
-        return NextResponse.json({ ok: true, note: "search-no-results" });
-      }
-      const ensured = items.map((item, i) => ensureListingHasId(item, i));
-      const ensuredItems = ensured.map((e) => e.listing).filter(Boolean);
-      const ids = ensured.map((e) => e.id).filter(Boolean);
-      const numbered = ensuredItems.map((l, i) => formatListingResultText(l, i)).filter(Boolean).join("\n\n");
-      await saveSearchContext(phone, ids, ensuredItems, dbAvailable);
-      await sendTextWithInstructionHeader(phone, numbered, "Reply with the number (e.g. 1) to view contact details.");
-      await sendButtonsWithInstructionHeader(phone, "Return to main menu:", [{ id: "menu_main", title: "Main menu" }], "Tap Main menu.");
-      selectionMap.set(phone, { ids, results: ensuredItems });
-      if (dbAvailable && savedMsg && savedMsg._id) {
-        await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.state": "AWAITING_LIST_SELECTION", "meta.listingIds": ids, "meta.resultObjects": ensuredItems } }).catch(() => null);
-      }
-      return NextResponse.json({ ok: true, note: "search-results-sent" });
-    }
+    await sendWithMainMenuButton(phone, "Search is available via the form only.", "Tap Main menu, then choose Search properties.");
+    return NextResponse.json({ ok: true, note: "search-form-only" });
   }
 
   // default fallback
