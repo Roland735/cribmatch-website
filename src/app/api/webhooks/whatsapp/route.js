@@ -849,6 +849,11 @@ function getIdFromListing(l) {
   return "";
 }
 
+function getShortIdFromListing(l) {
+  const raw = typeof l?.shortId === "string" ? l.shortId.trim().toUpperCase() : "";
+  return /^[A-Z0-9]{4}$/.test(raw) ? raw : "";
+}
+
 function ensureListingHasId(listing, indexHint = 0) {
   if (!listing || typeof listing !== "object") return { listing: null, id: "" };
   const existingId = getIdFromListing(listing);
@@ -867,6 +872,7 @@ function formatListingResultText(listing, indexHint = 0) {
   const { listing: ensured, id } = ensureListingHasId(listing, indexHint);
   if (!ensured) return "";
 
+  const shortId = getShortIdFromListing(ensured);
   const title = String(ensured.title || "Listing").trim();
   const suburb = String(ensured.suburb || "").trim();
   const price = ensured.pricePerMonth ?? ensured.price ?? "N/A";
@@ -880,7 +886,11 @@ function formatListingResultText(listing, indexHint = 0) {
 
   const featuresShort = features.slice(0, 6);
 
-  const lines = [`${indexHint + 1}) ${title} — ${suburb} — $${price} — ID:${id}`];
+  const lines = [
+    `${indexHint + 1}) ${title} — ${suburb} — $${price}`,
+    shortId ? `CODE:${shortId}` : null,
+    `ID:${id}`,
+  ].filter(Boolean);
 
   if (descriptionShort) {
     lines.push("", "Description:", ` ${descriptionShort}`);
@@ -1170,8 +1180,10 @@ export async function POST(request) {
       });
 
       const listingId = created?._id?.toString?.() ?? String(created?._id || "");
+      const shortId = getShortIdFromListing(created);
       const confirmText = [
         `Listing published.`,
+        shortId ? `CODE: ${shortId}` : null,
         listingId ? `ID: ${listingId}` : null,
         `Title: ${title}`,
         `Suburb: ${suburb}`,
@@ -1255,7 +1267,7 @@ export async function POST(request) {
     const numbered = ensuredItems.map((l, i) => formatListingResultText(l, i)).filter(Boolean).join("\n\n");
 
     await saveSearchContext(phone, ids, ensuredItems, dbAvailable);
-    let msgText = `Reply with the number (e.g. 1) to get contact details.\n\n${numbered}`.trim();
+    let msgText = `Reply with the number (e.g. 1) to get contact details, or type a listing CODE (e.g. H4WH).\n\n${numbered}`.trim();
     if (msgText.length > 3900) msgText = `${msgText.slice(0, 3880).trim()}\n…`;
     await sendText(phone, msgText);
 
@@ -1282,6 +1294,28 @@ export async function POST(request) {
   if (/^menu$|^menu_main$|^main menu$/i.test(userRaw)) {
     await sendMainMenu(phone);
     return NextResponse.json({ ok: true, note: "menu-sent" });
+  }
+
+  // lookup by CODE (4 chars)
+  {
+    const codeMatch = userRaw.match(/^(?:id|code)\s+([a-z0-9]{4})$/i) || userRaw.match(/^([a-z0-9]{4})$/i);
+    const code = codeMatch ? String(codeMatch[1] || codeMatch[0]).trim().toUpperCase() : "";
+    if (code && /^[A-Z0-9]{4}$/.test(code) && !["MENU", "HELP", "LIST", "OPEN", "VIEW"].includes(code)) {
+      let listing = null;
+      if (dbAvailable && typeof Listing?.findOne === "function") {
+        listing = await Listing.findOne({ shortId: code }).lean().exec().catch(() => null);
+      }
+      if (!listing && selectionMap.has(phone)) {
+        const mem = selectionMap.get(phone);
+        listing = mem?.results?.find((r) => getShortIdFromListing(r) === code) || null;
+      }
+      if (!listing) {
+        await sendWithMainMenuButton(phone, `No listing found for CODE: ${code}`, "Tap Main menu to search.");
+        return NextResponse.json({ ok: true, note: "code-not-found" });
+      }
+      await revealFromObject(listing, phone);
+      return NextResponse.json({ ok: true, note: "code-found" });
+    }
   }
 
   // list a property
@@ -1350,16 +1384,18 @@ export async function POST(request) {
     }
     const summaries = listingIds.map((id) => {
       const f = found.find((x) => String(x._id) === String(id));
-      if (f) return { id, title: f.title || "Listing", suburb: f.suburb || "", price: f.pricePerMonth || f.price || 0 };
+      if (f) return { id, code: getShortIdFromListing(f), title: f.title || "Listing", suburb: f.suburb || "", price: f.pricePerMonth || f.price || 0 };
       const mem = selectionMap.get(phone);
       const r = mem?.results?.find((rr) => getIdFromListing(rr) === id) || null;
-      if (r) return { id, title: r.title || "Listing", suburb: r.suburb || "", price: r.pricePerMonth || r.price || 0 };
-      return { id, title: `Listing ${id.slice(0, 8)}`, suburb: "", price: 0 };
+      if (r) return { id, code: getShortIdFromListing(r), title: r.title || "Listing", suburb: r.suburb || "", price: r.pricePerMonth || r.price || 0 };
+      return { id, code: "", title: `Listing ${id.slice(0, 8)}`, suburb: "", price: 0 };
     });
-    const text = ["Your recent contacts:"].concat(summaries.map((s, i) => `${i + 1}) ${s.title} — ${s.suburb} — $${s.price} — ID:${s.id}`)).join("\n\n");
+    const text = ["Your recent contacts:"].concat(
+      summaries.map((s, i) => `${i + 1}) ${s.title} — ${s.suburb} — $${s.price}${s.code ? ` — CODE:${s.code}` : ""} — ID:${s.id}`),
+    ).join("\n\n");
     await sendTextWithInstructionHeader(phone, text, "Reply with the number (e.g. 1) to view contact details again.");
     await sendButtonsWithInstructionHeader(phone, "Return to main menu:", [{ id: "menu_main", title: "Main menu" }], "Tap Main menu.");
-    selectionMap.set(phone, { ids: listingIds, results: summaries.map(s => ({ _id: s.id, title: s.title, suburb: s.suburb, price: s.price })) });
+    selectionMap.set(phone, { ids: listingIds, results: summaries.map((s) => ({ _id: s.id, shortId: s.code, title: s.title, suburb: s.suburb, price: s.price })) });
     return NextResponse.json({ ok: true, note: "past-messages-sent" });
   }
 
@@ -1406,17 +1442,23 @@ export async function POST(request) {
   ------------------------- */
   if (/^images?\b/i.test(userRaw) || /^view_images_/.test(userRaw)) {
     const m = userRaw.match(/^images?\s+(.+)$/i);
-    const listingId = /^view_images_/.test(userRaw) ? userRaw.slice("view_images_".length).trim() : (m ? m[1].trim() : null);
-    if (!listingId) {
+    const listingRef = /^view_images_/.test(userRaw) ? userRaw.slice("view_images_".length).trim() : (m ? m[1].trim() : null);
+    if (!listingRef) {
       await sendWithMainMenuButton(phone, "Image request missing listing ID.", "Reply like: images <listing-id>.");
       return NextResponse.json({ ok: true, note: "images-missing-id" });
     }
-    const imgHash = _hash(`images:${listingId}`);
+    const refUpper = String(listingRef).trim().toUpperCase();
+    const imgHash = _hash(`images:${refUpper}`);
     if (!_shouldSend(phone, imgHash, TTL_INTERACTIVE_MS)) return NextResponse.json({ ok: true, note: "images-suppressed" });
 
     let listing = null;
-    try { listing = await getListingById(listingId).catch(() => null); } catch (e) { listing = null; }
-    if (!listing && typeof Listing?.findById === "function") listing = await Listing.findById(listingId).lean().exec().catch(() => null);
+    if (/^[A-Z0-9]{4}$/.test(refUpper) && dbAvailable && typeof Listing?.findOne === "function") {
+      listing = await Listing.findOne({ shortId: refUpper }).lean().exec().catch(() => null);
+    }
+    if (!listing) {
+      try { listing = await getListingById(listingRef).catch(() => null); } catch (e) { listing = null; }
+    }
+    if (!listing && typeof Listing?.findById === "function") listing = await Listing.findById(listingRef).lean().exec().catch(() => null);
     const imgs = (listing && (listing.images || listing.photos || listing.photosUrls || [])) || [];
     if (!imgs || imgs.length === 0) {
       await sendWithMainMenuButton(phone, "No images found for this listing.", "Tap Main menu.");
@@ -1494,17 +1536,26 @@ export async function POST(request) {
     console.log("[webhook] selection resolved:", { listingId });
 
     if (!listingId) {
-      await sendWithMainMenuButton(phone, "Couldn't determine the listing from your reply.", "Tap a listing from the results, or reply: contact <ID> (shown in the list).");
+      await sendWithMainMenuButton(phone, "Couldn't determine the listing from your reply.", "Reply: contact <CODE> (e.g. H4WH) or contact <ID>.");
       return NextResponse.json({ ok: true, note: "selection-unknown" });
     }
 
     // try to fetch listing (helper + DB)
     let listing = listingFromResults;
+    const listingIdUpper = String(listingId || "").trim().toUpperCase();
+    if (!listing && /^[A-Z0-9]{4}$/.test(listingIdUpper) && dbAvailable && typeof Listing?.findOne === "function") {
+      listing = await Listing.findOne({ shortId: listingIdUpper }).lean().exec().catch(() => null);
+    }
     if (!listing && !String(listingId || "").startsWith("seed_")) {
       try { listing = await getListingById(listingId).catch(() => null); } catch (e) { listing = null; }
     }
     if (!listing && dbAvailable && typeof Listing?.findById === "function") listing = await Listing.findById(listingId).lean().exec().catch(() => null);
-    if (!listing && Array.isArray(lastResults)) listing = lastResults.find((r) => getIdFromListing(r) === listingId || String(r._id) === listingId) || null;
+    if (!listing && Array.isArray(lastResults)) {
+      listing =
+        lastResults.find((r) => getShortIdFromListing(r) === listingIdUpper) ||
+        lastResults.find((r) => getIdFromListing(r) === listingId || String(r._id) === listingId) ||
+        null;
+    }
     if (!listing) {
       await sendWithMainMenuButton(phone, "Sorry, listing not found.", "Reply again with the number shown (e.g. 1), or tap Main menu.");
       return NextResponse.json({ ok: true, note: "listing-not-found" });
@@ -1523,7 +1574,15 @@ export async function POST(request) {
       const mem = selectionMap.get(phone) || { ids: [], results: [] };
       const lid = getIdFromListing(listing);
       if (!mem.ids.includes(lid)) mem.ids.unshift(lid);
-      if (!mem.results.find((r) => getIdFromListing(r) === lid)) mem.results.unshift({ _id: lid, title: listing.title || "Listing", suburb: listing.suburb || "", price: listing.pricePerMonth || listing.price || 0 });
+      if (!mem.results.find((r) => getIdFromListing(r) === lid)) {
+        mem.results.unshift({
+          _id: lid,
+          shortId: getShortIdFromListing(listing),
+          title: listing.title || "Listing",
+          suburb: listing.suburb || "",
+          price: listing.pricePerMonth || listing.price || 0,
+        });
+      }
       mem.ids = mem.ids.slice(0, 20);
       mem.results = mem.results.slice(0, 20);
       selectionMap.set(phone, mem);
@@ -1653,8 +1712,10 @@ async function revealFromObject(listing, phone) {
     const contactWhatsApp = listing.contactWhatsApp || "";
     const contactEmail = listing.contactEmail || listing.email || "";
 
+    const code = getShortIdFromListing(listing);
     const detailsLines = [
       `Contact for: ${title}`,
+      code ? `CODE: ${code}` : null,
       ensuredId ? `Listing ID: ${ensuredId}` : null,
       suburb ? `Suburb: ${suburb}` : null,
       bedrooms ? `Bedrooms: ${bedrooms}` : null,

@@ -14,10 +14,37 @@ function normalizeListingDoc(listing) {
   return {
     ...obj,
     propertyType: normalizedPropertyType,
+    shortId: typeof obj?.shortId === "string" ? obj.shortId : "",
     _id: obj?._id?.toString?.() ?? obj?._id,
     createdAt: obj?.createdAt?.toISOString?.() ?? obj?.createdAt,
     updatedAt: obj?.updatedAt?.toISOString?.() ?? obj?.updatedAt,
   };
+}
+
+function stableShortIdSeed(value) {
+  const seed = String(value || "");
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = ((hash << 5) - hash + seed.charCodeAt(i)) | 0;
+  }
+  const base36 = Math.abs(hash).toString(36).toUpperCase().padStart(4, "0");
+  return base36.slice(0, 4).replace(/[^A-Z0-9]/g, "A");
+}
+
+function withSeedShortId(listing, indexHint = 0) {
+  if (!listing || typeof listing !== "object") return listing;
+  if (typeof listing.shortId === "string" && /^[A-Z0-9]{4}$/.test(listing.shortId)) return listing;
+  const seed = [
+    listing._id,
+    listing.title,
+    listing.suburb,
+    listing.pricePerMonth,
+    listing.price,
+    indexHint,
+  ]
+    .filter((v) => v !== undefined && v !== null)
+    .join("|");
+  return { ...listing, shortId: stableShortIdSeed(seed) };
 }
 
 function toSafeString(value) {
@@ -94,13 +121,25 @@ export async function getPublishedListings({ limit = 6 } = {}) {
   if (!process.env.MONGODB_URI) {
     return seedListings
       .filter((listing) => listing?.status === "published")
-      .slice(0, limit);
+      .slice(0, limit)
+      .map((l, i) => withSeedShortId(l, i));
   }
 
   await dbConnect();
   const listings = await Listing.find({ status: "published" })
     .sort({ createdAt: -1 })
     .limit(limit);
+  await Promise.all(
+    listings
+      .filter((l) => l && typeof l === "object" && !l.shortId)
+      .map(async (l) => {
+        try {
+          l.shortId = undefined;
+          l.markModified("shortId");
+          await l.save();
+        } catch (e) { }
+      }),
+  );
   return listings.map(normalizeListingDoc);
 }
 
@@ -253,7 +292,7 @@ export async function searchListings({
     });
 
     const total = sorted.length;
-    const listings = sorted.slice(skip, skip + perPageNumber);
+    const listings = sorted.slice(skip, skip + perPageNumber).map((l, i) => withSeedShortId(l, skip + i));
     return { listings, total, page: pageNumber, perPage: perPageNumber };
   }
 
@@ -340,6 +379,18 @@ export async function searchListings({
     Listing.countDocuments(mongoQuery),
     Listing.find(mongoQuery).sort(sortSpec).skip(skip).limit(perPageNumber),
   ]);
+
+  await Promise.all(
+    listings
+      .filter((l) => l && typeof l === "object" && !l.shortId)
+      .map(async (l) => {
+        try {
+          l.shortId = undefined;
+          l.markModified("shortId");
+          await l.save();
+        } catch (e) { }
+      }),
+  );
 
   return {
     listings: listings.map(normalizeListingDoc),
@@ -659,7 +710,8 @@ export async function getListingById(id) {
   if (!id) return null;
 
   if (!process.env.MONGODB_URI) {
-    return seedListings.find((listing) => listing?._id === id) ?? null;
+    const found = seedListings.find((listing) => listing?._id === id) ?? null;
+    return found ? withSeedShortId(found, 0) : null;
   }
 
   await dbConnect();

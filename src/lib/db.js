@@ -24,10 +24,28 @@ export async function dbConnect() {
   return cached.conn;
 }
 
+function generateShortId() {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let out = "";
+  for (let i = 0; i < 4; i += 1) {
+    out += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return out;
+}
+
+async function findUniqueShortId(Model, attemptsLeft = 20) {
+  if (!Model || attemptsLeft <= 0) throw new Error("Could not generate unique shortId");
+  const candidate = generateShortId();
+  const exists = await Model.exists({ shortId: candidate }).lean().exec().catch(() => null);
+  if (!exists) return candidate;
+  return findUniqueShortId(Model, attemptsLeft - 1);
+}
+
 const ListingSchema = new mongoose.Schema(
   {
     title: { type: String, required: true, trim: true },
     listerPhoneNumber: { type: String, required: true, trim: true, index: true },
+    shortId: { type: String, trim: true, uppercase: true },
     suburb: { type: String, required: true, trim: true },
     propertyCategory: {
       type: String,
@@ -55,6 +73,26 @@ const ListingSchema = new mongoose.Schema(
   },
   { timestamps: true },
 );
+
+ListingSchema.index({ shortId: 1 }, { unique: true, sparse: true });
+
+ListingSchema.pre("validate", async function ensureShortId(next) {
+  try {
+    if (this.shortId && typeof this.shortId === "string") {
+      this.shortId = this.shortId.trim().toUpperCase();
+      if (/^[A-Z0-9]{4}$/.test(this.shortId)) return next();
+      this.shortId = undefined;
+    }
+
+    if (this.shortId) return next();
+
+    const Model = this.constructor;
+    this.shortId = await findUniqueShortId(Model, 20);
+    return next();
+  } catch (e) {
+    return next(e);
+  }
+});
 
 export const Listing =
   mongoose.models.Listing || mongoose.model("Listing", ListingSchema);
