@@ -1125,8 +1125,16 @@ export async function POST(request) {
       const depositRaw = String(flowData.deposit || "").trim();
       const description = String(flowData.description || "").trim();
 
-      const pricePerMonth = Number(priceRaw);
-      const deposit = depositRaw ? Number(depositRaw) : null;
+      const extractNumber = (value) => {
+        const raw = String(value || "").replace(/,/g, " ").trim();
+        const m = raw.match(/(\d+(?:\.\d+)?)/);
+        if (!m) return null;
+        const n = Number(m[1]);
+        return Number.isFinite(n) ? n : null;
+      };
+
+      const pricePerMonth = extractNumber(priceRaw);
+      const deposit = depositRaw ? extractNumber(depositRaw) : null;
 
       const bedrooms =
         bedroomsId === "4plus"
@@ -1149,7 +1157,7 @@ export async function POST(request) {
           .slice(0, 10)
         : [];
 
-      if (!title || !listerPhoneNumber || !cityId || !suburbId || !propertyCategoryId || !propertyTypeId || !bedroomsId || !Number.isFinite(pricePerMonth)) {
+      if (!title || !listerPhoneNumber || !cityId || !suburbId || !propertyCategoryId || !propertyTypeId || !bedroomsId || pricePerMonth === null) {
         await sendWithMainMenuButton(phone, "Some required fields are missing. Please open the listing form again and submit.", "Tap Main menu, then List a property.");
         return NextResponse.json({ ok: true, note: "list-flow-missing-required" });
       }
@@ -1160,7 +1168,7 @@ export async function POST(request) {
       }
 
       const suburb = `${suburbTitle}${cityTitle ? `, ${cityTitle}` : ""}`.trim();
-      const created = await Listing.create({
+      const createDoc = {
         title,
         listerPhoneNumber,
         suburb,
@@ -1177,7 +1185,23 @@ export async function POST(request) {
         contactWhatsApp,
         contactEmail,
         status: "published",
-      });
+      };
+
+      const createWithRetry = async (attemptsLeft) => {
+        try {
+          return await Listing.create(createDoc);
+        } catch (err) {
+          const msg = String(err?.message || "");
+          const isDupShortId =
+            err?.code === 11000 &&
+            (err?.keyPattern?.shortId || err?.keyValue?.shortId || /shortId/i.test(msg));
+          if (!isDupShortId || attemptsLeft <= 1) throw err;
+          return createWithRetry(attemptsLeft - 1);
+        }
+      };
+
+      const created = await createWithRetry(5);
+      if (!created) throw new Error("listing-create-failed");
 
       const listingId = created?._id?.toString?.() ?? String(created?._id || "");
       const shortId = getShortIdFromListing(created);
@@ -1198,7 +1222,13 @@ export async function POST(request) {
       return NextResponse.json({ ok: true, note: "list-flow-published", listingId });
     } catch (e) {
       console.warn("[webhook] list property flow error", e);
-      await sendWithMainMenuButton(phone, "Something went wrong while publishing your listing.", "Tap Main menu and try again.");
+      const msg = String(e?.message || "");
+      const isValidation = e?.name === "ValidationError" || /validation/i.test(msg);
+      const isDup = e?.code === 11000;
+      const userMessage = isValidation
+        ? "Some values look invalid (for example: price). Please edit and submit the form again."
+        : (isDup ? "That listing code collided. Please submit the form again." : "Something went wrong while publishing your listing.");
+      await sendWithMainMenuButton(phone, userMessage, "Tap Main menu and try again.");
       return NextResponse.json({ ok: true, note: "list-flow-error" });
     }
   }
