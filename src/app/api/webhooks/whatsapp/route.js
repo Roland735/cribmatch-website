@@ -1556,10 +1556,10 @@ export async function POST(request) {
           : "";
 
       const propertyTypeByListingType = (() => {
-        if (listingTypeNormalized === "residential") return propertyTypeTitle && propertyTypeId !== "any" ? propertyTypeTitle : "";
-        if (listingTypeNormalized === "commercial") return shopTypeTitle && shopTypeId !== "any" ? shopTypeTitle : "";
-        if (listingTypeNormalized === "boarding") return roomTypeTitle && roomTypeId !== "any" ? roomTypeTitle : "";
-        if (listingTypeNormalized === "rent_a_chair") return serviceTypeTitle && serviceTypeId !== "any" ? serviceTypeTitle : "";
+        if (listingTypeNormalized === "residential") return propertyTypeTitle && propertyTypeId !== "any" ? propertyTypeTitle : "Residential Property";
+        if (listingTypeNormalized === "commercial") return shopTypeTitle && shopTypeId !== "any" ? shopTypeTitle : "Shop/Commercial";
+        if (listingTypeNormalized === "boarding") return roomTypeTitle && roomTypeId !== "any" ? roomTypeTitle : "Boarding House";
+        if (listingTypeNormalized === "rent_a_chair") return serviceTypeTitle && serviceTypeId !== "any" ? serviceTypeTitle : "Rent a Chair";
         return "";
       })();
 
