@@ -49,7 +49,7 @@ const ListingSchema = new mongoose.Schema(
     suburb: { type: String, required: true, trim: true },
     propertyCategory: {
       type: String,
-      enum: ["residential", "commercial", "boarding", "land"],
+      enum: ["residential", "commercial", "boarding", "rent_a_chair", "land"],
       default: "residential",
       index: true,
     },
@@ -64,6 +64,10 @@ const ListingSchema = new mongoose.Schema(
     contactPhone: { type: String, default: "", trim: true },
     contactWhatsApp: { type: String, default: "", trim: true },
     contactEmail: { type: String, default: "", trim: true },
+    occupancy: { type: String, default: "", trim: true },
+    genderPreference: { type: String, default: "", trim: true },
+    duration: { type: String, default: "", trim: true },
+    numberOfStudents: { type: Number, default: null, min: 0 },
     status: {
       type: String,
       enum: ["draft", "published"],

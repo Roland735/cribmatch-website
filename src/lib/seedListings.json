@@ -148,7 +148,7 @@
     "title": "CBD: Ground-floor retail shop (high foot traffic)",
     "suburb": "CBD, Harare",
     "propertyCategory": "commercial",
-    "propertyType": "Retail warehouse",
+    "propertyType": "Retail Shop",
     "pricePerMonth": 1200,
     "deposit": 2400,
     "bedrooms": 0,
@@ -194,7 +194,7 @@
     "title": "UZ: Boarding house rooms (walking distance to campus)",
     "suburb": "Mount Pleasant, Harare",
     "propertyCategory": "boarding",
-    "propertyType": "Boarding house (university)",
+    "propertyType": "Single Room",
     "pricePerMonth": 120,
     "deposit": 120,
     "bedrooms": 1,
@@ -234,5 +234,28 @@
     "status": "published",
     "createdAt": "2026-01-24T10:00:00.000Z",
     "updatedAt": "2026-01-24T10:00:00.000Z"
+  },
+  {
+    "_id": "seed-chair-1",
+    "title": "Salon chair/station for hair styling (CBD)",
+    "suburb": "CBD, Harare",
+    "propertyCategory": "rent_a_chair",
+    "propertyType": "Hair Styling",
+    "pricePerMonth": 200,
+    "deposit": 0,
+    "bedrooms": 0,
+    "description": "Rent a chair in a busy salon location. Suitable for hair stylists. Utilities included.",
+    "features": ["Utilities Included", "Shared Space", "Parking Available"],
+    "images": [
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=1400&q=80",
+      "https://images.unsplash.com/photo-1527799820374-dcf8f2f38894?auto=format&fit=crop&w=1400&q=80"
+    ],
+    "contactName": "CribMatch (Agent)",
+    "contactWhatsApp": "+263777215826",
+    "contactPhone": "+263777215826",
+    "contactEmail": "rolandmungure@cribmatch.org",
+    "status": "published",
+    "createdAt": "2026-01-25T10:00:00.000Z",
+    "updatedAt": "2026-01-25T10:00:00.000Z"
   }
 ]

@@ -1,0 +1,1170 @@
+Flow Name
+Flow ID
+Status
+Last Updated
+listing
+2038464217012262
+Published
+Published
+Feb 16, 2026
+RENTAL_ITEMS_SEARCH
+953208663822408
+Published
+Published
+Feb 16, 2026
+BOARDING_SEARCH
+2368498460238432
+Published
+Published
+Feb 16, 2026
+SHOP_SEARCH
+1910668816993710
+Published
+Published
+Feb 16, 2026
+RESIDENTIAL_SEARCH
+3819352211531237
+Published
+Published
+Feb 16, 2026
+
+
+
+
+listing
+
+{
+  "version": "7.3",
+  "screens": [
+    {
+      "id": "LIST_PROPERTY",
+      "title": "List a Property — Lister Flow",
+      "terminal": true,
+      "success": true,
+      "data": {
+        "listingTypes": {
+          "type": "array",
+          "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
+          "__example__": [
+            { "id": "residential", "title": "Residential Property" },
+            { "id": "commercial", "title": "Shop/Commercial" },
+            { "id": "boarding", "title": "Boarding House" },
+            { "id": "rent_a_chair", "title": "Rent a Chair" }
+          ]
+        },
+        "cities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": { "id": { "type": "string" }, "title": { "type": "string" } }
+          },
+          "__example__": [
+            { "id": "harare", "title": "Harare" },
+            { "id": "chitungwiza", "title": "Chitungwiza" },
+            { "id": "bulawayo", "title": "Bulawayo" },
+            { "id": "mutare", "title": "Mutare" },
+            { "id": "gweru", "title": "Gweru" },
+            { "id": "masvingo", "title": "Masvingo" },
+            { "id": "victoria_falls", "title": "Victoria Falls" },
+            { "id": "norton", "title": "Norton" }
+          ]
+        },
+        "suburbs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": { "id": { "type": "string" }, "title": { "type": "string" } }
+          },
+          "__example__": [
+            { "id": "any", "title": "Any" },
+            { "id": "borrowdale", "title": "Borrowdale" },
+            { "id": "mount_pleasant", "title": "Mount Pleasant" },
+            { "id": "avondale", "title": "Avondale" },
+            { "id": "highlands", "title": "Highlands" },
+            { "id": "belgravia", "title": "Belgravia" },
+            { "id": "mabelreign", "title": "Mabelreign" },
+            { "id": "chisipite", "title": "Chisipite" },
+            { "id": "glen_lorne", "title": "Glen Lorne" }
+          ]
+        },
+        "propertyTypes": {
+          "type": "array",
+          "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
+          "__example__": [
+            { "id": "any", "title": "Any" },
+            { "id": "house", "title": "House" },
+            { "id": "flat", "title": "Flat" },
+            { "id": "studio", "title": "Studio" },
+            { "id": "cottage", "title": "Cottage" }
+          ]
+        },
+        "shopTypes": {
+          "type": "array",
+          "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
+          "__example__": [
+            { "id": "any", "title": "Any" },
+            { "id": "retail_shop", "title": "Retail Shop" },
+            { "id": "office_space", "title": "Office Space" },
+            { "id": "warehouse", "title": "Warehouse" },
+            { "id": "restaurant_space", "title": "Restaurant Space" }
+          ]
+        },
+        "roomTypes": {
+          "type": "array",
+          "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
+          "__example__": [
+            { "id": "any", "title": "Any" },
+            { "id": "single_room", "title": "Single Room" },
+            { "id": "shared_room", "title": "Shared Room" },
+            { "id": "dormitory", "title": "Dormitory" },
+            { "id": "ensuite_room", "title": "En-suite Room" }
+          ]
+        },
+        "serviceTypes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": { "id": { "type": "string" }, "title": { "type": "string" } }
+          },
+          "__example__": [
+            { "id": "any", "title": "Any" },
+            { "id": "barbering", "title": "Barbering" },
+            { "id": "hair_styling", "title": "Hair Styling" },
+            { "id": "nail_services", "title": "Nail Services" },
+            { "id": "makeup_artistry", "title": "Makeup Artistry" },
+            { "id": "massage_therapy", "title": "Massage Therapy" },
+            { "id": "other_services", "title": "Other Services" }
+          ]
+        },
+        "bedrooms": {
+          "type": "array",
+          "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
+          "__example__": [
+            { "id": "any", "title": "Any" },
+            { "id": "0", "title": "0 (Studio/Office)" },
+            { "id": "1", "title": "1" },
+            { "id": "2", "title": "2" },
+            { "id": "3", "title": "3" },
+            { "id": "4", "title": "4" },
+            { "id": "5plus", "title": "5+" }
+          ]
+        },
+        "occupancyTypes": {
+          "type": "array",
+          "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
+          "__example__": [
+            { "id": "any", "title": "Any" },
+            { "id": "1_person", "title": "1 Person" },
+            { "id": "2_people", "title": "2 People" },
+            { "id": "3_people", "title": "3 People" },
+            { "id": "4plus_people", "title": "4+ People" }
+          ]
+        },
+        "genderPreference": {
+          "type": "array",
+          "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
+          "__example__": [
+            { "id": "any", "title": "Any" },
+            { "id": "male_only", "title": "Male Only" },
+            { "id": "female_only", "title": "Female Only" },
+            { "id": "mixed", "title": "Mixed" }
+          ]
+        },
+        "duration": {
+          "type": "array",
+          "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
+          "__example__": [
+            { "id": "any", "title": "Any" },
+            { "id": "short_term", "title": "Short Term (1-3 months)" },
+            { "id": "medium_term", "title": "Medium Term (3-6 months)" },
+            { "id": "long_term", "title": "Long Term (6+ months)" }
+          ]
+        },
+        "residentialFeatures": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": { "id": { "type": "string" }, "title": { "type": "string" } }
+          },
+          "__example__": [
+            { "id": "borehole", "title": "Borehole" },
+            { "id": "solar_backup", "title": "Solar Backup" },
+            { "id": "solar_geyser", "title": "Solar Geyser" },
+            { "id": "internet", "title": "Internet" },
+            { "id": "fenced", "title": "Fenced/Secure" },
+            { "id": "garage", "title": "Garage" },
+            { "id": "garden", "title": "Garden" },
+            { "id": "furnished", "title": "Furnished" },
+            { "id": "pets_allowed", "title": "Pets Allowed" },
+            { "id": "ac", "title": "Air Conditioning" }
+          ]
+        },
+        "boardingFeatures": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": { "id": { "type": "string" }, "title": { "type": "string" } }
+          },
+          "__example__": [
+            { "id": "meals_included", "title": "Meals Included" },
+            { "id": "wifi_internet", "title": "WiFi / Internet" },
+            { "id": "laundry_service", "title": "Laundry Service" },
+            { "id": "shared_kitchen", "title": "Shared Kitchen" },
+            { "id": "study_area", "title": "Study Area" },
+            { "id": "common_room", "title": "Common Room / Lounge" },
+            { "id": "parking", "title": "Parking Available" },
+            { "id": "security", "title": "24/7 Security" },
+            { "id": "cleaning_service", "title": "Cleaning Service" },
+            { "id": "utilities_included", "title": "Utilities Included" },
+            { "id": "near_transport", "title": "Near Public Transport" },
+            { "id": "near_university", "title": "Near University/College" }
+          ]
+        },
+        "commercialFeatures": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": { "id": { "type": "string" }, "title": { "type": "string" } }
+          },
+          "__example__": [
+            { "id": "high_foot_traffic", "title": "High Foot Traffic" },
+            { "id": "parking_available", "title": "Parking Available" },
+            { "id": "loading_bay", "title": "Loading Bay/Dock" },
+            { "id": "air_conditioning", "title": "Air Conditioning" },
+            { "id": "security_system", "title": "Security System" },
+            { "id": "storage_space", "title": "Storage Space" },
+            { "id": "backup_power", "title": "Backup Power" }
+          ]
+        },
+        "chairFeatures": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": { "id": { "type": "string" }, "title": { "type": "string" } }
+          },
+          "__example__": [
+            { "id": "private_space", "title": "Private Space" },
+            { "id": "shared_space", "title": "Shared Space" },
+            { "id": "all_inclusive", "title": "All Inclusive" },
+            { "id": "furnished", "title": "Furnished" },
+            { "id": "parking_available", "title": "Parking Available" },
+            { "id": "utilities_included", "title": "Utilities Included" }
+          ]
+        },
+        "listing_type": { "type": "string", "__example__": "" },
+        "title": { "type": "string", "__example__": "" },
+        "lister_phone_number": { "type": "string", "__example__": "" },
+        "contact_name": { "type": "string", "__example__": "" },
+        "contact_phone": { "type": "string", "__example__": "" },
+        "contact_whatsapp": { "type": "string", "__example__": "" },
+        "contact_email": { "type": "string", "__example__": "" },
+        "selected_city": { "type": "string", "__example__": "harare" },
+        "selected_suburb": { "type": "string", "__example__": "any" },
+        "selected_property_type": { "type": "string", "__example__": "any" },
+        "selected_shop_type": { "type": "string", "__example__": "any" },
+        "selected_room_type": { "type": "string", "__example__": "any" },
+        "selected_service_type": { "type": "string", "__example__": "any" },
+        "selected_bedrooms": { "type": "string", "__example__": "any" },
+        "selected_occupancy": { "type": "string", "__example__": "any" },
+        "selected_gender": { "type": "string", "__example__": "any" },
+        "selected_duration": { "type": "string", "__example__": "any" },
+        "number_of_students": { "type": "string", "__example__": "1" },
+        "price_per_month": { "type": "string", "__example__": "" },
+        "deposit_amount": { "type": "string", "__example__": "" },
+        "description": { "type": "string", "__example__": "" },
+        "selected_residential_features": {
+          "type": "array",
+          "items": { "type": "string" },
+          "__example__": []
+        },
+        "selected_boarding_features": {
+          "type": "array",
+          "items": { "type": "string" },
+          "__example__": []
+        },
+        "selected_commercial_features": {
+          "type": "array",
+          "items": { "type": "string" },
+          "__example__": []
+        },
+        "selected_chair_features": {
+          "type": "array",
+          "items": { "type": "string" },
+          "__example__": []
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "listing_form",
+            "init-values": {
+              "listing_type": "${data.listing_type}",
+              "title": "${data.title}",
+              "lister_phone_number": "${data.lister_phone_number}",
+              "contact_name": "${data.contact_name}",
+              "contact_phone": "${data.contact_phone}",
+              "contact_whatsapp": "${data.contact_whatsapp}",
+              "contact_email": "${data.contact_email}",
+              "city": "${data.selected_city}",
+              "suburb": "${data.selected_suburb}",
+              "property_type": "${data.selected_property_type}",
+              "shop_type": "${data.selected_shop_type}",
+              "room_type": "${data.selected_room_type}",
+              "service_type": "${data.selected_service_type}",
+              "bedrooms": "${data.selected_bedrooms}",
+              "occupancy": "${data.selected_occupancy}",
+              "gender_preference": "${data.selected_gender}",
+              "duration": "${data.selected_duration}",
+              "number_of_students": "${data.number_of_students}",
+              "price_per_month": "${data.price_per_month}",
+              "deposit_amount": "${data.deposit_amount}",
+              "description": "${data.description}",
+              "residential_features": "${data.selected_residential_features}",
+              "boarding_features": "${data.selected_boarding_features}",
+              "commercial_features": "${data.selected_commercial_features}",
+              "chair_features": "${data.selected_chair_features}"
+            },
+            "children": [
+              { "type": "TextSubheading", "text": "List a Property — Complete the Form" },
+              { "type": "TextBody", "text": "Select your listing type and fill in the relevant fields below. Required fields are marked." },
+              { "type": "Dropdown", "label": "Listing type", "name": "listing_type", "required": true, "data-source": "${data.listingTypes}" },
+              { "type": "TextInput", "label": "Listing title", "name": "title", "required": true },
+              { "type": "TextInput", "label": "Your phone number", "name": "lister_phone_number", "required": true },
+              { "type": "TextInput", "label": "Contact name", "name": "contact_name" },
+              { "type": "TextInput", "label": "Contact phone number", "name": "contact_phone" },
+              { "type": "TextInput", "label": "Contact WhatsApp number", "name": "contact_whatsapp" },
+              { "type": "TextInput", "label": "Contact email address", "name": "contact_email" },
+              { "type": "Dropdown", "label": "City", "required": true, "name": "city", "data-source": "${data.cities}" },
+              { "type": "Dropdown", "label": "Suburb ", "name": "suburb", "data-source": "${data.suburbs}" },
+              { "type": "TextInput", "label": "Price per month ", "name": "price_per_month", "required": true },
+              { "type": "TextInput", "label": "Deposit amount", "name": "deposit_amount" },
+              { "type": "TextArea", "label": "Description", "name": "description" },
+              { "type": "TextSubheading", "text": "For Residential Properties Only" },
+              { "type": "Dropdown", "label": "Property type", "name": "property_type", "data-source": "${data.propertyTypes}" },
+              { "type": "Dropdown", "label": "Number of bedrooms", "name": "bedrooms", "data-source": "${data.bedrooms}" },
+              { "type": "CheckboxGroup", "label": "Features & Amenities ", "name": "residential_features", "data-source": "${data.residentialFeatures}" },
+              { "type": "TextSubheading", "text": "For Shop/Commercial Properties Only" },
+              { "type": "Dropdown", "label": "Shop type", "name": "shop_type", "data-source": "${data.shopTypes}" },
+              { "type": "CheckboxGroup", "label": "Features & Amenities ", "name": "commercial_features", "data-source": "${data.commercialFeatures}" },
+              { "type": "TextSubheading", "text": "For Boarding Houses Only" },
+              { "type": "Dropdown", "label": "Room type", "name": "room_type", "data-source": "${data.roomTypes}" },
+              { "type": "Dropdown", "label": "Occupancy", "name": "occupancy", "data-source": "${data.occupancyTypes}" },
+              { "type": "Dropdown", "label": "Gender preference", "name": "gender_preference", "data-source": "${data.genderPreference}" },
+              { "type": "Dropdown", "label": "Duration", "name": "duration", "data-source": "${data.duration}" },
+              { "type": "TextInput", "label": "Students per room", "name": "number_of_students" },
+              { "type": "CheckboxGroup", "label": "Features & Amenities ", "name": "boarding_features", "data-source": "${data.boardingFeatures}" },
+              { "type": "TextSubheading", "text": "For Rent a Chair Only" },
+              { "type": "Dropdown", "label": "Service type", "name": "service_type", "data-source": "${data.serviceTypes}" },
+              { "type": "CheckboxGroup", "label": "Features & Amenities ", "name": "chair_features", "data-source": "${data.chairFeatures}" },
+              {
+                "type": "Footer",
+                "label": "Publish Listing",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "listing_type": "${form.listing_type}",
+                    "title": "${form.title}",
+                    "lister_phone_number": "${form.lister_phone_number}",
+                    "contact_name": "${form.contact_name}",
+                    "contact_phone": "${form.contact_phone}",
+                    "contact_whatsapp": "${form.contact_whatsapp}",
+                    "contact_email": "${form.contact_email}",
+                    "city": "${form.city}",
+                    "suburb": "${form.suburb}",
+                    "property_type": "${form.property_type}",
+                    "shop_type": "${form.shop_type}",
+                    "room_type": "${form.room_type}",
+                    "service_type": "${form.service_type}",
+                    "bedrooms": "${form.bedrooms}",
+                    "occupancy": "${form.occupancy}",
+                    "gender_preference": "${form.gender_preference}",
+                    "duration": "${form.duration}",
+                    "number_of_students": "${form.number_of_students}",
+                    "price_per_month": "${form.price_per_month}",
+                    "deposit_amount": "${form.deposit_amount}",
+                    "description": "${form.description}",
+                    "residential_features": "${form.residential_features}",
+                    "boarding_features": "${form.boarding_features}",
+                    "commercial_features": "${form.commercial_features}",
+                    "chair_features": "${form.chair_features}",
+                    "status": "published"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
+
+
+BOARDING_SEARCH
+
+
+
+{
+  "version": "7.3",
+  "screens": [
+    {
+      "id": "BOARDING_SEARCH",
+      "title": "Find boarding houses — filters",
+      "terminal": true,
+      "success": true,
+      "data": {
+        "cities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": { "id": { "type": "string" }, "title": { "type": "string" } }
+          },
+          "__example__": [
+            { "id": "harare", "title": "Harare" },
+            { "id": "chitungwiza", "title": "Chitungwiza" },
+            { "id": "bulawayo", "title": "Bulawayo" },
+            { "id": "mutare", "title": "Mutare" },
+            { "id": "gweru", "title": "Gweru" },
+            { "id": "masvingo", "title": "Masvingo" },
+            { "id": "victoria_falls", "title": "Victoria Falls" },
+            { "id": "norton", "title": "Norton" }
+          ]
+        },
+        "suburbs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": { "id": { "type": "string" }, "title": { "type": "string" } }
+          },
+          "__example__": [
+            { "id": "any", "title": "Any" },
+            { "id": "borrowdale", "title": "Borrowdale" },
+            { "id": "mount_pleasant", "title": "Mount Pleasant" },
+            { "id": "avondale", "title": "Avondale" },
+            { "id": "highlands", "title": "Highlands" },
+            { "id": "belgravia", "title": "Belgravia" },
+            { "id": "mabelreign", "title": "Mabelreign" },
+            { "id": "eastlea", "title": "Eastlea" },
+            { "id": "chisipite", "title": "Chisipite" },
+            { "id": "glen_lorne", "title": "Glen Lorne" },
+            { "id": "greendale", "title": "Greendale" },
+            { "id": "gunhill", "title": "Gunhill" }
+          ]
+        },
+        "roomTypes": {
+          "type": "array",
+          "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
+          "__example__": [
+            { "id": "any", "title": "Any" },
+            { "id": "single_room", "title": "Single Room" },
+            { "id": "shared_room", "title": "Shared Room" },
+            { "id": "dormitory", "title": "Dormitory" },
+            { "id": "ensuite_room", "title": "En-suite Room" }
+          ]
+        },
+        "occupancyTypes": {
+          "type": "array",
+          "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
+          "__example__": [
+            { "id": "any", "title": "Any" },
+            { "id": "1_person", "title": "1 Person" },
+            { "id": "2_people", "title": "2 People" },
+            { "id": "3_people", "title": "3 People" },
+            { "id": "4plus_people", "title": "4+ People" }
+          ]
+        },
+        "genderPreference": {
+          "type": "array",
+          "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
+          "__example__": [
+            { "id": "any", "title": "Any" },
+            { "id": "male_only", "title": "Male Only" },
+            { "id": "female_only", "title": "Female Only" },
+            { "id": "mixed", "title": "Mixed" }
+          ]
+        },
+        "duration": {
+          "type": "array",
+          "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
+          "__example__": [
+            { "id": "any", "title": "Any" },
+            { "id": "short_term", "title": "Short Term (1-3 months)" },
+            { "id": "medium_term", "title": "Medium Term (3-6 months)" },
+            { "id": "long_term", "title": "Long Term (6+ months)" }
+          ]
+        },
+        "featuresOptions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": { "id": { "type": "string" }, "title": { "type": "string" } }
+          },
+          "__example__": [
+            { "id": "meals_included", "title": "Meals Included" },
+            { "id": "wifi_internet", "title": "WiFi / Internet" },
+            { "id": "laundry_service", "title": "Laundry Service" },
+            { "id": "shared_kitchen", "title": "Shared Kitchen" },
+            { "id": "study_area", "title": "Study Area" },
+            { "id": "common_room", "title": "Common Room / Lounge" },
+            { "id": "parking", "title": "Parking Available" },
+            { "id": "security", "title": "24/7 Security" },
+            { "id": "cleaning_service", "title": "Cleaning Service" },
+            { "id": "utilities_included", "title": "Utilities Included" },
+            { "id": "near_transport", "title": "Near Public Transport" },
+            { "id": "near_university", "title": "Near University/College" }
+          ]
+        },
+        "min_price": { "type": "string", "__example__": "0" },
+        "max_price": { "type": "string", "__example__": "0" },
+        "q": { "type": "string", "__example__": "" },
+        "selected_city": { "type": "string", "__example__": "harare" },
+        "selected_suburb": { "type": "string", "__example__": "any" },
+        "selected_room_type": { "type": "string", "__example__": "any" },
+        "selected_occupancy": { "type": "string", "__example__": "any" },
+        "selected_gender": { "type": "string", "__example__": "any" },
+        "selected_duration": { "type": "string", "__example__": "any" },
+        "selected_features": {
+          "type": "array",
+          "items": { "type": "string" },
+          "__example__": []
+        },
+        "number_of_students": { "type": "string", "__example__": "1" },
+        "deposit_amount": { "type": "string", "__example__": "0" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "boarding_search_form",
+            "init-values": {
+              "city": "${data.selected_city}",
+              "suburb": "${data.selected_suburb}",
+              "room_type": "${data.selected_room_type}",
+              "occupancy": "${data.selected_occupancy}",
+              "gender_preference": "${data.selected_gender}",
+              "duration": "${data.selected_duration}",
+              "min_price": "${data.min_price}",
+              "max_price": "${data.max_price}",
+              "q": "${data.q}",
+              "features": "${data.selected_features}",
+              "number_of_students": "${data.number_of_students}",
+              "deposit_amount": "${data.deposit_amount}"
+            },
+            "children": [
+              { "type": "TextSubheading", "text": "Find boarding houses — pick filters" },
+              { "type": "TextBody", "text": "Find the perfect boarding house accommodation with your preferred amenities." },
+              { "type": "Dropdown", "label": "City", "required": true, "name": "city", "data-source": "${data.cities}" },
+              { "type": "Dropdown", "label": "Suburb ", "name": "suburb", "data-source": "${data.suburbs}" },
+              { "type": "Dropdown", "label": "Room Type", "name": "room_type", "data-source": "${data.roomTypes}" },
+              { "type": "Dropdown", "label": "Occupancy", "name": "occupancy", "data-source": "${data.occupancyTypes}" },
+              { "type": "Dropdown", "label": "Gender Preference", "name": "gender_preference", "data-source": "${data.genderPreference}" },
+              { "type": "Dropdown", "label": "Duration", "name": "duration", "data-source": "${data.duration}" },
+              { "type": "TextInput", "label": "Students per room", "name": "number_of_students" },
+              { "type": "TextInput", "label": "Deposit Amount", "name": "deposit_amount" },
+              {
+                "type": "CheckboxGroup",
+                "label": "Features & Amenities ",
+                "name": "features",
+                "data-source": "${data.featuresOptions}"
+              },
+              { "type": "TextInput", "label": "Min price per month ", "name": "min_price" },
+              { "type": "TextInput", "label": "Max price per month ", "name": "max_price" },
+              { "type": "TextInput", "label": "Keyword ", "name": "q" },
+              {
+                "type": "Footer",
+                "label": "Search Boarding Houses",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "city": "${form.city}",
+                    "suburb": "${form.suburb}",
+                    "room_type": "${form.room_type}",
+                    "occupancy": "${form.occupancy}",
+                    "gender_preference": "${form.gender_preference}",
+                    "duration": "${form.duration}",
+                    "min_price": "${form.min_price}",
+                    "max_price": "${form.max_price}",
+                    "q": "${form.q}",
+                    "features": "${form.features}",
+                    "number_of_students": "${form.number_of_students}",
+                    "deposit_amount": "${form.deposit_amount}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
+
+
+RENTAL_ITEMS_SEARCH
+
+
+
+
+{
+  "version": "7.3",
+  "screens": [
+    {
+      "id": "RENT_A_CHAIR_SEARCH",
+      "title": "Rent a chafor Services",
+      "terminal": true,
+      "success": true,
+      "data": {
+        "serviceTypes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": { "id": { "type": "string" }, "title": { "type": "string" } }
+          },
+          "__example__": [
+            { "id": "barbering", "title": "Barbering" },
+            { "id": "hair_styling", "title": "Hair Styling" },
+            { "id": "nail_services", "title": "Nail Services" },
+            { "id": "makeup_artistry", "title": "Makeup Artistry" },
+            { "id": "massage_therapy", "title": "Massage Therapy" },
+            { "id": "other_services", "title": "Other Services" }
+          ]
+        },
+        "featuresOptions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": { "id": { "type": "string" }, "title": { "type": "string" } }
+          },
+          "__example__": [
+            { "id": "private_space", "title": "Private Space" },
+            { "id": "shared_space", "title": "Shared Space" },
+            { "id": "all_inclusive", "title": "All Inclusive" },
+            { "id": "furnished", "title": "Furnished" },
+            { "id": "parking_available", "title": "Parking Available" },
+            { "id": "utilities_included", "title": "Utilities Included" }
+          ]
+        },
+        "min_price": { "type": "string", "__example__": "0" },
+        "max_price": { "type": "string", "__example__": "0" },
+        "q": { "type": "string", "__example__": "" },
+        "selected_service_type": { "type": "string", "__example__": "any" },
+        "selected_features": {
+          "type": "array",
+          "items": { "type": "string" },
+          "__example__": []
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "rent_a_chair_search_form",
+            "init-values": {
+              "service_type": "${data.selected_service_type}",
+              "min_price": "${data.min_price}",
+              "max_price": "${data.max_price}",
+              "q": "${data.q}",
+              "features": "${data.selected_features}"
+            },
+            "children": [
+              { "type": "TextSubheading", "text": "Find Rental Stations for Services" },
+              { "type": "TextBody", "text": "Choose the type of service station you want to rent." },
+              { "type": "Dropdown", "label": "Service Type", "name": "service_type", "data-source": "${data.serviceTypes}" },
+              {
+                "type": "CheckboxGroup",
+                "label": "Features & Amenities",
+                "name": "features",
+                "data-source": "${data.featuresOptions}"
+              },
+              { "type": "TextInput", "label": "Min Price ", "name": "min_price" },
+              { "type": "TextInput", "label": "Max Price ", "name": "max_price" },
+              { "type": "TextInput", "label": "Keyword Search ", "name": "q" },
+              {
+                "type": "Footer",
+                "label": "Search Stations",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "service_type": "${form.service_type}",
+                    "min_price": "${form.min_price}",
+                    "max_price": "${form.max_price}",
+                    "q": "${form.q}",
+                    "features": "${form.features}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
+
+
+
+SHOP_SEARCH
+
+
+{
+  "version": "7.3",
+  "screens": [
+    {
+      "id": "SHOP_SEARCH",
+      "title": "Find shops for rent — filters",
+      "terminal": true,
+      "success": true,
+      "data": {
+        "cities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": { "id": { "type": "string" }, "title": { "type": "string" } }
+          },
+          "__example__": [
+            { "id": "harare", "title": "Harare" },
+            { "id": "chitungwiza", "title": "Chitungwiza" },
+            { "id": "bulawayo", "title": "Bulawayo" },
+            { "id": "mutare", "title": "Mutare" },
+            { "id": "gweru", "title": "Gweru" },
+            { "id": "masvingo", "title": "Masvingo" },
+            { "id": "victoria_falls", "title": "Victoria Falls" },
+            { "id": "norton", "title": "Norton" }
+          ]
+        },
+        "suburbs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": { "id": { "type": "string" }, "title": { "type": "string" } }
+          },
+          "__example__": [
+            { "id": "any", "title": "Any" },
+            { "id": "cbd_harare", "title": "CBD (Harare)" },
+            { "id": "borrowdale", "title": "Borrowdale" },
+            { "id": "mount_pleasant", "title": "Mount Pleasant" },
+            { "id": "avondale", "title": "Avondale" },
+            { "id": "eastgate", "title": "Eastgate" },
+            { "id": "westgate", "title": "Westgate" },
+            { "id": "sam_levy", "title": "Sam Levy Village" },
+            { "id": "joina_city", "title": "Joina City" },
+            { "id": "cbd_bulawayo", "title": "CBD (Bulawayo)" },
+            { "id": "ascot_shopping", "title": "Ascot Shopping Centre" },
+            { "id": "belmont_shopping", "title": "Belmont Shopping Centre" }
+          ]
+        },
+        "shopTypes": {
+          "type": "array",
+          "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
+          "__example__": [
+            { "id": "any", "title": "Any" },
+            { "id": "retail_shop", "title": "Retail Shop" },
+            { "id": "boutique", "title": "Boutique" },
+            { "id": "restaurant_space", "title": "Restaurant Space" },
+            { "id": "office_space", "title": "Office Space" },
+            { "id": "warehouse", "title": "Warehouse" },
+            { "id": "supermarket_space", "title": "Supermarket Space" },
+            { "id": "pharmacy_space", "title": "Pharmacy Space" },
+            { "id": "salon_space", "title": "Salon/Beauty Space" },
+            { "id": "workshop", "title": "Workshop" },
+            { "id": "showroom", "title": "Showroom" },
+            { "id": "shared_space", "title": "Shared Shop Space" } 
+          ]
+        },
+        "locationTypes": {
+          "type": "array",
+          "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
+          "__example__": [
+            { "id": "any", "title": "Any" },
+            { "id": "shopping_mall", "title": "Shopping Mall" },
+            { "id": "shopping_centre", "title": "Shopping Centre" },
+            { "id": "street_front", "title": "Street Front" },
+            { "id": "standalone", "title": "Standalone Building" },
+            { "id": "market_stall", "title": "Market Stall" },
+            { "id": "food_court", "title": "Food Court" },
+            { "id": "business_park", "title": "Business Park" }
+          ]
+        },
+        "sizeRanges": {
+          "type": "array",
+          "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
+          "__example__": [
+            { "id": "any", "title": "Any Size" },
+            { "id": "small", "title": "Small (Up to 50 sqm)" },
+            { "id": "medium", "title": "Medium (50-150 sqm)" },
+            { "id": "large", "title": "Large (150-500 sqm)" },
+            { "id": "extra_large", "title": "Extra Large (500+ sqm)" }
+          ]
+        },
+        "businessTypes": {
+          "type": "array",
+          "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
+          "__example__": [
+            { "id": "any", "title": "Any Business" },
+            { "id": "clothing_fashion", "title": "Clothing & Fashion" },
+            { "id": "food_beverage", "title": "Food & Beverage" },
+            { "id": "electronics", "title": "Electronics" },
+            { "id": "health_beauty", "title": "Health & Beauty" },
+            { "id": "automotive", "title": "Automotive" },
+            { "id": "home_furniture", "title": "Home & Furniture" },
+            { "id": "professional_services", "title": "Professional Services" },
+            { "id": "retail_general", "title": "General Retail" }
+          ]
+        },
+        "depositOptions": {
+          "type": "array",
+          "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
+          "__example__": [
+            { "id": "any", "title": "Any Deposit" },
+            { "id": "no_deposit", "title": "No Deposit Required" },
+            { "id": "half_month", "title": "0.5 Month Deposit" },
+            { "id": "one_month", "title": "1 Month Deposit" },
+            { "id": "two_months", "title": "2 Months Deposit" },
+            { "id": "three_months", "title": "3 Months Deposit" },
+            { "id": "custom", "title": "Custom Deposit" }
+          ]
+        },
+        "featuresOptions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": { "id": { "type": "string" }, "title": { "type": "string" } }
+          },
+          "__example__": [
+            { "id": "high_foot_traffic", "title": "High Foot Traffic" },
+            { "id": "parking_available", "title": "Parking Available" },
+            { "id": "loading_bay", "title": "Loading Bay/Dock" },
+            { "id": "air_conditioning", "title": "Air Conditioning" },
+            { "id": "security_system", "title": "Security System" },
+            { "id": "wheelchair_accessible", "title": "Wheelchair Accessible" },
+            { "id": "storage_space", "title": "Storage Space" },
+            { "id": "shop_front_window", "title": "Shop Front Window Display" },
+            { "id": "kitchen_facilities", "title": "Kitchen Facilities" },
+            { "id": "restroom_facilities", "title": "Restroom Facilities" },
+            { "id": "internet_ready", "title": "Internet Ready" },
+            { "id": "backup_power", "title": "Backup Power (Generator/Solar)" },
+            { "id": "cctv", "title": "CCTV Surveillance" },
+            { "id": "proximity_transport", "title": "Near Public Transport" },
+            { "id": "corner_location", "title": "Corner Location" }
+          ]
+        },
+        "min_price": { "type": "string", "__example__": "0" },
+        "max_price": { "type": "string", "__example__": "0" },
+        "q": { "type": "string", "__example__": "" },
+        "selected_city": { "type": "string", "__example__": "harare" },
+        "selected_suburb": { "type": "string", "__example__": "any" },
+        "selected_shop_type": { "type": "string", "__example__": "any" },
+        "selected_location_type": { "type": "string", "__example__": "any" },
+        "selected_size": { "type": "string", "__example__": "any" },
+        "selected_business_type": { "type": "string", "__example__": "any" },
+        "selected_deposit": { "type": "string", "__example__": "any" },
+        "deposit_amount": { "type": "string", "__example__": "0" },
+        "selected_features": {
+          "type": "array",
+          "items": { "type": "string" },
+          "__example__": []
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "shop_search_form",
+            "init-values": {
+              "city": "${data.selected_city}",
+              "suburb": "${data.selected_suburb}",
+              "shop_type": "${data.selected_shop_type}",
+              "location_type": "${data.selected_location_type}",
+              "size_range": "${data.selected_size}",
+              "business_type": "${data.selected_business_type}",
+              "deposit": "${data.selected_deposit}",
+              "deposit_amount": "${data.deposit_amount}",
+              "min_price": "${data.min_price}",
+              "max_price": "${data.max_price}",
+              "q": "${data.q}",
+              "features": "${data.selected_features}"
+            },
+            "children": [
+              { "type": "TextSubheading", "text": "Find shops for rent — pick filters" },
+              { "type": "TextBody", "text": "Find the perfect commercial space for your business with the right location and amenities." },
+              { "type": "Dropdown", "label": "City", "required": true, "name": "city", "data-source": "${data.cities}" },
+              { "type": "Dropdown", "label": "Area/Suburb", "name": "suburb", "data-source": "${data.suburbs}" },
+              { "type": "Dropdown", "label": "Shop Type", "name": "shop_type", "data-source": "${data.shopTypes}" },
+              { "type": "Dropdown", "label": "Location Type", "name": "location_type", "data-source": "${data.locationTypes}" },
+              { "type": "Dropdown", "label": "Size Range", "name": "size_range", "data-source": "${data.sizeRanges}" },
+              { "type": "Dropdown", "label": "Business Type", "name": "business_type", "data-source": "${data.businessTypes}" },
+              { "type": "Dropdown", "label": "Deposit Requirement", "name": "deposit", "data-source": "${data.depositOptions}" },
+              { "type": "TextInput", "label": "Deposit Amount ", "name": "deposit_amount" },
+              {
+                "type": "CheckboxGroup",
+                "label": "Features & Amenities",
+                "name": "features",
+                "data-source": "${data.featuresOptions}"
+              },
+              { "type": "TextInput", "label": "Min rent per month", "name": "min_price" },
+              { "type": "TextInput", "label": "Max rent per month", "name": "max_price" },
+              { "type": "TextInput", "label": "Keyword search", "name": "q" },
+              {
+                "type": "Footer",
+                "label": "Search Shops",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "city": "${form.city}",
+                    "suburb": "${form.suburb}",
+                    "shop_type": "${form.shop_type}",
+                    "location_type": "${form.location_type}",
+                    "size_range": "${form.size_range}",
+                    "business_type": "${form.business_type}",
+                    "deposit": "${form.deposit}",
+                    "deposit_amount": "${form.deposit_amount}",
+                    "min_price": "${form.min_price}",
+                    "max_price": "${form.max_price}",
+                    "q": "${form.q}",
+                    "features": "${form.features}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
+
+
+
+RESIDENTIAL_SEARCH
+
+
+
+{
+  "version": "7.3",
+  "screens": [
+    {
+      "id": "SEARCH",
+      "title": "Find rentals — filters",
+      "terminal": true,
+      "success": true,
+      "data": {
+        "cities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": { "id": { "type": "string" }, "title": { "type": "string" } }
+          },
+          "__example__": [
+            { "id": "harare", "title": "Harare" },
+            { "id": "chitungwiza", "title": "Chitungwiza" },
+            { "id": "bulawayo", "title": "Bulawayo" },
+            { "id": "mutare", "title": "Mutare" },
+            { "id": "gweru", "title": "Gweru" },
+            { "id": "masvingo", "title": "Masvingo" },
+            { "id": "victoria_falls", "title": "Victoria Falls" },
+            { "id": "norton", "title": "Norton" }
+          ]
+        },
+        "suburbs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": { "id": { "type": "string" }, "title": { "type": "string" } }
+          },
+          "__example__": [
+            { "id": "any", "title": "Any" },
+            { "id": "borrowdale", "title": "Borrowdale" },
+            { "id": "mount_pleasant", "title": "Mount Pleasant" },
+            { "id": "avondale", "title": "Avondale" },
+            { "id": "highlands", "title": "Highlands" },
+            { "id": "belgravia", "title": "Belgravia" },
+            { "id": "mabelreign", "title": "Mabelreign" },
+            { "id": "eastlea", "title": "Eastlea" },
+            { "id": "chisipite", "title": "Chisipite" },
+            { "id": "glen_lorne", "title": "Glen Lorne" },
+            { "id": "greendale", "title": "Greendale" },
+            { "id": "gunhill", "title": "Gunhill" },
+            { "id": "chitungwiza_central", "title": "Chitungwiza Central" },
+            { "id": "zengeza", "title": "Zengeza" },
+            { "id": "seke", "title": "Seke" },
+            { "id": "st_marys", "title": "St Mary's" },
+            { "id": "hillside", "title": "Hillside (Bulawayo)" },
+            { "id": "entumbane", "title": "Entumbane" },
+            { "id": "famona", "title": "Famona" },
+            { "id": "burnside", "title": "Burnside" },
+            { "id": "belmont_byo", "title": "Belmont" },
+            { "id": "nkulumane", "title": "Nkulumane" },
+            { "id": "dangamvura", "title": "Dangamvura (Mutare)" },
+            { "id": "sakubva", "title": "Sakubva" },
+            { "id": "morningside", "title": "Morningside" },
+            { "id": "fern_valley", "title": "Fern Valley" },
+            { "id": "mkoba", "title": "Mkoba (Gweru)" },
+            { "id": "ascot", "title": "Ascot (Gweru)" },
+            { "id": "mucheke", "title": "Mucheke (Masvingo)" },
+            { "id": "victoria_falls_town", "title": "Victoria Falls Town" },
+            { "id": "norton_town", "title": "Norton Town" }
+          ]
+        },
+        "propertyCategories": {
+          "type": "array",
+          "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
+          "__example__": [
+            { "id": "residential", "title": "Residential" },
+            { "id": "commercial", "title": "Commercial" }
+          ]
+        },
+        "propertyTypes": {
+          "type": "array",
+          "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
+          "__example__": [
+            { "id": "house", "title": "House" },
+            { "id": "flat", "title": "Flat" },
+            { "id": "studio", "title": "Studio" },
+            { "id": "office", "title": "Office" },
+            { "id": "retail", "title": "Retail" }
+          ]
+        },
+        "bedrooms": {
+          "type": "array",
+          "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
+          "__example__": [
+            { "id": "any", "title": "Any" },
+            { "id": "1", "title": "1" },
+            { "id": "2", "title": "2" },
+            { "id": "3", "title": "3" },
+            { "id": "4", "title": "4" },
+            { "id": "5plus", "title": "5+" }
+          ]
+        },
+        "totalRooms": {
+          "type": "array",
+          "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
+          "__example__": [
+            { "id": "any", "title": "Any" },
+            { "id": "1", "title": "1 Room" },
+            { "id": "2", "title": "2 Rooms" },
+            { "id": "3", "title": "3 Rooms" },
+            { "id": "4", "title": "4 Rooms" },
+            { "id": "5", "title": "5 Rooms" },
+            { "id": "6", "title": "6 Rooms" },
+            { "id": "7plus", "title": "7+ Rooms" }
+          ]
+        },
+        "depositOptions": {
+          "type": "array",
+          "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
+          "__example__": [
+            { "id": "any", "title": "Any Deposit" },
+            { "id": "no_deposit", "title": "No Deposit Required" },
+            { "id": "half_month", "title": "0.5 Month Deposit" },
+            { "id": "one_month", "title": "1 Month Deposit" },
+            { "id": "two_months", "title": "2 Months Deposit" },
+            { "id": "three_months", "title": "3 Months Deposit" },
+            { "id": "custom", "title": "Custom Deposit" }
+          ]
+        },
+        "featuresOptions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": { "id": { "type": "string" }, "title": { "type": "string" } }
+          },
+          "__example__": [
+            { "id": "borehole", "title": "Borehole" },
+            { "id": "solar_backup", "title": "Solar backup (inverter/UPS)" },
+            { "id": "solar_geyser", "title": "Solar geyser / water heater" },
+            { "id": "internet", "title": "Internet (fiber/Airtel/NetOne)" },
+            { "id": "fenced", "title": "Fenced / secure" },
+            { "id": "garage", "title": "Garage / covered parking" },
+            { "id": "garden", "title": "Garden / yard" },
+            { "id": "furnished", "title": "Furnished" },
+            { "id": "pets_allowed", "title": "Pets allowed" },
+            { "id": "ac", "title": "Air conditioning" }
+          ]
+        },
+        "min_price": { "type": "string", "__example__": "0" },
+        "max_price": { "type": "string", "__example__": "0" },
+        "q": { "type": "string", "__example__": "" },
+        "selected_city": { "type": "string", "__example__": "harare" },
+        "selected_suburb": { "type": "string", "__example__": "any" },
+        "selected_category": { "type": "string", "__example__": "residential" },
+        "selected_type": { "type": "string", "__example__": "house" },
+        "selected_bedrooms": { "type": "string", "__example__": "any" },
+        "selected_total_rooms": { "type": "string", "__example__": "any" },
+        "selected_deposit": { "type": "string", "__example__": "any" },
+        "selected_features": {
+          "type": "array",
+          "items": { "type": "string" },
+          "__example__": []
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "search_form",
+            "init-values": {
+              "city": "${data.selected_city}",
+              "suburb": "${data.selected_suburb}",
+              "property_category": "${data.selected_category}",
+              "property_type": "${data.selected_type}",
+              "bedrooms": "${data.selected_bedrooms}",
+              "total_rooms": "${data.selected_total_rooms}",
+              "deposit": "${data.selected_deposit}",
+              "min_price": "${data.min_price}",
+              "max_price": "${data.max_price}",
+              "q": "${data.q}",
+              "features": "${data.selected_features}"
+            },
+            "children": [
+              { "type": "TextSubheading", "text": "Find rentals — pick filters" },
+              { "type": "TextBody", "text": "Choose from predefined options or leave blanks for broader search." },
+              { "type": "Dropdown", "label": "City", "required": true, "name": "city", "data-source": "${data.cities}" },
+              { "type": "Dropdown", "label": "Suburb (optional)", "name": "suburb", "data-source": "${data.suburbs}" },
+              { "type": "Dropdown", "label": "Property category", "name": "property_category", "data-source": "${data.propertyCategories}" },
+              { "type": "Dropdown", "label": "Property type", "name": "property_type", "data-source": "${data.propertyTypes}" },
+              { "type": "Dropdown", "label": "Bedrooms", "name": "bedrooms", "data-source": "${data.bedrooms}" },
+              { "type": "Dropdown", "label": "Total Rooms", "name": "total_rooms", "data-source": "${data.totalRooms}" },
+              { "type": "Dropdown", "label": "Deposit Requirement", "name": "deposit", "data-source": "${data.depositOptions}" },
+              {
+                "type": "CheckboxGroup",
+                "label": "Features (optional)",
+                "name": "features",
+                "data-source": "${data.featuresOptions}"
+              },
+              { "type": "TextInput", "label": "Min price (optional)", "name": "min_price" },
+              { "type": "TextInput", "label": "Max price (optional)", "name": "max_price" },
+              { "type": "TextInput", "label": "Keyword (optional)", "name": "q" },
+              {
+                "type": "Footer",
+                "label": "Search",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "city": "${form.city}",
+                    "suburb": "${form.suburb}",
+                    "property_category": "${form.property_category}",
+                    "property_type": "${form.property_type}",
+                    "bedrooms": "${form.bedrooms}",
+                    "total_rooms": "${form.total_rooms}",
+                    "deposit": "${form.deposit}",
+                    "min_price": "${form.min_price}",
+                    "max_price": "${form.max_price}",
+                    "q": "${form.q}",
+                    "features": "${form.features}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

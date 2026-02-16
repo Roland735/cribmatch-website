@@ -73,12 +73,13 @@ function escapeRegex(value) {
 
 const ALLOWED_SORTS = new Set(["newest", "price_asc", "price_desc", "beds_asc", "beds_desc"]);
 
-export const KNOWN_PROPERTY_CATEGORIES = ["residential", "boarding", "commercial", "land"];
+export const KNOWN_PROPERTY_CATEGORIES = ["residential", "boarding", "commercial", "rent_a_chair", "land"];
 
 export const KNOWN_PROPERTY_TYPES_BY_CATEGORY = {
   residential: ["Apartment", "House", "Cottage", "Garden flat", "Townhouse"],
   boarding: ["Boarding house (university)", "Boarding house", "Student accommodation", "Room"],
   commercial: ["Office", "Shop", "Retail warehouse", "Warehouse", "Factory", "Workshop"],
+  rent_a_chair: ["Barbering", "Hair Styling", "Nail Services", "Makeup Artistry", "Massage Therapy", "Other Services"],
   land: ["Farm", "Stand", "Plot"],
 };
 

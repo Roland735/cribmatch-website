@@ -363,6 +363,10 @@ async function saveSearchContext(phone, listingIds, resultObjects, dbAvailable) 
 // fallback ID restored from your earlier working
 const DEFAULT_FLOW_ID = process.env.WHATSAPP_FLOW_ID || "1534021024566343";
 const LIST_PROPERTY_FLOW_ID = process.env.WHATSAPP_LIST_FLOW_ID || "2038464217012262";
+const RESIDENTIAL_SEARCH_FLOW_ID = process.env.WHATSAPP_FLOW_RESIDENTIAL_SEARCH || "3819352211531237";
+const RENT_A_CHAIR_SEARCH_FLOW_ID = process.env.WHATSAPP_FLOW_RENT_A_CHAIR_SEARCH || "953208663822408";
+const BOARDING_SEARCH_FLOW_ID = process.env.WHATSAPP_FLOW_BOARDING_SEARCH || "2368498460238432";
+const SHOP_SEARCH_FLOW_ID = process.env.WHATSAPP_FLOW_SHOP_SEARCH || "1910668816993710";
 const PREDEFINED_CITIES = [
   { id: "harare", title: "Harare" },
   { id: "chitungwiza", title: "Chitungwiza" },
@@ -426,7 +430,8 @@ const PREDEFINED_BEDROOMS = [
   { id: "1", title: "1" },
   { id: "2", title: "2" },
   { id: "3", title: "3" },
-  { id: "4plus", title: "4+" },
+  { id: "4", title: "4" },
+  { id: "5plus", title: "5+" },
 ];
 
 const PREDEFINED_FEATURES_OPTIONS = [
@@ -442,6 +447,156 @@ const PREDEFINED_FEATURES_OPTIONS = [
   { id: "ac", title: "Air conditioning" },
 ];
 
+const RESIDENTIAL_TOTAL_ROOMS = [
+  { id: "any", title: "Any" },
+  { id: "1", title: "1 Room" },
+  { id: "2", title: "2 Rooms" },
+  { id: "3", title: "3 Rooms" },
+  { id: "4", title: "4 Rooms" },
+  { id: "5", title: "5 Rooms" },
+  { id: "6", title: "6 Rooms" },
+  { id: "7plus", title: "7+ Rooms" },
+];
+
+const RESIDENTIAL_DEPOSIT_OPTIONS = [
+  { id: "any", title: "Any Deposit" },
+  { id: "no_deposit", title: "No Deposit Required" },
+  { id: "half_month", title: "0.5 Month Deposit" },
+  { id: "one_month", title: "1 Month Deposit" },
+  { id: "two_months", title: "2 Months Deposit" },
+  { id: "three_months", title: "3 Months Deposit" },
+  { id: "custom", title: "Custom Deposit" },
+];
+
+const BOARDING_ROOM_TYPES = [
+  { id: "any", title: "Any" },
+  { id: "single_room", title: "Single Room" },
+  { id: "shared_room", title: "Shared Room" },
+  { id: "dormitory", title: "Dormitory" },
+  { id: "ensuite_room", title: "En-suite Room" },
+];
+
+const BOARDING_OCCUPANCY_TYPES = [
+  { id: "any", title: "Any" },
+  { id: "1_person", title: "1 Person" },
+  { id: "2_people", title: "2 People" },
+  { id: "3_people", title: "3 People" },
+  { id: "4plus_people", title: "4+ People" },
+];
+
+const BOARDING_GENDER_PREFERENCE = [
+  { id: "any", title: "Any" },
+  { id: "male_only", title: "Male Only" },
+  { id: "female_only", title: "Female Only" },
+  { id: "mixed", title: "Mixed" },
+];
+
+const BOARDING_DURATION = [
+  { id: "any", title: "Any" },
+  { id: "short_term", title: "Short Term (1-3 months)" },
+  { id: "medium_term", title: "Medium Term (3-6 months)" },
+  { id: "long_term", title: "Long Term (6+ months)" },
+];
+
+const BOARDING_FEATURES_OPTIONS = [
+  { id: "meals_included", title: "Meals Included" },
+  { id: "wifi_internet", title: "WiFi / Internet" },
+  { id: "laundry_service", title: "Laundry Service" },
+  { id: "shared_kitchen", title: "Shared Kitchen" },
+  { id: "study_area", title: "Study Area" },
+  { id: "common_room", title: "Common Room / Lounge" },
+  { id: "parking", title: "Parking Available" },
+  { id: "security", title: "24/7 Security" },
+  { id: "cleaning_service", title: "Cleaning Service" },
+  { id: "utilities_included", title: "Utilities Included" },
+  { id: "near_transport", title: "Near Public Transport" },
+  { id: "near_university", title: "Near University/College" },
+];
+
+const SHOP_SUBURBS = [
+  { id: "any", title: "Any" },
+  { id: "cbd_harare", title: "CBD (Harare)" },
+  { id: "graniteside", title: "Graniteside" },
+  { id: "msasa", title: "Msasa" },
+  { id: "belvedere", title: "Belvedere" },
+  { id: "southerton", title: "Southerton" },
+];
+
+const SHOP_TYPES = [
+  { id: "any", title: "Any" },
+  { id: "retail_shop", title: "Retail Shop" },
+  { id: "boutique", title: "Boutique" },
+  { id: "warehouse", title: "Warehouse" },
+  { id: "office_space", title: "Office Space" },
+  { id: "salon", title: "Salon" },
+  { id: "kiosk", title: "Kiosk" },
+  { id: "restaurant", title: "Restaurant" },
+  { id: "workshop", title: "Workshop" },
+];
+
+const SHOP_LOCATION_TYPES = [
+  { id: "any", title: "Any" },
+  { id: "street_front", title: "Street front" },
+  { id: "mall", title: "Mall / shopping center" },
+  { id: "industrial", title: "Industrial area" },
+  { id: "office_building", title: "Office building" },
+];
+
+const SHOP_SIZE_RANGES = [
+  { id: "any", title: "Any" },
+  { id: "small", title: "Small (0–20 sqm)" },
+  { id: "medium", title: "Medium (20–60 sqm)" },
+  { id: "large", title: "Large (60+ sqm)" },
+];
+
+const SHOP_BUSINESS_TYPES = [
+  { id: "any", title: "Any" },
+  { id: "retail", title: "Retail" },
+  { id: "food", title: "Food / hospitality" },
+  { id: "beauty", title: "Beauty / salon" },
+  { id: "services", title: "Services" },
+  { id: "storage", title: "Storage / warehouse" },
+];
+
+const SHOP_DEPOSIT_OPTIONS = [
+  { id: "any", title: "Any" },
+  { id: "0", title: "No deposit / negotiable" },
+  { id: "1_month", title: "1 month deposit" },
+  { id: "2_months", title: "2 months deposit" },
+  { id: "3_months", title: "3 months deposit" },
+];
+
+const SHOP_FEATURES_OPTIONS = [
+  { id: "any", title: "Any" },
+  { id: "utilities_included", title: "Utilities included" },
+  { id: "parking", title: "Parking" },
+  { id: "security", title: "Security" },
+  { id: "power_backup", title: "Power backup" },
+  { id: "water_available", title: "Water available" },
+  { id: "high_foot_traffic", title: "High foot traffic" },
+  { id: "loading_access", title: "Loading access" },
+];
+
+const CHAIR_SERVICE_TYPES = [
+  { id: "any", title: "Any" },
+  { id: "barbering", title: "Barbering" },
+  { id: "hair_styling", title: "Hair Styling" },
+  { id: "nail_services", title: "Nail Services" },
+  { id: "makeup", title: "Makeup Artistry" },
+  { id: "massage", title: "Massage Therapy" },
+  { id: "other", title: "Other Services" },
+];
+
+const CHAIR_FEATURES_OPTIONS = [
+  { id: "any", title: "Any" },
+  { id: "power", title: "Power available" },
+  { id: "water", title: "Water available" },
+  { id: "wifi", title: "WiFi" },
+  { id: "parking", title: "Parking available" },
+  { id: "security", title: "Security" },
+  { id: "equipment", title: "Equipment included" },
+];
+
 const LIST_PROPERTY_SUBURBS = PREDEFINED_SUBURBS.filter((s) => s.id !== "any");
 const LIST_PROPERTY_CATEGORIES = [
   { id: "residential", title: "Residential" },
@@ -452,11 +607,10 @@ const LIST_PROPERTY_CATEGORIES = [
 const LIST_PROPERTY_TYPES = [
   { id: "house", title: "House" },
   { id: "flat", title: "Flat" },
-  { id: "studio", title: "Studio" },
-  { id: "office", title: "Office" },
-  { id: "retail", title: "Retail" },
+  { id: "cottage", title: "Cottage" },
+  { id: "townhouse", title: "Townhouse" },
   { id: "room", title: "Room" },
-  { id: "land", title: "Land" },
+  { id: "stand", title: "Stand" },
 ];
 const LIST_PROPERTY_BEDROOMS = [
   { id: "0", title: "0 (no bedrooms / land/office)" },
@@ -464,6 +618,126 @@ const LIST_PROPERTY_BEDROOMS = [
   { id: "2", title: "2" },
   { id: "3", title: "3" },
   { id: "4plus", title: "4+" },
+];
+
+const LISTING_TYPES = [
+  { id: "residential", title: "Residential Property" },
+  { id: "commercial", title: "Shop/Commercial" },
+  { id: "boarding", title: "Boarding House" },
+  { id: "rent_a_chair", title: "Rent a Chair" },
+];
+
+const LISTING_PROPERTY_TYPES = [
+  { id: "any", title: "Any" },
+  { id: "house", title: "House" },
+  { id: "flat", title: "Flat" },
+  { id: "studio", title: "Studio" },
+  { id: "cottage", title: "Cottage" },
+];
+
+const LISTING_SHOP_TYPES = [
+  { id: "any", title: "Any" },
+  { id: "retail_shop", title: "Retail Shop" },
+  { id: "office_space", title: "Office Space" },
+  { id: "warehouse", title: "Warehouse" },
+  { id: "restaurant_space", title: "Restaurant Space" },
+];
+
+const LISTING_ROOM_TYPES = [
+  { id: "any", title: "Any" },
+  { id: "single_room", title: "Single Room" },
+  { id: "shared_room", title: "Shared Room" },
+  { id: "dormitory", title: "Dormitory" },
+  { id: "ensuite_room", title: "En-suite Room" },
+];
+
+const LISTING_SERVICE_TYPES = [
+  { id: "any", title: "Any" },
+  { id: "barbering", title: "Barbering" },
+  { id: "hair_styling", title: "Hair Styling" },
+  { id: "nail_services", title: "Nail Services" },
+  { id: "makeup_artistry", title: "Makeup Artistry" },
+  { id: "massage_therapy", title: "Massage Therapy" },
+  { id: "other_services", title: "Other Services" },
+];
+
+const LISTING_BEDROOMS = [
+  { id: "any", title: "Any" },
+  { id: "0", title: "0 (Studio/Office)" },
+  { id: "1", title: "1" },
+  { id: "2", title: "2" },
+  { id: "3", title: "3" },
+  { id: "4", title: "4" },
+  { id: "5plus", title: "5+" },
+];
+
+const LISTING_OCCUPANCY_TYPES = [
+  { id: "any", title: "Any" },
+  { id: "1_person", title: "1 Person" },
+  { id: "2_people", title: "2 People" },
+  { id: "3_people", title: "3 People" },
+  { id: "4plus_people", title: "4+ People" },
+];
+
+const LISTING_GENDER_PREFERENCE = [
+  { id: "any", title: "Any" },
+  { id: "male_only", title: "Male Only" },
+  { id: "female_only", title: "Female Only" },
+  { id: "mixed", title: "Mixed" },
+];
+
+const LISTING_DURATION = [
+  { id: "any", title: "Any" },
+  { id: "short_term", title: "Short Term (1-3 months)" },
+  { id: "medium_term", title: "Medium Term (3-6 months)" },
+  { id: "long_term", title: "Long Term (6+ months)" },
+];
+
+const LISTING_RESIDENTIAL_FEATURES = [
+  { id: "borehole", title: "Borehole" },
+  { id: "solar_backup", title: "Solar Backup" },
+  { id: "solar_geyser", title: "Solar Geyser" },
+  { id: "internet", title: "Internet" },
+  { id: "fenced", title: "Fenced/Secure" },
+  { id: "garage", title: "Garage" },
+  { id: "garden", title: "Garden" },
+  { id: "furnished", title: "Furnished" },
+  { id: "pets_allowed", title: "Pets Allowed" },
+  { id: "ac", title: "Air Conditioning" },
+];
+
+const LISTING_BOARDING_FEATURES = [
+  { id: "meals_included", title: "Meals Included" },
+  { id: "wifi_internet", title: "WiFi / Internet" },
+  { id: "laundry_service", title: "Laundry Service" },
+  { id: "shared_kitchen", title: "Shared Kitchen" },
+  { id: "study_area", title: "Study Area" },
+  { id: "common_room", title: "Common Room / Lounge" },
+  { id: "parking", title: "Parking Available" },
+  { id: "security", title: "24/7 Security" },
+  { id: "cleaning_service", title: "Cleaning Service" },
+  { id: "utilities_included", title: "Utilities Included" },
+  { id: "near_transport", title: "Near Public Transport" },
+  { id: "near_university", title: "Near University/College" },
+];
+
+const LISTING_COMMERCIAL_FEATURES = [
+  { id: "high_foot_traffic", title: "High Foot Traffic" },
+  { id: "parking_available", title: "Parking Available" },
+  { id: "loading_bay", title: "Loading Bay/Dock" },
+  { id: "air_conditioning", title: "Air Conditioning" },
+  { id: "security_system", title: "Security System" },
+  { id: "storage_space", title: "Storage Space" },
+  { id: "backup_power", title: "Backup Power" },
+];
+
+const LISTING_CHAIR_FEATURES = [
+  { id: "private_space", title: "Private Space" },
+  { id: "shared_space", title: "Shared Space" },
+  { id: "all_inclusive", title: "All Inclusive" },
+  { id: "furnished", title: "Furnished" },
+  { id: "parking_available", title: "Parking Available" },
+  { id: "utilities_included", title: "Utilities Included" },
 ];
 
 const FACETS_CACHE_MS = 1000 * 60 * 10;
@@ -542,58 +816,21 @@ async function sendWithMainMenuButton(phone, message, instructionText, opts = {}
   return sendButtonsWithInstructionHeader(phone, "Return to main menu:", buttons, "Tap Main menu.", opts);
 }
 
-async function sendSearchFlow(phoneNumber, data = {}) {
+async function sendFlowMessage(phoneNumber, data = {}) {
   const apiToken = process.env.WHATSAPP_API_TOKEN;
   const phone_number_id = process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_ID;
+  const flowId = String(data.flowId || "").trim();
+  const screen = String(data.screen || "").trim() || "SEARCH";
+  const payloadData = data.payloadData && typeof data.payloadData === "object" ? data.payloadData : {};
 
-  if (!DEFAULT_FLOW_ID) {
-    console.warn("[sendSearchFlow] no DEFAULT_FLOW_ID configured.");
+  if (!flowId) {
+    console.warn("[sendFlowMessage] no flowId configured.");
     return { error: "no-flow", reason: "no-flow-id" };
   }
   if (!apiToken || !phone_number_id) {
-    console.warn("[sendSearchFlow] missing WHATSAPP_API_TOKEN or PHONE_NUMBER_ID");
+    console.warn("[sendFlowMessage] missing WHATSAPP_API_TOKEN or PHONE_NUMBER_ID");
     return { error: "no-flow", reason: "missing-credentials" };
   }
-
-  const cities = Array.isArray(data.cities) && data.cities.length ? data.cities : PREDEFINED_CITIES;
-  const suburbs = Array.isArray(data.suburbs) && data.suburbs.length ? data.suburbs : PREDEFINED_SUBURBS;
-  const propertyCategories = Array.isArray(data.propertyCategories) && data.propertyCategories.length ? data.propertyCategories : PREDEFINED_PROPERTY_CATEGORIES;
-  const propertyTypes = Array.isArray(data.propertyTypes) && data.propertyTypes.length ? data.propertyTypes : PREDEFINED_PROPERTY_TYPES;
-  const bedrooms = Array.isArray(data.bedrooms) && data.bedrooms.length ? data.bedrooms : PREDEFINED_BEDROOMS;
-  const featuresOptions = Array.isArray(data.featuresOptions) && data.featuresOptions.length ? data.featuresOptions : PREDEFINED_FEATURES_OPTIONS;
-
-  const hasId = (list, id) => Array.isArray(list) && list.some((o) => o && o.id === id);
-
-  const selectedCityRaw = String(data.selected_city || "harare");
-  const selectedSuburbRaw = String(data.selected_suburb || "any");
-  const selectedCategoryRaw = String(data.selected_category || "residential");
-  const selectedTypeRaw = String(data.selected_type || "house");
-  const selectedBedroomsRaw = String(data.selected_bedrooms || "any");
-
-  const selectedCity = hasId(cities, selectedCityRaw) ? selectedCityRaw : (cities[0]?.id || "harare");
-  const selectedSuburb = hasId(suburbs, selectedSuburbRaw) ? selectedSuburbRaw : "any";
-  const selectedCategory = hasId(propertyCategories, selectedCategoryRaw) ? selectedCategoryRaw : (propertyCategories[0]?.id || "residential");
-  const selectedType = hasId(propertyTypes, selectedTypeRaw) ? selectedTypeRaw : (propertyTypes[0]?.id || "house");
-  const selectedBedrooms = hasId(bedrooms, selectedBedroomsRaw) ? selectedBedroomsRaw : "any";
-  const selectedFeatures = Array.isArray(data.selected_features) ? data.selected_features : [];
-
-  const payloadData = {
-    cities,
-    suburbs,
-    propertyCategories,
-    propertyTypes,
-    bedrooms,
-    featuresOptions,
-    min_price: typeof data.min_price === "string" ? data.min_price : "0",
-    max_price: typeof data.max_price === "string" ? data.max_price : "0",
-    q: typeof data.q === "string" ? data.q : "",
-    selected_city: selectedCity,
-    selected_suburb: selectedSuburb,
-    selected_category: selectedCategory,
-    selected_type: selectedType,
-    selected_bedrooms: selectedBedrooms,
-    selected_features: selectedFeatures,
-  };
 
   const interactivePayload = {
     messaging_product: "whatsapp",
@@ -601,36 +838,36 @@ async function sendSearchFlow(phoneNumber, data = {}) {
     type: "interactive",
     interactive: {
       type: "flow",
-      header: { type: "text", text: data.headerText || "Find rentals — filters" },
-      body: { text: data.bodyText || "Only City is required. Other filters are optional." },
-      footer: { text: data.footerText || "Search" },
+      header: { type: "text", text: data.headerText || "Form" },
+      body: { text: data.bodyText || "Fill and submit the form." },
+      footer: { text: data.footerText || "Continue" },
       action: {
         name: "flow",
         parameters: {
           flow_message_version: "3",
-          flow_id: String(DEFAULT_FLOW_ID),
-          flow_cta: data.flow_cta || "Search",
+          flow_id: flowId,
+          flow_cta: data.flow_cta || "Continue",
           flow_action: "navigate",
-          flow_action_payload: { screen: data.screen || "SEARCH", data: payloadData },
+          flow_action_payload: { screen, data: payloadData },
         },
       },
     },
   };
 
-  console.log("[sendSearchFlow] will send flow to", digitsOnly(phoneNumber), "flow_id:", DEFAULT_FLOW_ID);
+  console.log("[sendFlowMessage] will send flow to", digitsOnly(phoneNumber), "flow_id:", flowId, "screen:", screen);
 
-  const hash = _hash(`flow:${JSON.stringify(interactivePayload.interactive)}`);
+  const hash = _hash(`flow:${flowId}:${screen}:${JSON.stringify(interactivePayload.interactive)}`);
   if (!_shouldSend(digitsOnly(phoneNumber), hash, TTL_INTERACTIVE_MS)) {
-    console.log("[sendSearchFlow] suppressed duplicate flow send for", digitsOnly(phoneNumber));
+    console.log("[sendFlowMessage] suppressed duplicate flow send for", digitsOnly(phoneNumber));
     return { suppressed: true };
   }
   if (!(await _shouldSendDb(digitsOnly(phoneNumber), hash))) {
-    console.log("[sendSearchFlow] suppressed duplicate flow send (db) for", digitsOnly(phoneNumber));
+    console.log("[sendFlowMessage] suppressed duplicate flow send (db) for", digitsOnly(phoneNumber));
     return { suppressed: true };
   }
 
   const res = await whatsappPost(phone_number_id, apiToken, interactivePayload).catch((e) => {
-    console.warn("[sendSearchFlow] whatsappPost error:", e);
+    console.warn("[sendFlowMessage] whatsappPost error:", e);
     return { error: e };
   });
 
@@ -642,47 +879,33 @@ async function sendSearchFlow(phoneNumber, data = {}) {
       type: "interactive",
       text: JSON.stringify(payloadData),
       raw: interactivePayload,
-      meta: { hash, interactiveType: "flow", screen: data.screen || "SEARCH", flowId: String(DEFAULT_FLOW_ID) },
+      meta: { hash, interactiveType: "flow", screen, flowId },
     });
   }
 
-  console.log("[sendSearchFlow] send response:", res && (res.error ? JSON.stringify(res) : "ok"));
+  console.log("[sendFlowMessage] send response:", res && (res.error ? JSON.stringify(res) : "ok"));
   return res;
 }
 
-async function sendListPropertyFlow(phoneNumber, data = {}) {
-  const apiToken = process.env.WHATSAPP_API_TOKEN;
-  const phone_number_id = process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_ID;
-
-  if (!LIST_PROPERTY_FLOW_ID) {
-    console.warn("[sendListPropertyFlow] no LIST_PROPERTY_FLOW_ID configured.");
-    return { error: "no-flow", reason: "no-list-flow-id" };
-  }
-  if (!apiToken || !phone_number_id) {
-    console.warn("[sendListPropertyFlow] missing WHATSAPP_API_TOKEN or PHONE_NUMBER_ID");
-    return { error: "no-flow", reason: "missing-credentials" };
-  }
-
-  const cities = PREDEFINED_CITIES;
-  const suburbs = LIST_PROPERTY_SUBURBS;
-  const propertyCategories = LIST_PROPERTY_CATEGORIES;
-  const propertyTypes = LIST_PROPERTY_TYPES;
-  const bedrooms = LIST_PROPERTY_BEDROOMS;
-  const featuresOptions = PREDEFINED_FEATURES_OPTIONS;
-
+async function sendResidentialSearchFlow(phoneNumber, data = {}) {
   const hasId = (list, id) => Array.isArray(list) && list.some((o) => o && o.id === id);
 
-  const selectedCityRaw = String(data.selected_city || "harare");
-  const selectedSuburbRaw = String(data.selected_suburb || (suburbs[0]?.id || "borrowdale"));
-  const selectedCategoryRaw = String(data.selected_category || "residential");
-  const selectedTypeRaw = String(data.selected_type || "house");
-  const selectedBedroomsRaw = String(data.selected_bedrooms || "1");
+  const cities = PREDEFINED_CITIES;
+  const suburbs = PREDEFINED_SUBURBS;
+  const propertyCategories = PREDEFINED_PROPERTY_CATEGORIES;
+  const propertyTypes = PREDEFINED_PROPERTY_TYPES;
+  const bedrooms = PREDEFINED_BEDROOMS;
+  const totalRooms = RESIDENTIAL_TOTAL_ROOMS;
+  const depositOptions = RESIDENTIAL_DEPOSIT_OPTIONS;
+  const featuresOptions = PREDEFINED_FEATURES_OPTIONS;
 
-  const selected_city = hasId(cities, selectedCityRaw) ? selectedCityRaw : (cities[0]?.id || "harare");
-  const selected_suburb = hasId(suburbs, selectedSuburbRaw) ? selectedSuburbRaw : (suburbs[0]?.id || "borrowdale");
-  const selected_category = hasId(propertyCategories, selectedCategoryRaw) ? selectedCategoryRaw : (propertyCategories[0]?.id || "residential");
-  const selected_type = hasId(propertyTypes, selectedTypeRaw) ? selectedTypeRaw : (propertyTypes[0]?.id || "house");
-  const selected_bedrooms = hasId(bedrooms, selectedBedroomsRaw) ? selectedBedroomsRaw : (bedrooms[1]?.id || "1");
+  const selected_city = hasId(cities, String(data.selected_city || "harare")) ? String(data.selected_city || "harare") : (cities[0]?.id || "harare");
+  const selected_suburb = hasId(suburbs, String(data.selected_suburb || "any")) ? String(data.selected_suburb || "any") : "any";
+  const selected_category = "residential";
+  const selected_type = hasId(propertyTypes, String(data.selected_type || "house")) ? String(data.selected_type || "house") : (propertyTypes[0]?.id || "house");
+  const selected_bedrooms = hasId(bedrooms, String(data.selected_bedrooms || "any")) ? String(data.selected_bedrooms || "any") : "any";
+  const selected_total_rooms = hasId(totalRooms, String(data.selected_total_rooms || "any")) ? String(data.selected_total_rooms || "any") : "any";
+  const selected_deposit = hasId(depositOptions, String(data.selected_deposit || "any")) ? String(data.selected_deposit || "any") : "any";
   const selected_features = Array.isArray(data.selected_features) ? data.selected_features : [];
 
   const payloadData = {
@@ -691,65 +914,228 @@ async function sendListPropertyFlow(phoneNumber, data = {}) {
     propertyCategories,
     propertyTypes,
     bedrooms,
+    totalRooms,
+    depositOptions,
     featuresOptions,
+    min_price: typeof data.min_price === "string" ? data.min_price : "0",
+    max_price: typeof data.max_price === "string" ? data.max_price : "0",
+    q: typeof data.q === "string" ? data.q : "",
     selected_city,
     selected_suburb,
     selected_category,
     selected_type,
     selected_bedrooms,
+    selected_total_rooms,
+    selected_deposit,
     selected_features,
   };
 
-  const interactivePayload = {
-    messaging_product: "whatsapp",
-    to: digitsOnly(phoneNumber),
-    type: "interactive",
-    interactive: {
-      type: "flow",
-      header: { type: "text", text: data.headerText || "List a property — lister flow" },
-      body: { text: data.bodyText || "Fill the form and submit to publish your listing." },
-      footer: { text: data.footerText || "Publish listing" },
-      action: {
-        name: "flow",
-        parameters: {
-          flow_message_version: "3",
-          flow_id: String(LIST_PROPERTY_FLOW_ID),
-          flow_cta: data.flow_cta || "Publish listing",
-          flow_action: "navigate",
-          flow_action_payload: { screen: "LIST_PROPERTY", data: payloadData },
-        },
-      },
-    },
+  return sendFlowMessage(phoneNumber, {
+    flowId: RESIDENTIAL_SEARCH_FLOW_ID,
+    screen: "SEARCH",
+    payloadData,
+    headerText: "Find rentals — filters",
+    bodyText: "Choose from predefined options or leave blanks for broader search.",
+    footerText: "Search",
+    flow_cta: "Search",
+  });
+}
+
+async function sendBoardingSearchFlow(phoneNumber, data = {}) {
+  const hasId = (list, id) => Array.isArray(list) && list.some((o) => o && o.id === id);
+
+  const cities = PREDEFINED_CITIES;
+  const suburbs = PREDEFINED_SUBURBS;
+  const roomTypes = BOARDING_ROOM_TYPES;
+  const occupancyTypes = BOARDING_OCCUPANCY_TYPES;
+  const genderPreference = BOARDING_GENDER_PREFERENCE;
+  const duration = BOARDING_DURATION;
+  const featuresOptions = BOARDING_FEATURES_OPTIONS;
+
+  const selected_city = hasId(cities, String(data.selected_city || "harare")) ? String(data.selected_city || "harare") : (cities[0]?.id || "harare");
+  const selected_suburb = hasId(suburbs, String(data.selected_suburb || "any")) ? String(data.selected_suburb || "any") : "any";
+  const selected_room_type = hasId(roomTypes, String(data.selected_room_type || "any")) ? String(data.selected_room_type || "any") : "any";
+  const selected_occupancy = hasId(occupancyTypes, String(data.selected_occupancy || "any")) ? String(data.selected_occupancy || "any") : "any";
+  const selected_gender_preference = hasId(genderPreference, String(data.selected_gender_preference || "any")) ? String(data.selected_gender_preference || "any") : "any";
+  const selected_duration = hasId(duration, String(data.selected_duration || "any")) ? String(data.selected_duration || "any") : "any";
+  const selected_features = Array.isArray(data.selected_features) ? data.selected_features : [];
+
+  const payloadData = {
+    cities,
+    suburbs,
+    roomTypes,
+    occupancyTypes,
+    genderPreference,
+    duration,
+    featuresOptions,
+    min_price: typeof data.min_price === "string" ? data.min_price : "0",
+    max_price: typeof data.max_price === "string" ? data.max_price : "0",
+    q: typeof data.q === "string" ? data.q : "",
+    selected_city,
+    selected_suburb,
+    selected_room_type,
+    selected_occupancy,
+    selected_gender_preference,
+    selected_duration,
+    selected_features,
+    number_of_students: typeof data.number_of_students === "string" ? data.number_of_students : "0",
+    deposit_amount: typeof data.deposit_amount === "string" ? data.deposit_amount : "0",
   };
 
-  const hash = _hash(`flow_list_property:${JSON.stringify(interactivePayload.interactive)}`);
-  if (!_shouldSend(digitsOnly(phoneNumber), hash, TTL_INTERACTIVE_MS)) {
-    console.log("[sendListPropertyFlow] suppressed duplicate list flow for", digitsOnly(phoneNumber));
-    return { suppressed: true };
-  }
-  if (!(await _shouldSendDb(digitsOnly(phoneNumber), hash))) {
-    console.log("[sendListPropertyFlow] suppressed duplicate list flow (db) for", digitsOnly(phoneNumber));
-    return { suppressed: true };
-  }
-
-  const res = await whatsappPost(phone_number_id, apiToken, interactivePayload).catch((e) => {
-    console.warn("[sendListPropertyFlow] whatsappPost error:", e);
-    return { error: e };
+  return sendFlowMessage(phoneNumber, {
+    flowId: BOARDING_SEARCH_FLOW_ID,
+    screen: "BOARDING_SEARCH",
+    payloadData,
+    headerText: "Boarding search — filters",
+    bodyText: "Fill the form to find boarding houses.",
+    footerText: "Search",
+    flow_cta: "Search",
   });
+}
 
-  const waid = res?.messages?.[0]?.id || null;
-  if (!res?.error) {
-    await _recordOutboundMessage({
-      phone: digitsOnly(phoneNumber),
-      wa_message_id: waid,
-      type: "interactive",
-      text: JSON.stringify(payloadData),
-      raw: interactivePayload,
-      meta: { hash, interactiveType: "flow", screen: "LIST_PROPERTY", flowId: String(LIST_PROPERTY_FLOW_ID) },
-    });
+async function sendShopSearchFlow(phoneNumber, data = {}) {
+  const hasId = (list, id) => Array.isArray(list) && list.some((o) => o && o.id === id);
+
+  const cities = PREDEFINED_CITIES;
+  const suburbs = SHOP_SUBURBS;
+  const shopTypes = SHOP_TYPES;
+  const locationTypes = SHOP_LOCATION_TYPES;
+  const sizeRanges = SHOP_SIZE_RANGES;
+  const businessTypes = SHOP_BUSINESS_TYPES;
+  const depositOptions = SHOP_DEPOSIT_OPTIONS;
+  const featuresOptions = SHOP_FEATURES_OPTIONS;
+
+  const selected_city = hasId(cities, String(data.selected_city || "harare")) ? String(data.selected_city || "harare") : (cities[0]?.id || "harare");
+  const selected_suburb = hasId(suburbs, String(data.selected_suburb || "any")) ? String(data.selected_suburb || "any") : "any";
+  const selected_shop_type = hasId(shopTypes, String(data.selected_shop_type || "any")) ? String(data.selected_shop_type || "any") : "any";
+  const selected_location_type = hasId(locationTypes, String(data.selected_location_type || "any")) ? String(data.selected_location_type || "any") : "any";
+  const selected_size_range = hasId(sizeRanges, String(data.selected_size_range || "any")) ? String(data.selected_size_range || "any") : "any";
+  const selected_business_type = hasId(businessTypes, String(data.selected_business_type || "any")) ? String(data.selected_business_type || "any") : "any";
+  const selected_deposit = hasId(depositOptions, String(data.selected_deposit || "any")) ? String(data.selected_deposit || "any") : "any";
+  const selected_features = Array.isArray(data.selected_features) ? data.selected_features : [];
+
+  const payloadData = {
+    cities,
+    suburbs,
+    shopTypes,
+    locationTypes,
+    sizeRanges,
+    businessTypes,
+    depositOptions,
+    featuresOptions,
+    min_price: typeof data.min_price === "string" ? data.min_price : "0",
+    max_price: typeof data.max_price === "string" ? data.max_price : "0",
+    q: typeof data.q === "string" ? data.q : "",
+    selected_city,
+    selected_suburb,
+    selected_shop_type,
+    selected_location_type,
+    selected_size_range,
+    selected_business_type,
+    selected_deposit,
+    selected_features,
+    deposit_amount: typeof data.deposit_amount === "string" ? data.deposit_amount : "0",
+  };
+
+  return sendFlowMessage(phoneNumber, {
+    flowId: SHOP_SEARCH_FLOW_ID,
+    screen: "SHOP_SEARCH",
+    payloadData,
+    headerText: "Commercial/Shop search — filters",
+    bodyText: "Fill the form to find shops and commercial spaces.",
+    footerText: "Search",
+    flow_cta: "Search",
+  });
+}
+
+async function sendRentAChairSearchFlow(phoneNumber, data = {}) {
+  const hasId = (list, id) => Array.isArray(list) && list.some((o) => o && o.id === id);
+
+  const serviceTypes = CHAIR_SERVICE_TYPES;
+  const featuresOptions = CHAIR_FEATURES_OPTIONS;
+
+  const selected_service_type = hasId(serviceTypes, String(data.selected_service_type || "any")) ? String(data.selected_service_type || "any") : "any";
+  const selected_features = Array.isArray(data.selected_features) ? data.selected_features : [];
+
+  const payloadData = {
+    serviceTypes,
+    featuresOptions,
+    min_price: typeof data.min_price === "string" ? data.min_price : "0",
+    max_price: typeof data.max_price === "string" ? data.max_price : "0",
+    q: typeof data.q === "string" ? data.q : "",
+    selected_service_type,
+    selected_features,
+  };
+
+  return sendFlowMessage(phoneNumber, {
+    flowId: RENT_A_CHAIR_SEARCH_FLOW_ID,
+    screen: "RENT_A_CHAIR_SEARCH",
+    payloadData,
+    headerText: "Rent a chair — filters",
+    bodyText: "Fill the form to find chair/station rentals.",
+    footerText: "Search",
+    flow_cta: "Search",
+  });
+}
+
+async function sendListPropertyFlow(phoneNumber, data = {}) {
+  if (!LIST_PROPERTY_FLOW_ID) {
+    console.warn("[sendListPropertyFlow] no LIST_PROPERTY_FLOW_ID configured.");
+    return { error: "no-flow", reason: "no-list-flow-id" };
   }
+  const payloadData = {
+    listingTypes: LISTING_TYPES,
+    cities: PREDEFINED_CITIES,
+    suburbs: PREDEFINED_SUBURBS,
+    propertyTypes: LISTING_PROPERTY_TYPES,
+    shopTypes: LISTING_SHOP_TYPES,
+    roomTypes: LISTING_ROOM_TYPES,
+    serviceTypes: LISTING_SERVICE_TYPES,
+    bedrooms: LISTING_BEDROOMS,
+    occupancyTypes: LISTING_OCCUPANCY_TYPES,
+    genderPreference: LISTING_GENDER_PREFERENCE,
+    duration: LISTING_DURATION,
+    residentialFeatures: LISTING_RESIDENTIAL_FEATURES,
+    boardingFeatures: LISTING_BOARDING_FEATURES,
+    commercialFeatures: LISTING_COMMERCIAL_FEATURES,
+    chairFeatures: LISTING_CHAIR_FEATURES,
+    listing_type: "",
+    title: "",
+    lister_phone_number: "",
+    contact_name: "",
+    contact_phone: "",
+    contact_whatsapp: "",
+    contact_email: "",
+    selected_city: "harare",
+    selected_suburb: "any",
+    selected_property_type: "any",
+    selected_shop_type: "any",
+    selected_room_type: "any",
+    selected_service_type: "any",
+    selected_bedrooms: "any",
+    selected_occupancy: "any",
+    selected_gender: "any",
+    selected_duration: "any",
+    number_of_students: "1",
+    price_per_month: "",
+    deposit_amount: "",
+    description: "",
+    selected_residential_features: [],
+    selected_boarding_features: [],
+    selected_commercial_features: [],
+    selected_chair_features: [],
+    ...data.payloadOverrides,
+  };
 
-  return res;
+  return sendFlowMessage(phoneNumber, {
+    flowId: String(LIST_PROPERTY_FLOW_ID),
+    screen: "LIST_PROPERTY",
+    payloadData,
+    headerText: data.headerText || "List a Property",
+    bodyText: data.bodyText || "Fill the form and submit to publish your listing.",
+    footerText: data.footerText || "Publish",
+    flow_cta: data.flow_cta || "Publish listing",
+  });
 }
 
 async function sendResultsFlow(phoneNumber, resultsPayload = {}) {
@@ -918,9 +1304,21 @@ function detectRequestedScreen(rawPayload = {}) {
       keys.includes("pricePerMonth") ||
       keys.includes("propertyCategory") ||
       keys.includes("propertyType") ||
-      keys.includes("imageUrls")
+      keys.includes("imageUrls") ||
+      keys.includes("listing_type") ||
+      keys.includes("lister_phone_number") ||
+      keys.includes("price_per_month")
     ) {
       return "LIST_PROPERTY";
+    }
+    if (keys.includes("room_type") || keys.includes("occupancy") || keys.includes("gender_preference") || keys.includes("duration")) {
+      return "BOARDING_SEARCH";
+    }
+    if (keys.includes("shop_type") || keys.includes("location_type") || keys.includes("size_range") || keys.includes("business_type")) {
+      return "SHOP_SEARCH";
+    }
+    if (keys.includes("service_type")) {
+      return "RENT_A_CHAIR_SEARCH";
     }
     return "SEARCH";
   }
@@ -939,13 +1337,19 @@ function detectRequestedScreen(rawPayload = {}) {
     if (typeof c === "object") {
       if (c.screen && typeof c.screen === "string") return c.screen.toUpperCase();
       const keys = Object.keys(c);
-      if (keys.includes("title") || keys.includes("listerPhoneNumber") || keys.includes("pricePerMonth")) return "LIST_PROPERTY";
+      if (keys.includes("title") || keys.includes("listerPhoneNumber") || keys.includes("pricePerMonth") || keys.includes("listing_type") || keys.includes("lister_phone_number") || keys.includes("price_per_month")) return "LIST_PROPERTY";
+      if (keys.includes("room_type") || keys.includes("occupancy") || keys.includes("gender_preference") || keys.includes("duration")) return "BOARDING_SEARCH";
+      if (keys.includes("shop_type") || keys.includes("location_type") || keys.includes("size_range") || keys.includes("business_type")) return "SHOP_SEARCH";
+      if (keys.includes("service_type")) return "RENT_A_CHAIR_SEARCH";
       if (keys.includes("city") || keys.includes("selected_city") || keys.includes("q") || keys.includes("min_price")) return "SEARCH";
     }
   }
   const flowData = getFlowDataFromPayload(rawPayload);
+  if (flowData && (flowData.title || flowData.listerPhoneNumber || flowData.pricePerMonth || flowData.listing_type || flowData.lister_phone_number || flowData.price_per_month)) return "LIST_PROPERTY";
+  if (flowData && (flowData.room_type || flowData.occupancy || flowData.gender_preference || flowData.duration)) return "BOARDING_SEARCH";
+  if (flowData && (flowData.shop_type || flowData.location_type || flowData.size_range || flowData.business_type)) return "SHOP_SEARCH";
+  if (flowData && flowData.service_type) return "RENT_A_CHAIR_SEARCH";
   if (flowData && (flowData.q || flowData.city || flowData.suburb || flowData.min_price || flowData.max_price)) return "SEARCH";
-  if (flowData && (flowData.title || flowData.listerPhoneNumber || flowData.pricePerMonth)) return "LIST_PROPERTY";
   return null;
 }
 
@@ -1101,28 +1505,35 @@ export async function POST(request) {
 
   if (
     screen === "LIST_PROPERTY" ||
-    (flowData && (flowData.title || flowData.listerPhoneNumber || flowData.pricePerMonth))
+    (flowData && (flowData.listing_type || flowData.lister_phone_number || flowData.price_per_month))
   ) {
     try {
       const cityId = String(flowData.city || flowData.selected_city || "").trim();
       const suburbId = String(flowData.suburb || flowData.selected_suburb || "").trim();
-      const propertyCategoryId = String(flowData.propertyCategory || flowData.property_category || flowData.selected_category || "").trim();
-      const propertyTypeId = String(flowData.propertyType || flowData.property_type || flowData.selected_type || "").trim();
-      const bedroomsId = String(flowData.bedrooms || flowData.selected_bedrooms || "").trim();
+      const listingTypeId = String(flowData.listing_type || "").trim();
+      const propertyTypeId = String(flowData.property_type || "").trim();
+      const shopTypeId = String(flowData.shop_type || "").trim();
+      const roomTypeId = String(flowData.room_type || "").trim();
+      const serviceTypeId = String(flowData.service_type || "").trim();
+      const bedroomsId = String(flowData.bedrooms || "").trim();
 
       const cityTitle = resolveTitleById(cityId, PREDEFINED_CITIES);
-      const suburbTitle = resolveTitleById(suburbId, LIST_PROPERTY_SUBURBS);
-      const propertyTypeTitle = resolveTitleById(propertyTypeId, LIST_PROPERTY_TYPES);
+      const suburbTitle = resolveTitleById(suburbId, PREDEFINED_SUBURBS);
+      const listingTypeTitle = resolveTitleById(listingTypeId, LISTING_TYPES);
+      const propertyTypeTitle = resolveTitleById(propertyTypeId, LISTING_PROPERTY_TYPES);
+      const shopTypeTitle = resolveTitleById(shopTypeId, LISTING_SHOP_TYPES);
+      const roomTypeTitle = resolveTitleById(roomTypeId, LISTING_ROOM_TYPES);
+      const serviceTypeTitle = resolveTitleById(serviceTypeId, LISTING_SERVICE_TYPES);
 
       const title = String(flowData.title || "").trim();
-      const listerPhoneNumber = digitsOnly(flowData.listerPhoneNumber || phone);
-      const contactName = String(flowData.contactName || "").trim();
-      const contactPhone = String(flowData.contactPhone || "").trim();
-      const contactWhatsApp = String(flowData.contactWhatsApp || "").trim();
-      const contactEmail = String(flowData.contactEmail || "").trim();
+      const listerPhoneNumber = digitsOnly(flowData.lister_phone_number || phone);
+      const contactName = String(flowData.contact_name || "").trim();
+      const contactPhone = String(flowData.contact_phone || "").trim();
+      const contactWhatsApp = String(flowData.contact_whatsapp || "").trim();
+      const contactEmail = String(flowData.contact_email || "").trim();
 
-      const priceRaw = String(flowData.pricePerMonth || "").trim();
-      const depositRaw = String(flowData.deposit || "").trim();
+      const priceRaw = String(flowData.price_per_month || "").trim();
+      const depositRaw = String(flowData.deposit_amount || "").trim();
       const description = String(flowData.description || "").trim();
 
       const extractNumber = (value) => {
@@ -1136,28 +1547,50 @@ export async function POST(request) {
       const pricePerMonth = extractNumber(priceRaw);
       const deposit = depositRaw ? extractNumber(depositRaw) : null;
 
-      const bedrooms =
-        bedroomsId === "4plus"
-          ? 4
-          : Number(bedroomsId || "0");
+      const bedrooms = bedroomsId === "5plus" ? 5 : Number(bedroomsId || "0");
+      const bedroomsSafe = Number.isFinite(bedrooms) ? bedrooms : 0;
 
-      const featuresIds = Array.isArray(flowData.features) ? flowData.features : [];
-      const features = featuresIds
-        .map((fid) => resolveTitleById(fid, PREDEFINED_FEATURES_OPTIONS))
+      const listingTypeNormalized =
+        listingTypeId === "residential" || listingTypeId === "commercial" || listingTypeId === "boarding" || listingTypeId === "rent_a_chair"
+          ? listingTypeId
+          : "";
+
+      const propertyTypeByListingType = (() => {
+        if (listingTypeNormalized === "residential") return propertyTypeTitle && propertyTypeId !== "any" ? propertyTypeTitle : "";
+        if (listingTypeNormalized === "commercial") return shopTypeTitle && shopTypeId !== "any" ? shopTypeTitle : "";
+        if (listingTypeNormalized === "boarding") return roomTypeTitle && roomTypeId !== "any" ? roomTypeTitle : "";
+        if (listingTypeNormalized === "rent_a_chair") return serviceTypeTitle && serviceTypeId !== "any" ? serviceTypeTitle : "";
+        return "";
+      })();
+
+      const featureTitles = (() => {
+        if (listingTypeNormalized === "residential") {
+          const ids = Array.isArray(flowData.residential_features) ? flowData.residential_features : [];
+          return ids.map((fid) => resolveTitleById(fid, LISTING_RESIDENTIAL_FEATURES));
+        }
+        if (listingTypeNormalized === "boarding") {
+          const ids = Array.isArray(flowData.boarding_features) ? flowData.boarding_features : [];
+          return ids.map((fid) => resolveTitleById(fid, LISTING_BOARDING_FEATURES));
+        }
+        if (listingTypeNormalized === "commercial") {
+          const ids = Array.isArray(flowData.commercial_features) ? flowData.commercial_features : [];
+          return ids.map((fid) => resolveTitleById(fid, LISTING_COMMERCIAL_FEATURES));
+        }
+        if (listingTypeNormalized === "rent_a_chair") {
+          const ids = Array.isArray(flowData.chair_features) ? flowData.chair_features : [];
+          return ids.map((fid) => resolveTitleById(fid, LISTING_CHAIR_FEATURES));
+        }
+        return [];
+      })();
+
+      const features = featureTitles
         .map((v) => String(v || "").trim())
         .filter(Boolean)
         .slice(0, 20);
 
-      const imageUrlsRaw = String(flowData.imageUrls || "").trim();
-      const images = imageUrlsRaw
-        ? imageUrlsRaw
-          .split(/[\s,]+/g)
-          .map((u) => u.trim())
-          .filter((u) => /^https?:\/\//i.test(u))
-          .slice(0, 10)
-        : [];
+      const images = [];
 
-      if (!title || !listerPhoneNumber || !cityId || !suburbId || !propertyCategoryId || !propertyTypeId || !bedroomsId || pricePerMonth === null) {
+      if (!title || !listerPhoneNumber || !listingTypeNormalized || !cityId || !suburbId || !propertyTypeByListingType || pricePerMonth === null) {
         await sendWithMainMenuButton(phone, "Some required fields are missing. Please open the listing form again and submit.", "Tap Main menu, then List a property.");
         return NextResponse.json({ ok: true, note: "list-flow-missing-required" });
       }
@@ -1172,11 +1605,11 @@ export async function POST(request) {
         title,
         listerPhoneNumber,
         suburb,
-        propertyCategory: propertyCategoryId,
-        propertyType: propertyTypeTitle || propertyTypeId,
+        propertyCategory: listingTypeNormalized,
+        propertyType: propertyTypeByListingType,
         pricePerMonth,
         deposit: deposit && Number.isFinite(deposit) ? deposit : null,
-        bedrooms: Number.isFinite(bedrooms) ? bedrooms : 0,
+        bedrooms: bedroomsSafe,
         description,
         features,
         images,
@@ -1184,6 +1617,10 @@ export async function POST(request) {
         contactPhone,
         contactWhatsApp,
         contactEmail,
+        occupancy: String(flowData.occupancy || "").trim(),
+        genderPreference: String(flowData.gender_preference || "").trim(),
+        duration: String(flowData.duration || "").trim(),
+        numberOfStudents: extractNumber(flowData.number_of_students),
         status: "published",
       };
 
@@ -1211,9 +1648,9 @@ export async function POST(request) {
         listingId ? `ID: ${listingId}` : null,
         `Title: ${title}`,
         `Suburb: ${suburb}`,
-        `Category: ${propertyCategoryId}`,
-        `Type: ${propertyTypeTitle || propertyTypeId}`,
-        `Bedrooms: ${bedroomsId}`,
+        `Type: ${listingTypeTitle || listingTypeNormalized}`,
+        `Listing: ${propertyTypeByListingType}`,
+        bedroomsId ? `Bedrooms: ${bedroomsId}` : null,
         `Price: ${pricePerMonth}`,
       ].filter(Boolean).join("\n");
 
@@ -1233,54 +1670,168 @@ export async function POST(request) {
     }
   }
 
-  if (screen === "SEARCH" || (flowData && (flowData.city || flowData.q || flowData.min_price || flowData.max_price))) {
-    console.log("[webhook] flow search submission:", flowData);
+  if (
+    ["SEARCH", "BOARDING_SEARCH", "SHOP_SEARCH", "RENT_A_CHAIR_SEARCH"].includes(String(screen || "").toUpperCase()) ||
+    (flowData && (flowData.city || flowData.q || flowData.min_price || flowData.max_price))
+  ) {
+    console.log("[webhook] flow search submission:", screen, flowData);
+
+    const extractNumber = (value) => {
+      const raw = String(value ?? "").replace(/,/g, " ").trim();
+      const m = raw.match(/(\d+(?:\.\d+)?)/);
+      if (!m) return null;
+      const n = Number(m[1]);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const normalizeCategory = (v) => {
+      const raw = String(v || "").trim();
+      if (!raw) return "";
+      if (raw === "boarding_house") return "boarding";
+      if (raw === "commercial_shop") return "commercial";
+      return raw;
+    };
 
     let results = { listings: [], total: 0 };
     try {
-      const cityOptions = PREDEFINED_CITIES;
-      const suburbOptions = PREDEFINED_SUBURBS;
-      const propertyCategoryOptions = PREDEFINED_PROPERTY_CATEGORIES;
-      const propertyTypeOptions = PREDEFINED_PROPERTY_TYPES;
-      const featuresOptions = PREDEFINED_FEATURES_OPTIONS;
+      const screenUpper = String(screen || "").toUpperCase();
 
-      const resolvedCity = resolveTitleById(flowData.city, cityOptions);
-      const resolvedSuburbRaw = String(flowData.suburb || "").trim();
-      const resolvedSuburb = resolvedSuburbRaw === "any" ? "" : resolveTitleById(resolvedSuburbRaw, suburbOptions);
-      const resolvedPropertyCategory = String(flowData.property_category || "").trim();
-      const resolvedPropertyType = resolveTitleById(flowData.property_type, propertyTypeOptions);
+      const minPrice = extractNumber(flowData.min_price);
+      const maxPrice = extractNumber(flowData.max_price);
+      const q = String(flowData.q || "").trim();
 
-      const bedroomsRaw = String(flowData.bedrooms || "").trim();
-      const minBeds =
-        bedroomsRaw === "any" || bedroomsRaw === ""
-          ? null
-          : (bedroomsRaw === "4plus" ? 4 : Number(bedroomsRaw));
-      const minBedsSafe = Number.isFinite(minBeds) ? minBeds : null;
+      if (screenUpper === "BOARDING_SEARCH") {
+        const resolvedCity = resolveTitleById(flowData.city, PREDEFINED_CITIES);
+        const suburbRaw = String(flowData.suburb || "").trim();
+        const resolvedSuburb = suburbRaw === "any" ? "" : resolveTitleById(suburbRaw, PREDEFINED_SUBURBS);
 
-      const featuresRaw = Array.isArray(flowData.features) ? flowData.features : [];
-      const resolvedFeatures = featuresRaw
-        .map((fid) => resolveTitleById(fid, featuresOptions))
-        .map((v) => String(v || "").trim())
-        .filter(Boolean)
-        .slice(0, 12);
+        const roomTypeId = String(flowData.roomType || flowData.room_type || "").trim();
+        const roomTypeTitle = roomTypeId === "any" ? "" : resolveTitleById(roomTypeId, BOARDING_ROOM_TYPES);
 
-      const minPriceRaw = String(flowData.min_price ?? "").trim();
-      const maxPriceRaw = String(flowData.max_price ?? "").trim();
-      const minPrice = minPriceRaw === "" || minPriceRaw === "0" ? null : minPriceRaw;
-      const maxPrice = maxPriceRaw === "" || maxPriceRaw === "0" ? null : maxPriceRaw;
+        const featuresRaw =
+          (Array.isArray(flowData.features) ? flowData.features : null) ||
+          (Array.isArray(flowData.boarding_features) ? flowData.boarding_features : null) ||
+          [];
+        const resolvedFeatures = featuresRaw
+          .map((fid) => String(fid || "").trim())
+          .filter((fid) => fid && fid !== "any")
+          .map((fid) => resolveTitleById(fid, BOARDING_FEATURES_OPTIONS))
+          .map((v) => String(v || "").trim())
+          .filter(Boolean)
+          .slice(0, 12);
 
-      results = await searchPublishedListings({
-        q: flowData.q || "",
-        city: resolvedCity || "",
-        suburb: resolvedSuburb || "",
-        minPrice,
-        maxPrice,
-        propertyCategory: resolvedPropertyCategory || "",
-        propertyType: resolvedPropertyType || "",
-        minBeds: minBedsSafe,
-        features: resolvedFeatures,
-        perPage: 6
-      });
+        results = await searchPublishedListings({
+          q,
+          city: resolvedCity || "",
+          suburb: resolvedSuburb || "",
+          minPrice,
+          maxPrice,
+          propertyCategory: "boarding",
+          propertyType: roomTypeTitle || "",
+          features: resolvedFeatures,
+          perPage: 6,
+        });
+      } else if (screenUpper === "SHOP_SEARCH") {
+        const resolvedCity = resolveTitleById(flowData.city, PREDEFINED_CITIES);
+        const suburbRaw = String(flowData.suburb || "").trim();
+        const resolvedSuburb = suburbRaw === "any" ? "" : resolveTitleById(suburbRaw, SHOP_SUBURBS);
+
+        const shopTypeId = String(flowData.shopType || flowData.shop_type || "").trim();
+        const shopTypeTitle = shopTypeId === "any" ? "" : resolveTitleById(shopTypeId, SHOP_TYPES);
+
+        const featuresRaw =
+          (Array.isArray(flowData.features) ? flowData.features : null) ||
+          (Array.isArray(flowData.commercial_features) ? flowData.commercial_features : null) ||
+          [];
+        const resolvedFeatures = featuresRaw
+          .map((fid) => String(fid || "").trim())
+          .filter((fid) => fid && fid !== "any")
+          .map((fid) => resolveTitleById(fid, SHOP_FEATURES_OPTIONS))
+          .map((v) => String(v || "").trim())
+          .filter(Boolean)
+          .slice(0, 12);
+
+        results = await searchPublishedListings({
+          q,
+          city: resolvedCity || "",
+          suburb: resolvedSuburb || "",
+          minPrice,
+          maxPrice,
+          propertyCategory: "commercial",
+          propertyType: shopTypeTitle || "",
+          features: resolvedFeatures,
+          perPage: 6,
+        });
+      } else if (screenUpper === "RENT_A_CHAIR_SEARCH") {
+        const serviceTypeId = String(flowData.serviceType || flowData.service_type || "").trim();
+        const serviceTypeTitle = serviceTypeId === "any" ? "" : resolveTitleById(serviceTypeId, CHAIR_SERVICE_TYPES);
+
+        const featuresRaw =
+          (Array.isArray(flowData.features) ? flowData.features : null) ||
+          (Array.isArray(flowData.chair_features) ? flowData.chair_features : null) ||
+          [];
+        const resolvedFeatures = featuresRaw
+          .map((fid) => String(fid || "").trim())
+          .filter((fid) => fid && fid !== "any")
+          .map((fid) => resolveTitleById(fid, CHAIR_FEATURES_OPTIONS))
+          .map((v) => String(v || "").trim())
+          .filter(Boolean)
+          .slice(0, 12);
+
+        results = await searchPublishedListings({
+          q,
+          city: "",
+          suburb: "",
+          minPrice,
+          maxPrice,
+          propertyCategory: "rent_a_chair",
+          propertyType: serviceTypeTitle || "",
+          features: resolvedFeatures,
+          perPage: 6,
+        });
+      } else {
+        const resolvedCity = resolveTitleById(flowData.city, PREDEFINED_CITIES);
+        const suburbRaw = String(flowData.suburb || "").trim();
+        const resolvedSuburb = suburbRaw === "any" ? "" : resolveTitleById(suburbRaw, PREDEFINED_SUBURBS);
+
+        const categoryRaw = flowData.propertyCategory || flowData.property_category || "residential";
+        const resolvedPropertyCategory = normalizeCategory(categoryRaw) || "residential";
+
+        const propertyTypeId = String(flowData.propertyType || flowData.property_type || "").trim();
+        const resolvedPropertyType = propertyTypeId ? resolveTitleById(propertyTypeId, PREDEFINED_PROPERTY_TYPES) : "";
+
+        const bedroomsRaw = String(flowData.bedrooms || "").trim();
+        const minBeds =
+          bedroomsRaw === "any" || bedroomsRaw === ""
+            ? null
+            : (bedroomsRaw === "5plus" ? 5 : Number(bedroomsRaw));
+        const minBedsSafe = Number.isFinite(minBeds) ? minBeds : null;
+
+        const featuresRaw =
+          (Array.isArray(flowData.features) ? flowData.features : null) ||
+          (Array.isArray(flowData.residential_features) ? flowData.residential_features : null) ||
+          [];
+        const resolvedFeatures = featuresRaw
+          .map((fid) => String(fid || "").trim())
+          .filter((fid) => fid && fid !== "any")
+          .map((fid) => resolveTitleById(fid, PREDEFINED_FEATURES_OPTIONS))
+          .map((v) => String(v || "").trim())
+          .filter(Boolean)
+          .slice(0, 12);
+
+        results = await searchPublishedListings({
+          q,
+          city: resolvedCity || "",
+          suburb: resolvedSuburb || "",
+          minPrice,
+          maxPrice,
+          propertyCategory: resolvedPropertyCategory,
+          propertyType: resolvedPropertyType || "",
+          minBeds: minBedsSafe,
+          features: resolvedFeatures,
+          perPage: 6,
+        });
+      }
     } catch (e) {
       console.warn("[webhook] flow search error", e);
     }
@@ -1377,20 +1928,58 @@ export async function POST(request) {
 
   // SEARCH command (robust)
   if (cmd === "search" || cmd === "search properties" || cmd === "menu_search") {
-    console.log("[webhook] search command invoked for", phone);
-    const flowResp = await sendSearchFlow(phone, { headerText: "Instructions: Tap Continue", bodyText: "Only City is required. Other filters are optional.", footerText: "Search", screen: "SEARCH", cities: PREDEFINED_CITIES }).catch((e) => { console.warn("[webhook] sendSearchFlow threw:", e); return { error: e }; });
-    console.log("[webhook] sendSearchFlow result:", flowResp);
+    await sendButtonsWithInstructionHeader(
+      phone,
+      "Choose what you want to search for:",
+      [
+        { id: "search_residential", title: "Residential housing" },
+        { id: "search_rent_a_chair", title: "Rent a chair" },
+        { id: "search_boarding", title: "Boarding House" },
+        { id: "search_shop", title: "Commercial/Shoping" },
+      ],
+      "Tap an option to open the search form.",
+    );
+    return NextResponse.json({ ok: true, note: "search-category-picker" });
+  }
 
+  if (cmd === "search_residential") {
+    const flowResp = await sendResidentialSearchFlow(phone).catch((e) => ({ error: e }));
     if (flowResp?.error || flowResp?.suppressed) {
-      await sendWithMainMenuButton(phone, "Couldn't open the search form right now.", "Tap Main menu and try again.").catch((e) => console.warn("[webhook] search flow open failed:", e));
+      await sendWithMainMenuButton(phone, "Couldn't open the residential search form right now.", "Tap Main menu and try again.");
     } else {
-      await sendWithMainMenuButton(phone, "Search form opened.", "Fill and submit the form.").catch((err) => console.warn("[webhook] sendText after flow error:", err));
+      await sendWithMainMenuButton(phone, "Residential search form opened.", "Fill and submit the form.");
     }
+    return NextResponse.json({ ok: true, note: "search-residential-opened", flowResp });
+  }
 
-    if (dbAvailable && savedMsg && savedMsg._id) {
-      await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.sentSearchFlow": true, "meta.sendResp": flowResp } }).catch(() => null);
+  if (cmd === "search_boarding") {
+    const flowResp = await sendBoardingSearchFlow(phone).catch((e) => ({ error: e }));
+    if (flowResp?.error || flowResp?.suppressed) {
+      await sendWithMainMenuButton(phone, "Couldn't open the boarding search form right now.", "Tap Main menu and try again.");
+    } else {
+      await sendWithMainMenuButton(phone, "Boarding search form opened.", "Fill and submit the form.");
     }
-    return NextResponse.json({ ok: true, note: "search-invoked", flowResp });
+    return NextResponse.json({ ok: true, note: "search-boarding-opened", flowResp });
+  }
+
+  if (cmd === "search_shop") {
+    const flowResp = await sendShopSearchFlow(phone).catch((e) => ({ error: e }));
+    if (flowResp?.error || flowResp?.suppressed) {
+      await sendWithMainMenuButton(phone, "Couldn't open the commercial/shop search form right now.", "Tap Main menu and try again.");
+    } else {
+      await sendWithMainMenuButton(phone, "Commercial/shop search form opened.", "Fill and submit the form.");
+    }
+    return NextResponse.json({ ok: true, note: "search-shop-opened", flowResp });
+  }
+
+  if (cmd === "search_rent_a_chair") {
+    const flowResp = await sendRentAChairSearchFlow(phone).catch((e) => ({ error: e }));
+    if (flowResp?.error || flowResp?.suppressed) {
+      await sendWithMainMenuButton(phone, "Couldn't open the rent-a-chair search form right now.", "Tap Main menu and try again.");
+    } else {
+      await sendWithMainMenuButton(phone, "Rent-a-chair search form opened.", "Fill and submit the form.");
+    }
+    return NextResponse.json({ ok: true, note: "search-chair-opened", flowResp });
   }
 
   // view past messages / contacts
