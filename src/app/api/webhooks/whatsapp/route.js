@@ -1682,6 +1682,7 @@ export async function POST(request) {
                 name: String(e?.name || ""),
                 code: e?.code ?? null,
                 message: String(e?.message || ""),
+                stack: String(e?.stack || "").slice(0, 2000),
               },
             },
           }).catch(() => null);

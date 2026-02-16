@@ -36,7 +36,7 @@ function generateShortId() {
 async function findUniqueShortId(Model, attemptsLeft = 20) {
   if (!Model || attemptsLeft <= 0) throw new Error("Could not generate unique shortId");
   const candidate = generateShortId();
-  const exists = await Model.exists({ shortId: candidate }).lean().exec().catch(() => null);
+  const exists = await Model.exists({ shortId: candidate }).catch(() => null);
   if (!exists) return candidate;
   return findUniqueShortId(Model, attemptsLeft - 1);
 }
