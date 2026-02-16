@@ -1358,7 +1358,17 @@ function getFlowDataFromPayload(payload) {
     const v = payload?.entry?.[0]?.changes?.[0]?.value || payload || {};
     const nfmJson = _safeGet(v, ["messages", 0, "interactive", "nfm_reply", "response_json"]);
     if (nfmJson && typeof nfmJson === "string") {
-      try { return JSON.parse(nfmJson); } catch (e) { /* ignore */ }
+      try {
+        const parsed = JSON.parse(nfmJson);
+        if (parsed && typeof parsed === "object") {
+          const maybeData = parsed.data;
+          if (maybeData && typeof maybeData === "object" && Object.keys(parsed).length <= 4) {
+            return { ...maybeData, screen: parsed.screen || maybeData.screen || undefined };
+          }
+          return parsed;
+        }
+        return {};
+      } catch (e) { /* ignore */ }
     }
     const msgInteractiveFlowData = _safeGet(v, ["messages", 0, "interactive", "flow", "data"]) || _safeGet(v, ["messages", 0, "interactive", "data"]) || _safeGet(v, ["messages", 0, "interactive"]);
     if (msgInteractiveFlowData && typeof msgInteractiveFlowData === "object") return msgInteractiveFlowData;
@@ -1662,9 +1672,24 @@ export async function POST(request) {
       const msg = String(e?.message || "");
       const isValidation = e?.name === "ValidationError" || /validation/i.test(msg);
       const isDup = e?.code === 11000;
+      const ref = msgId ? String(msgId).slice(-6) : _hash(`${phone}:${Date.now()}`).slice(0, 6).toUpperCase();
+      try {
+        if (dbAvailable && savedMsg && savedMsg._id && typeof Message?.findByIdAndUpdate === "function") {
+          await Message.findByIdAndUpdate(savedMsg._id, {
+            $set: {
+              "meta.publishError": {
+                ref,
+                name: String(e?.name || ""),
+                code: e?.code ?? null,
+                message: String(e?.message || ""),
+              },
+            },
+          }).catch(() => null);
+        }
+      } catch (err) { }
       const userMessage = isValidation
         ? "Some values look invalid (for example: price). Please edit and submit the form again."
-        : (isDup ? "That listing code collided. Please submit the form again." : "Something went wrong while publishing your listing.");
+        : (isDup ? "That listing code collided. Please submit the form again." : `Something went wrong while publishing your listing. Ref: ${ref}`);
       await sendWithMainMenuButton(phone, userMessage, "Tap Main menu and try again.");
       return NextResponse.json({ ok: true, note: "list-flow-error" });
     }
