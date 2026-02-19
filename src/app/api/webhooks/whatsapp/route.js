@@ -11,7 +11,7 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import mongoose from "mongoose";
-import { dbConnect, WebhookEvent, Listing } from "@/lib/db";
+import { dbConnect, WebhookEvent, Listing, Purchase } from "@/lib/db";
 import Message from "@/lib/Message";
 import { getListingById, searchPublishedListings, getListingFacets } from "@/lib/getListings";
 
@@ -1430,14 +1430,20 @@ function getCanonicalMessage(payload) {
    Helper: send main menu (single composed instruction)
 ------------------------- */
 async function sendMainMenu(phone) {
-  const buttons = [
-    { id: "menu_list", title: "List a property" },
-    { id: "menu_edit_listings", title: "Edit my listings" },
-    { id: "menu_search", title: "Search properties" },
-    { id: "menu_contacts", title: "View past messages" },
-    { id: "menu_report", title: "Report listing" },
+  const rows = [
+    { id: "menu_search", title: "Search properties", description: "Find a place to rent/buy" },
+    { id: "menu_list", title: "List a property", description: "Add a new listing" },
+    { id: "menu_edit_listings", title: "Edit my listings", description: "Manage your listings" },
+    { id: "menu_purchases", title: "View past purchases", description: "See properties you viewed" },
+    { id: "menu_contacts", title: "View past messages", description: "See contact details revealed" },
+    { id: "menu_report", title: "Report listing", description: "Report an issue" }
   ];
-  await sendInteractiveButtons(phone, "Welcome to CribMatch — choose an action:", buttons, { headerText: "Instructions: Tap an option" });
+
+  await sendInteractiveList(phone, "Welcome to CribMatch — please choose an option:", rows, {
+    headerText: "Main Menu",
+    buttonText: "Menu",
+    sectionTitle: "Options"
+  });
 }
 
 /* -------------------------
@@ -1528,6 +1534,29 @@ export async function POST(request) {
   // normalize user input
   const userRaw = String(parsedText || "").trim();
   const cmd = userRaw.toLowerCase();
+
+
+  /* -------------------------
+     Handle Image Uploads (AWAITING_PHOTOS_EDIT)
+  ------------------------- */
+  if (msg?.type === "image" && lastMeta?.state === "AWAITING_PHOTOS_EDIT") {
+    const listingId = lastMeta.listingId;
+    const imageId = msg.image?.id;
+
+    if (listingId && imageId) {
+      fetchAndAddImageToListing(listingId, imageId, process.env.WHATSAPP_API_TOKEN).catch(err => console.error("Async image fetch error", err));
+      return NextResponse.json({ ok: true, note: "image-uploaded-edit" });
+    }
+  }
+
+  if (cmd === "done" && lastMeta?.state === "AWAITING_PHOTOS_EDIT") {
+    const listingId = lastMeta.listingId;
+    await sendInteractiveButtons(phone, "Photos updated.", [{ id: `manage_photos_${listingId}`, title: "Back to Photos" }], { headerText: "Done" });
+    if (savedMsg && savedMsg._id) {
+      await Message.findByIdAndUpdate(savedMsg._id, { $unset: { "meta.state": "" } }).catch(() => null);
+    }
+    return NextResponse.json({ ok: true, note: "listing-photos-edit-done" });
+  }
 
   /* -------------------------
      Handle Image Uploads (AWAITING_PHOTOS)
@@ -2084,6 +2113,36 @@ export async function POST(request) {
         return NextResponse.json({ ok: true, note: "edit-listing-not-found" });
       }
 
+      // OLD CODE REMOVED
+      const isPublished = listing.status === "published";
+      const statusAction = isPublished ? "Deactivate" : "Activate";
+
+      const buttons = [
+        { id: `edit_details_${listingId}`, title: "Edit Details" },
+        { id: `manage_photos_${listingId}`, title: "Manage Photos" },
+        { id: `toggle_status_${listingId}`, title: statusAction }
+      ];
+
+      const title = String(listing.title || "Untitled");
+      const statusDisplay = isPublished ? "✅ Active" : "⏸️ Inactive";
+      const body = `Manage Listing: ${title}\nStatus: ${statusDisplay}\n\nChoose an action:`;
+
+      await sendInteractiveButtons(phone, body, buttons, { headerText: "Listing Options" });
+      return NextResponse.json({ ok: true, note: "edit-listing-menu-sent" });
+
+    }
+  }
+
+  // Handle "Edit Details" -> Opens the Flow
+  if (cmd.startsWith("edit_details_")) {
+    const listingId = cmd.replace("edit_details_", "");
+    if (dbAvailable && typeof Listing?.findById === "function") {
+      const listing = await Listing.findById(listingId).lean().exec().catch(() => null);
+      if (!listing) {
+        await sendWithMainMenuButton(phone, "Listing not found.", "Tap Main menu.");
+        return NextResponse.json({ ok: true, note: "edit-details-not-found" });
+      }
+
       const suburbParts = String(listing.suburb || "").split(",");
       const suburbTitle = suburbParts[0]?.trim();
       const cityTitle = suburbParts[1]?.trim() || "Harare";
@@ -2136,6 +2195,72 @@ export async function POST(request) {
       }
       return NextResponse.json({ ok: true, note: "edit-flow-opened" });
     }
+  }
+
+  // Handle "Toggle Status"
+  if (cmd.startsWith("toggle_status_")) {
+    const listingId = cmd.replace("toggle_status_", "");
+    if (dbAvailable && typeof Listing?.findByIdAndUpdate === "function") {
+      const listing = await Listing.findById(listingId).select("status title").lean().exec().catch(() => null);
+      if (!listing) return NextResponse.json({ ok: true });
+
+      const newStatus = listing.status === "published" ? "draft" : "published";
+      await Listing.findByIdAndUpdate(listingId, { $set: { status: newStatus } });
+
+      const msg = newStatus === "published"
+        ? `Listing "${listing.title}" is now ACTIVE.`
+        : `Listing "${listing.title}" is now INACTIVE (Draft).`;
+
+      await sendInteractiveButtons(phone, msg, [{ id: `edit_listing_${listingId}`, title: "Back to Listing" }], { headerText: "Status Updated" });
+      return NextResponse.json({ ok: true, note: "status-toggled" });
+    }
+  }
+
+  // Handle "Manage Photos" Menu
+  if (cmd.startsWith("manage_photos_")) {
+    const listingId = cmd.replace("manage_photos_", "");
+    if (dbAvailable && typeof Listing?.findById === "function") {
+      const listing = await Listing.findById(listingId).select("images title").lean().exec().catch(() => null);
+      if (!listing) return NextResponse.json({ ok: true });
+
+      const count = (listing.images || []).length;
+      const body = `Photos for "${listing.title}"\nCurrent count: ${count} photo(s).`;
+
+      const buttons = [
+        { id: `add_photos_${listingId}`, title: "Add Photos" },
+        { id: `delete_photos_${listingId}`, title: "Delete All Photos" },
+        { id: `edit_listing_${listingId}`, title: "Back" }
+      ];
+
+      await sendInteractiveButtons(phone, body, buttons, { headerText: "Manage Photos" });
+      return NextResponse.json({ ok: true, note: "manage-photos-menu" });
+    }
+  }
+
+  // Handle "Delete Photos"
+  if (cmd.startsWith("delete_photos_")) {
+    const listingId = cmd.replace("delete_photos_", "");
+    if (dbAvailable && typeof Listing?.findByIdAndUpdate === "function") {
+      await Listing.findByIdAndUpdate(listingId, { $set: { images: [] } });
+      await sendInteractiveButtons(phone, "All photos have been deleted.", [{ id: `manage_photos_${listingId}`, title: "Back to Photos" }], { headerText: "Photos Deleted" });
+      return NextResponse.json({ ok: true, note: "photos-deleted" });
+    }
+  }
+
+  // Handle "Add Photos"
+  if (cmd.startsWith("add_photos_")) {
+    const listingId = cmd.replace("add_photos_", "");
+    if (savedMsg && savedMsg._id) {
+      await Message.findByIdAndUpdate(savedMsg._id, {
+        $set: {
+          "meta.state": "AWAITING_PHOTOS_EDIT",
+          "meta.listingId": listingId,
+          "meta.photoCount": 0 // Reset session count, but doesn't delete existing
+        }
+      }).catch(() => null);
+    }
+    await sendText(phone, "Please send your photos now. Send 'done' when finished.");
+    return NextResponse.json({ ok: true, note: "awaiting-photos-set" });
   }
 
   // lookup by CODE (4 chars)
@@ -2256,6 +2381,58 @@ export async function POST(request) {
       return NextResponse.json({ ok: true, note: "search-chair-open-failed", flowResp });
     }
     return NextResponse.json({ ok: true, note: "search-chair-opened", flowResp });
+  }
+
+  /* -------------------------
+     Handle "View past purchases"
+  ------------------------- */
+  if (cmd === "menu_purchases" || cmd === "view past purchases" || cmd === "past purchases") {
+    if (dbAvailable && typeof Purchase?.find === "function") {
+      const purchases = await Purchase.find({ phone: digitsOnly(phone) })
+        .sort({ createdAt: -1 })
+        .populate("listingId", "title status price currency")
+        .limit(20)
+        .lean()
+        .exec()
+        .catch(() => []);
+
+      if (!purchases || purchases.length === 0) {
+        await sendInteractiveButtons(phone, "You haven't viewed any properties yet.", [{ id: "menu_search", title: "Search Properties" }], { headerText: "No Purchases" });
+        return NextResponse.json({ ok: true, note: "no-purchases" });
+      }
+
+      const rows = purchases
+        .map((p) => {
+          const listing = p.listingId;
+          if (!listing) return null;
+
+          const isPublished = listing.status === "published";
+          const statusTag = isPublished ? "✅ Available" : "❌ Unavailable";
+          const priceStr = listing.price ? `${listing.currency || "USD"} ${listing.price}` : "";
+
+          return {
+            id: `select_${listing._id}`,
+            title: String(listing.title || "Untitled").slice(0, 24),
+            description: `${statusTag} ${priceStr}`.trim().slice(0, 72)
+          };
+        })
+        .filter(Boolean);
+
+      if (rows.length === 0) {
+        await sendInteractiveButtons(phone, "No valid purchases found.", [{ id: "menu_main", title: "Main Menu" }]);
+        return NextResponse.json({ ok: true, note: "no-valid-purchases" });
+      }
+
+      await sendInteractiveList(phone, "Here are your past viewed properties:", rows, {
+        headerText: "Past Purchases",
+        buttonText: "View",
+        sectionTitle: "Properties"
+      });
+      return NextResponse.json({ ok: true, note: "purchases-list-sent" });
+    } else {
+      await sendInteractiveButtons(phone, "History unavailable.", [{ id: "menu_main", title: "Main Menu" }]);
+      return NextResponse.json({ ok: true, note: "db-unavailable" });
+    }
   }
 
   // view past messages / contacts
@@ -2532,28 +2709,28 @@ async function tryRevealByIdOrCached(listingId, phone, idsFromMeta = [], results
     // 1) helper getListingById
     try {
       const listing = await getListingById(listingId).catch(() => null);
-      if (listing) { await revealFromObject(listing, phone); await saveUserSelectedListing(phone, listingId, dbAvailable); return true; }
+      if (listing) { await revealFromObject(listing, phone); await recordPurchase(phone, listing, dbAvailable); return true; }
     } catch (e) { console.warn("[tryReveal] getListingById failed:", e); }
 
     // 2) Listing.findById
     try {
       if (typeof Listing?.findById === "function") {
         const dbListing = await Listing.findById(listingId).lean().exec().catch(() => null);
-        if (dbListing) { await revealFromObject(dbListing, phone); await saveUserSelectedListing(phone, listingId, dbAvailable); return true; }
+        if (dbListing) { await revealFromObject(dbListing, phone); await recordPurchase(phone, dbListing, dbAvailable); return true; }
       }
     } catch (e) { console.warn("[tryReveal] Listing.findById failed:", e); }
 
     // 3) fallback to resultsFromMeta mapping
     if (Array.isArray(idsFromMeta) && idsFromMeta.length > 0 && Array.isArray(resultsFromMeta)) {
       const idx = idsFromMeta.indexOf(listingId);
-      if (idx >= 0 && resultsFromMeta[idx]) { await revealFromObject(resultsFromMeta[idx], phone); await saveUserSelectedListing(phone, listingId, dbAvailable); return true; }
+      if (idx >= 0 && resultsFromMeta[idx]) { await revealFromObject(resultsFromMeta[idx], phone); await recordPurchase(phone, resultsFromMeta[idx], dbAvailable); return true; }
     }
 
     // 4) defensive substring match
     if (Array.isArray(resultsFromMeta) && resultsFromMeta.length) {
       for (const r of resultsFromMeta) {
         const candidateId = getIdFromListing(r);
-        if (candidateId && listingId && candidateId.includes(listingId)) { await revealFromObject(r, phone); await saveUserSelectedListing(phone, candidateId, dbAvailable); return true; }
+        if (candidateId && listingId && candidateId.includes(listingId)) { await revealFromObject(r, phone); await recordPurchase(phone, r, dbAvailable); return true; }
       }
     }
 
@@ -2566,13 +2743,27 @@ async function tryRevealByIdOrCached(listingId, phone, idsFromMeta = [], results
   }
 }
 
-async function saveUserSelectedListing(phone, listingId, dbAvailable) {
+async function recordPurchase(phone, listing, dbAvailable) {
+  if (!dbAvailable || !listing) return;
   try {
-    if (!dbAvailable) return;
+    const listingId = getIdFromListing(listing);
+    // Check if valid ObjectId string (24 hex chars)
+    if (!listingId || !/^[0-9a-fA-F]{24}$/.test(listingId)) return;
+
+    // Also save to Message (existing logic)
     if (typeof Message?.findOneAndUpdate === "function") {
       await Message.findOneAndUpdate({ phone: digitsOnly(phone) }, { $set: { "meta.listingIdSelected": listingId, "meta.state": "CONTACT_REVEALED" } }, { sort: { createdAt: -1 }, upsert: false }).exec().catch(() => null);
     }
-  } catch (e) { /* ignore */ }
+
+    // Save to Purchase
+    if (typeof Purchase?.updateOne === "function") {
+      await Purchase.updateOne(
+        { phone: digitsOnly(phone), listingId: listingId },
+        { $setOnInsert: { createdAt: new Date() } },
+        { upsert: true }
+      ).exec();
+    }
+  } catch (e) { console.error("[recordPurchase] error:", e); }
 }
 
 async function revealFromObject(listing, phone) {
