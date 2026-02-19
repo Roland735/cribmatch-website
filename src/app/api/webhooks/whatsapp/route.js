@@ -123,11 +123,13 @@ async function sendImage(phoneNumber, imageUrl, caption = "") {
   const apiToken = process.env.WHATSAPP_API_TOKEN;
   const phone_number_id = process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_ID;
   const phone = digitsOnly(phoneNumber);
-  const url = String(imageUrl || "").trim();
-  if (!url) return { error: "empty" };
+  const content = String(imageUrl || "").trim();
+  if (!content) return { error: "empty" };
 
+  const isUrl = content.startsWith("http://") || content.startsWith("https://");
   const normalizedCaption = String(caption || "").trim();
-  const hash = _hash(`image:${_normalizeForHash(url)}:${_normalizeForHash(normalizedCaption)}`);
+  const hash = _hash(`image:${_normalizeForHash(content)}:${_normalizeForHash(normalizedCaption)}`);
+
   if (!_shouldSend(phone, hash, TTL_INTERACTIVE_MS)) {
     console.log("[sendImage] suppressed duplicate image to", phone);
     return { suppressed: true };
@@ -138,19 +140,20 @@ async function sendImage(phoneNumber, imageUrl, caption = "") {
   }
 
   if (!apiToken || !phone_number_id) {
-    const fallback = normalizedCaption ? `${normalizedCaption}\n${url}` : url;
+    const fallback = normalizedCaption ? `${normalizedCaption}\n${content}` : content;
     return sendText(phoneNumber, fallback);
   }
+
+  const imageObj = isUrl ? { link: content } : { id: content };
+  if (normalizedCaption) imageObj.caption = normalizedCaption.slice(0, 1024);
 
   const payload = {
     messaging_product: "whatsapp",
     to: phone,
     type: "image",
-    image: {
-      link: url,
-      ...(normalizedCaption ? { caption: normalizedCaption.slice(0, 1024) } : {}),
-    },
+    image: imageObj,
   };
+
   const res = await whatsappPost(phone_number_id, apiToken, payload);
   const waid = res?.messages?.[0]?.id || null;
   if (!res?.error) {
@@ -160,8 +163,10 @@ async function sendImage(phoneNumber, imageUrl, caption = "") {
       type: "image",
       text: normalizedCaption,
       raw: payload,
-      meta: { hash, imageUrl: url },
+      meta: { hash, imageUrl: content },
     });
+  } else {
+    console.error("[sendImage] failed:", JSON.stringify(res));
   }
   return res;
 }
@@ -2475,19 +2480,12 @@ async function revealFromObject(listing, phone) {
 
 async function fetchAndAddImageToListing(listingId, imageId, token) {
   if (!listingId || !imageId) return;
-  const url = `https://graph.facebook.com/v18.0/${imageId}`;
-  try {
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    if (!res.ok) throw new Error("fetch-image-url-failed");
-    const json = await res.json();
-    const mediaUrl = json.url;
-    if (!mediaUrl) throw new Error("no-url-in-response");
+  // NOTE: Storing media ID directly for now as user-uploaded media expires in 30 days.
+  // For production, we should download from FB URL and upload to persistent storage (S3/Cloudinary).
+  // The FB URL requires Auth headers which WhatsApp 'send image by link' does not support.
+  // So we use 'send image by ID' which works for media uploaded to WhatsApp.
 
-    // For now, let's just append the URL.
-    if (mongoose.connection.readyState === 1 && typeof Listing?.findByIdAndUpdate === "function") {
-      await Listing.findByIdAndUpdate(listingId, { $push: { images: mediaUrl } }).catch(() => null);
-    }
-  } catch (e) {
-    console.error("[fetchAndAddImageToListing] error:", e);
+  if (mongoose.connection.readyState === 1 && typeof Listing?.findByIdAndUpdate === "function") {
+    await Listing.findByIdAndUpdate(listingId, { $push: { images: imageId } }).catch(() => null);
   }
 }
