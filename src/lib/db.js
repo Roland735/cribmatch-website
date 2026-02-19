@@ -80,22 +80,17 @@ const ListingSchema = new mongoose.Schema(
 
 ListingSchema.index({ shortId: 1 }, { unique: true, sparse: true });
 
-ListingSchema.pre("validate", async function ensureShortId(next) {
-  try {
-    if (this.shortId && typeof this.shortId === "string") {
-      this.shortId = this.shortId.trim().toUpperCase();
-      if (/^[A-Z0-9]{4}$/.test(this.shortId)) return next();
-      this.shortId = undefined;
-    }
-
-    if (this.shortId) return next();
-
-    const Model = this.constructor;
-    this.shortId = await findUniqueShortId(Model, 20);
-    return next();
-  } catch (e) {
-    return next(e);
+ListingSchema.pre("validate", async function ensureShortId() {
+  if (this.shortId && typeof this.shortId === "string") {
+    this.shortId = this.shortId.trim().toUpperCase();
+    if (/^[A-Z0-9]{4}$/.test(this.shortId)) return;
+    this.shortId = undefined;
   }
+
+  if (this.shortId) return;
+
+  const Model = this.constructor;
+  this.shortId = await findUniqueShortId(Model, 20);
 });
 
 export const Listing =

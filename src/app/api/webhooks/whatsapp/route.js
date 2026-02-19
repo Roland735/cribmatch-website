@@ -1690,9 +1690,9 @@ export async function POST(request) {
       } catch (err) { }
       const userMessage = isValidation
         ? "Some values look invalid (for example: price). Please edit and submit the form again."
-        : (isDup ? "That listing code collided. Please submit the form again." : `Something went wrong while publishing your listing. Ref: ${ref}`);
+        : (isDup ? "That listing code collided. Please submit the form again." : `Something went wrong while publishing your listing. Ref: ${ref} Err: ${msg.slice(0, 100)}`);
       await sendWithMainMenuButton(phone, userMessage, "Tap Main menu and try again.");
-      return NextResponse.json({ ok: true, note: "list-flow-error" });
+      return NextResponse.json({ ok: true, note: "list-flow-error", error: msg });
     }
   }
 
