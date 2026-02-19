@@ -935,8 +935,8 @@ async function sendResidentialSearchFlow(phoneNumber, data = {}) {
     screen: "SEARCH",
     payloadData,
     headerText: "Find rentals — filters",
-    bodyText: "Choose from predefined options or leave blanks for broader search.\n\nInstructions: Fill and submit the form.",
-    footerText: "Search",
+    bodyText: "Choose from predefined options or leave blanks for broader search.\n\nInstructions: Fill and submit the form.\n\nTo go back, type \"menu\".",
+    footerText: "CribMatch",
     flow_cta: "Search",
   });
 }
@@ -987,8 +987,8 @@ async function sendBoardingSearchFlow(phoneNumber, data = {}) {
     screen: "BOARDING_SEARCH",
     payloadData,
     headerText: "Boarding search — filters",
-    bodyText: "Fill the form to find boarding houses.\n\nInstructions: Fill and submit the form.",
-    footerText: "Search",
+    bodyText: "Fill the form to find boarding houses.\n\nInstructions: Fill and submit the form.\n\nTo go back, type \"menu\".",
+    footerText: "CribMatch",
     flow_cta: "Search",
   });
 }
@@ -1042,8 +1042,8 @@ async function sendShopSearchFlow(phoneNumber, data = {}) {
     screen: "SHOP_SEARCH",
     payloadData,
     headerText: "Commercial/Shop search — filters",
-    bodyText: "Fill the form to find shops and commercial spaces.\n\nInstructions: Fill and submit the form.",
-    footerText: "Search",
+    bodyText: "Fill the form to find shops and commercial spaces.\n\nInstructions: Fill and submit the form.\n\nTo go back, type \"menu\".",
+    footerText: "CribMatch",
     flow_cta: "Search",
   });
 }
@@ -1072,8 +1072,8 @@ async function sendRentAChairSearchFlow(phoneNumber, data = {}) {
     screen: "RENT_A_CHAIR_SEARCH",
     payloadData,
     headerText: "Rent a chair — filters",
-    bodyText: "Fill the form to find chair/station rentals.\n\nInstructions: Fill and submit the form.",
-    footerText: "Search",
+    bodyText: "Fill the form to find chair/station rentals.\n\nInstructions: Fill and submit the form.\n\nTo go back, type \"menu\".",
+    footerText: "CribMatch",
     flow_cta: "Search",
   });
 }
@@ -1132,8 +1132,8 @@ async function sendListPropertyFlow(phoneNumber, data = {}) {
     screen: "LIST_PROPERTY",
     payloadData,
     headerText: data.headerText || "List a Property",
-    bodyText: data.bodyText || "Fill the form and submit to publish your listing.",
-    footerText: data.footerText || "Publish",
+    bodyText: (data.bodyText || "Fill the form and submit to publish your listing.") + "\n\nInstructions: Fill and submit the form.\n\nTo go back, type \"menu\".",
+    footerText: "CribMatch",
     flow_cta: data.flow_cta || "Publish listing",
   });
 }
@@ -1956,16 +1956,21 @@ export async function POST(request) {
 
   // SEARCH command (robust)
   if (cmd === "search" || cmd === "search properties" || cmd === "menu_search") {
-    await sendButtonsWithInstructionHeader(
+    const rows = [
+      { id: "search_residential", title: "Residential housing" },
+      { id: "search_rent_a_chair", title: "Rent a chair" },
+      { id: "search_boarding", title: "Boarding House" },
+      { id: "search_shop", title: "Commercial/Shoping" },
+    ];
+    await sendInteractiveList(
       phone,
       "Choose what you want to search for:",
-      [
-        { id: "search_residential", title: "Residential housing" },
-        { id: "search_rent_a_chair", title: "Rent a chair" },
-        { id: "search_boarding", title: "Boarding House" },
-        { id: "search_shop", title: "Commercial/Shoping" },
-      ],
-      "Tap an option to open the search form.",
+      rows,
+      {
+        headerText: "Search Properties",
+        buttonText: "Search",
+        sectionTitle: "Categories"
+      }
     );
     return NextResponse.json({ ok: true, note: "search-category-picker" });
   }
