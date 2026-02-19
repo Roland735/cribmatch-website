@@ -924,7 +924,7 @@ async function sendResidentialSearchFlow(phoneNumber, data = {}) {
     depositOptions,
     featuresOptions,
     min_price: typeof data.min_price === "string" ? data.min_price : "0",
-    max_price: typeof data.max_price === "string" ? data.max_price : "0",
+    max_price: typeof data.max_price === "string" ? data.max_price : "10000000",
     q: typeof data.q === "string" ? data.q : "",
     selected_city,
     selected_suburb,
@@ -975,7 +975,7 @@ async function sendBoardingSearchFlow(phoneNumber, data = {}) {
     duration,
     featuresOptions,
     min_price: typeof data.min_price === "string" ? data.min_price : "0",
-    max_price: typeof data.max_price === "string" ? data.max_price : "0",
+    max_price: typeof data.max_price === "string" ? data.max_price : "10000000",
     q: typeof data.q === "string" ? data.q : "",
     selected_city,
     selected_suburb,
@@ -1030,7 +1030,7 @@ async function sendShopSearchFlow(phoneNumber, data = {}) {
     depositOptions,
     featuresOptions,
     min_price: typeof data.min_price === "string" ? data.min_price : "0",
-    max_price: typeof data.max_price === "string" ? data.max_price : "0",
+    max_price: typeof data.max_price === "string" ? data.max_price : "10000000",
     q: typeof data.q === "string" ? data.q : "",
     selected_city,
     selected_suburb,
@@ -1073,7 +1073,7 @@ async function sendRentAChairSearchFlow(phoneNumber, data = {}) {
     serviceTypes,
     featuresOptions,
     min_price: typeof data.min_price === "string" ? data.min_price : "0",
-    max_price: typeof data.max_price === "string" ? data.max_price : "0",
+    max_price: typeof data.max_price === "string" ? data.max_price : "10000000",
     q: typeof data.q === "string" ? data.q : "",
     selected_city,
     selected_suburb,
@@ -1821,7 +1821,9 @@ export async function POST(request) {
       const screenUpper = String(screen || "").toUpperCase();
 
       const minPrice = extractNumber(flowData.min_price);
-      const maxPrice = extractNumber(flowData.max_price);
+      const maxPriceRaw = extractNumber(flowData.max_price);
+      // Treat 0 as "no max price" to avoid filtering out everything by default
+      const maxPrice = (maxPriceRaw === 0) ? null : maxPriceRaw;
       const q = String(flowData.q || "").trim();
 
       if (screenUpper === "BOARDING_SEARCH") {
