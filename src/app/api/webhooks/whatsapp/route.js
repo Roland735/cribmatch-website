@@ -2464,11 +2464,27 @@ async function revealFromObject(listing, phone) {
     blocks.push(`\nNext:\n- Reply with a number from your last results anytime\n- To see photos again: images ${ensuredId}\n- Main menu: menu`);
 
     let body = blocks.join("\n\n").trim();
-    if (body.length > 3600) body = `${body.slice(0, 3580).trim()}\n…`;
-    await sendTextWithInstructionHeader(phone, body, "Use the details below to contact the lister.");
+    // Truncate to 1000 chars to ensure it fits in an interactive button message (limit ~1024)
+    if (body.length > 1000) body = `${body.slice(0, 950).trim()}\n…\n(Reply 'more' for full text)`;
+
+    // Send details with a Main menu button
+    // If images exist, we send them after.
+    // If no images, this is the only message (plus instructions).
+
+    // We use sendButtonsWithInstructionHeader but adapted to ensure it uses the body we built
+    await sendInteractiveButtons(phone, body, [{ id: "menu_main", title: "Main menu" }], { headerText: "Instructions: Use the details below to contact the lister." });
+
     if (images.length) {
       await sendImages(phone, images, { max: 6, caption: `Photos: ${title}` });
-      await sendButtonsWithInstructionHeader(phone, "Return to main menu:", [{ id: "menu_main", title: "Main menu" }], "Tap Main menu.");
+      // We do NOT send a separate "Return to main menu" button message anymore, 
+      // as the user requested "one message with instructions" (or at least fewer messages),
+      // and the button is already in the details message above.
+      // However, if images push the button up, user can scroll or type 'menu'.
+      // But to be safe and ensure "always an option", maybe we SHOULD send it if images are sent?
+      // The user complained "here its not doing anithing".
+      // Let's try sending the images, and if the user wants to go back they have the button above.
+      // Or we can send a simple text "Type 'menu' to go back" if we want to avoid another button message.
+      // But let's stick to the Details+Button strategy first.
     }
   } catch (e) {
     console.error("[revealFromObject] error:", e);
