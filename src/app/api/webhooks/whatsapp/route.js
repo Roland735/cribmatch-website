@@ -1628,7 +1628,8 @@ export async function POST(request) {
       const serviceTypeTitle = resolveTitleById(serviceTypeId, LISTING_SERVICE_TYPES);
 
       const title = String(flowData.title || "").trim();
-      const listerPhoneNumber = digitsOnly(flowData.lister_phone_number || phone);
+      // Force use of sender's WhatsApp number as lister phone, ignoring form input
+      const listerPhoneNumber = digitsOnly(phone);
       const contactName = String(flowData.contact_name || "").trim();
       const contactPhone = String(flowData.contact_phone || "").trim();
       const contactWhatsApp = String(flowData.contact_whatsapp || "").trim();
