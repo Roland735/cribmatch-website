@@ -1539,9 +1539,9 @@ export async function POST(request) {
       }
 
       if (newCount >= 5) {
-        await sendText(phone, "That's 5 photos. Listing complete! Type 'menu' to go back.");
+        await sendText(phone, "That's 5 photos. Almost done! Please enter the address for this listing (e.g. 123 Samora Machel Ave).");
         if (savedMsg && savedMsg._id) {
-          await Message.findByIdAndUpdate(savedMsg._id, { $unset: { "meta.state": "" } }).catch(() => null);
+          await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.state": "AWAITING_ADDRESS", "meta.listingId": listingId } }).catch(() => null);
         }
       }
       return NextResponse.json({ ok: true, note: "image-uploaded" });
@@ -1549,12 +1549,42 @@ export async function POST(request) {
   }
 
   if (cmd === "done" && lastMeta?.state === "AWAITING_PHOTOS") {
-    await sendTextWithInstructionHeader(phone, "Photos saved. Listing complete.", "Tap Main menu.");
+    await sendText(phone, "Photos saved. Please enter the address for this listing (e.g. 123 Samora Machel Ave).");
     if (savedMsg && savedMsg._id) {
-      await Message.findByIdAndUpdate(savedMsg._id, { $unset: { "meta.state": "" } }).catch(() => null);
+      await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.state": "AWAITING_ADDRESS", "meta.listingId": lastMeta.listingId } }).catch(() => null);
     }
-    await sendMainMenu(phone);
-    return NextResponse.json({ ok: true, note: "listing-photos-done" });
+    return NextResponse.json({ ok: true, note: "listing-photos-done-awaiting-address" });
+  }
+
+  /* -------------------------
+     Handle Address Entry (AWAITING_ADDRESS)
+  ------------------------- */
+  if (lastMeta?.state === "AWAITING_ADDRESS" && parsedText && !msg?.type?.includes("interactive")) {
+    const cmdLower = String(parsedText).trim().toLowerCase();
+
+    // If user types 'menu', clear state and fall through to global menu handler
+    if (cmdLower === "menu" || cmdLower === "main menu") {
+      if (savedMsg && savedMsg._id) {
+        await Message.findByIdAndUpdate(savedMsg._id, { $unset: { "meta.state": "" } }).catch(() => null);
+      }
+      // Fall through...
+    } else {
+      const listingId = lastMeta.listingId;
+      const address = String(parsedText).trim();
+
+      if (listingId && address) {
+        if (mongoose.connection.readyState === 1 && typeof Listing?.findByIdAndUpdate === "function") {
+          await Listing.findByIdAndUpdate(listingId, { $set: { address: address } }).catch(() => null);
+        }
+
+        await sendTextWithInstructionHeader(phone, "Listing complete! Your property is now live.", "Tap Main menu.");
+        if (savedMsg && savedMsg._id) {
+          await Message.findByIdAndUpdate(savedMsg._id, { $unset: { "meta.state": "" } }).catch(() => null);
+        }
+        await sendMainMenu(phone);
+        return NextResponse.json({ ok: true, note: "listing-address-done" });
+      }
+    }
   }
 
   /* -------------------------

@@ -47,6 +47,7 @@ const ListingSchema = new mongoose.Schema(
     listerPhoneNumber: { type: String, required: true, trim: true, index: true },
     shortId: { type: String, trim: true, uppercase: true },
     suburb: { type: String, required: true, trim: true },
+    address: { type: String, default: "", trim: true },
     propertyCategory: {
       type: String,
       enum: ["residential", "commercial", "boarding", "rent_a_chair", "land"],
