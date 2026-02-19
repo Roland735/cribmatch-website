@@ -81,16 +81,33 @@ const ListingSchema = new mongoose.Schema(
 ListingSchema.index({ shortId: 1 }, { unique: true, sparse: true });
 
 ListingSchema.pre("validate", async function ensureShortId() {
-  if (this.shortId && typeof this.shortId === "string") {
-    this.shortId = this.shortId.trim().toUpperCase();
-    if (/^[A-Z0-9]{4}$/.test(this.shortId)) return;
-    this.shortId = undefined;
+  try {
+    if (this.shortId && typeof this.shortId === "string") {
+      this.shortId = this.shortId.trim().toUpperCase();
+      if (/^[A-Z0-9]{4}$/.test(this.shortId)) return;
+      this.shortId = undefined;
+    }
+
+    if (this.shortId) return;
+
+    const Model = this.constructor;
+    // Ensure Model is available and has exists method
+    if (!Model || typeof Model.exists !== "function") {
+      // If this.constructor is not the model yet (rare), try looking it up
+      const M = mongoose.models.Listing;
+      if (M && typeof M.exists === "function") {
+        this.shortId = await findUniqueShortId(M, 20);
+        return;
+      }
+      console.warn("ListingSchema pre-validate: Model not found or invalid");
+      return; // Skip shortId generation if model not ready
+    }
+
+    this.shortId = await findUniqueShortId(Model, 20);
+  } catch (err) {
+    console.error("ListingSchema pre-validate error:", err);
+    throw err; // Re-throw to fail validation
   }
-
-  if (this.shortId) return;
-
-  const Model = this.constructor;
-  this.shortId = await findUniqueShortId(Model, 20);
 });
 
 export const Listing =

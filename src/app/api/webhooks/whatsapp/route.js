@@ -1132,7 +1132,7 @@ async function sendListPropertyFlow(phoneNumber, data = {}) {
     screen: "LIST_PROPERTY",
     payloadData,
     headerText: data.headerText || "List a Property",
-    bodyText: (data.bodyText || "Fill the form and submit to publish your listing.") + "\n\nInstructions: Fill and submit the form.\n\nTo go back, type \"menu\".",
+    bodyText: (data.bodyText || "Fill the form and submit to publish your listing.\n\nInstructions: Fill and submit the form.") + "\n\nTo go back, type \"menu\".",
     footerText: "CribMatch",
     flow_cta: data.flow_cta || "Publish listing",
   });
@@ -1513,6 +1513,10 @@ export async function POST(request) {
   const flowData = getFlowDataFromPayload(payload);
   const screen = detectRequestedScreen(payload);
 
+  if (payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.interactive?.type === "nfm_reply") {
+    console.log("[webhook] nfm_reply received:", JSON.stringify({ screen, flowData }, null, 2));
+  }
+
   if (
     screen === "LIST_PROPERTY" ||
     (flowData && (flowData.listing_type || flowData.lister_phone_number || flowData.price_per_month))
@@ -1668,8 +1672,8 @@ export async function POST(request) {
       await sendButtonsWithInstructionHeader(phone, "Return to main menu:", [{ id: "menu_main", title: "Main menu" }], "Tap Main menu.");
       return NextResponse.json({ ok: true, note: "list-flow-published", listingId });
     } catch (e) {
-      console.warn("[webhook] list property flow error", e);
-      const msg = String(e?.message || "");
+      console.error("[webhook] list property flow error FULL:", e);
+      const msg = e instanceof Error ? e.message : String(e);
       const isValidation = e?.name === "ValidationError" || /validation/i.test(msg);
       const isDup = e?.code === 11000;
       const ref = msgId ? String(msgId).slice(-6) : _hash(`${phone}:${Date.now()}`).slice(0, 6).toUpperCase();
@@ -1681,7 +1685,7 @@ export async function POST(request) {
                 ref,
                 name: String(e?.name || ""),
                 code: e?.code ?? null,
-                message: String(e?.message || ""),
+                message: msg,
                 stack: String(e?.stack || "").slice(0, 2000),
               },
             },
@@ -1690,9 +1694,9 @@ export async function POST(request) {
       } catch (err) { }
       const userMessage = isValidation
         ? "Some values look invalid (for example: price). Please edit and submit the form again."
-        : (isDup ? "That listing code collided. Please submit the form again." : `Something went wrong while publishing your listing. Ref: ${ref} Err: ${msg.slice(0, 100)}`);
+        : (isDup ? "That listing code collided. Please submit the form again." : `Something went wrong while publishing your listing. Ref: ${ref} Err: ${msg.slice(0, 200)}`);
       await sendWithMainMenuButton(phone, userMessage, "Tap Main menu and try again.");
-      return NextResponse.json({ ok: true, note: "list-flow-error", error: msg });
+      return NextResponse.json({ ok: true, note: "list-flow-error", error: msg, stack: String(e?.stack || "") });
     }
   }
 
