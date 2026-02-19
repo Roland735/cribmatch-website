@@ -1057,18 +1057,26 @@ async function sendShopSearchFlow(phoneNumber, data = {}) {
 async function sendRentAChairSearchFlow(phoneNumber, data = {}) {
   const hasId = (list, id) => Array.isArray(list) && list.some((o) => o && o.id === id);
 
+  const cities = PREDEFINED_CITIES;
+  const suburbs = PREDEFINED_SUBURBS;
   const serviceTypes = CHAIR_SERVICE_TYPES;
   const featuresOptions = CHAIR_FEATURES_OPTIONS;
 
+  const selected_city = hasId(cities, String(data.selected_city || "harare")) ? String(data.selected_city || "harare") : (cities[0]?.id || "harare");
+  const selected_suburb = hasId(suburbs, String(data.selected_suburb || "any")) ? String(data.selected_suburb || "any") : "any";
   const selected_service_type = hasId(serviceTypes, String(data.selected_service_type || "any")) ? String(data.selected_service_type || "any") : "any";
   const selected_features = Array.isArray(data.selected_features) ? data.selected_features : [];
 
   const payloadData = {
+    cities,
+    suburbs,
     serviceTypes,
     featuresOptions,
     min_price: typeof data.min_price === "string" ? data.min_price : "0",
     max_price: typeof data.max_price === "string" ? data.max_price : "0",
     q: typeof data.q === "string" ? data.q : "",
+    selected_city,
+    selected_suburb,
     selected_service_type,
     selected_features,
   };
