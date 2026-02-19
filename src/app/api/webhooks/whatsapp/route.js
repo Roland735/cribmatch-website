@@ -10,6 +10,7 @@
 //
 import { NextResponse } from "next/server";
 import crypto from "crypto";
+import mongoose from "mongoose";
 import { dbConnect, WebhookEvent, Listing } from "@/lib/db";
 import Message from "@/lib/Message";
 import { getListingById, searchPublishedListings, getListingFacets } from "@/lib/getListings";
@@ -1132,7 +1133,7 @@ async function sendListPropertyFlow(phoneNumber, data = {}) {
     screen: "LIST_PROPERTY",
     payloadData,
     headerText: data.headerText || "List a Property",
-    bodyText: (data.bodyText || "Fill the form and submit to publish your listing.\n\nInstructions: Fill and submit the form.") + "\n\nTo go back, type \"menu\".",
+    bodyText: (data.bodyText || "Instructions: Fill and submit the form to publish your listing.") + "\n\nTo go back, type \"menu\".",
     footerText: "CribMatch",
     flow_cta: data.flow_cta || "Publish listing",
   });
@@ -1508,6 +1509,42 @@ export async function POST(request) {
   const cmd = userRaw.toLowerCase();
 
   /* -------------------------
+     Handle Image Uploads (AWAITING_PHOTOS)
+  ------------------------- */
+  if (msg?.type === "image" && lastMeta?.state === "AWAITING_PHOTOS") {
+    const listingId = lastMeta.listingId;
+    const currentCount = lastMeta.photoCount || 0;
+    const imageId = msg.image?.id;
+
+    if (listingId && imageId) {
+      // Fire and forget image fetch/add
+      fetchAndAddImageToListing(listingId, imageId, process.env.WHATSAPP_API_TOKEN).catch(err => console.error("Async image fetch error", err));
+
+      const newCount = currentCount + 1;
+      if (savedMsg && savedMsg._id) {
+        await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.photoCount": newCount } }).catch(() => null);
+      }
+
+      if (newCount >= 5) {
+        await sendText(phone, "That's 5 photos. Listing complete! Type 'menu' to go back.");
+        if (savedMsg && savedMsg._id) {
+          await Message.findByIdAndUpdate(savedMsg._id, { $unset: { "meta.state": "" } }).catch(() => null);
+        }
+      }
+      return NextResponse.json({ ok: true, note: "image-uploaded" });
+    }
+  }
+
+  if (cmd === "done" && lastMeta?.state === "AWAITING_PHOTOS") {
+    await sendTextWithInstructionHeader(phone, "Photos saved. Listing complete.", "Tap Main menu.");
+    if (savedMsg && savedMsg._id) {
+      await Message.findByIdAndUpdate(savedMsg._id, { $unset: { "meta.state": "" } }).catch(() => null);
+    }
+    await sendMainMenu(phone);
+    return NextResponse.json({ ok: true, note: "listing-photos-done" });
+  }
+
+  /* -------------------------
      Flow response handling (Search)
   ------------------------- */
   const flowData = getFlowDataFromPayload(payload);
@@ -1669,8 +1706,22 @@ export async function POST(request) {
       ].filter(Boolean).join("\n");
 
       await sendTextWithInstructionHeader(phone, confirmText, "Listing published.");
-      await sendButtonsWithInstructionHeader(phone, "Return to main menu:", [{ id: "menu_main", title: "Main menu" }], "Tap Main menu.");
-      return NextResponse.json({ ok: true, note: "list-flow-published", listingId });
+
+      // Prompt for photos
+      await sendText(phone, "Now, please send up to 5 photos for your listing. Send 'done' when finished.");
+
+      // Update state to AWAITING_PHOTOS
+      if (dbAvailable && savedMsg && savedMsg._id) {
+        await Message.findByIdAndUpdate(savedMsg._id, {
+          $set: {
+            "meta.state": "AWAITING_PHOTOS",
+            "meta.listingId": listingId,
+            "meta.photoCount": 0
+          }
+        }).catch(() => null);
+      }
+
+      return NextResponse.json({ ok: true, note: "list-flow-published-awaiting-photos", listingId });
     } catch (e) {
       console.error("[webhook] list property flow error FULL:", e);
       const msg = e instanceof Error ? e.message : String(e);
@@ -2417,5 +2468,26 @@ async function revealFromObject(listing, phone) {
   } catch (e) {
     console.error("[revealFromObject] error:", e);
     try { await sendWithMainMenuButton(phone, "Sorry — couldn't fetch contact details right now.", "Tap Main menu."); } catch { }
+  }
+}
+
+
+
+async function fetchAndAddImageToListing(listingId, imageId, token) {
+  if (!listingId || !imageId) return;
+  const url = `https://graph.facebook.com/v18.0/${imageId}`;
+  try {
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) throw new Error("fetch-image-url-failed");
+    const json = await res.json();
+    const mediaUrl = json.url;
+    if (!mediaUrl) throw new Error("no-url-in-response");
+
+    // For now, let's just append the URL.
+    if (mongoose.connection.readyState === 1 && typeof Listing?.findByIdAndUpdate === "function") {
+      await Listing.findByIdAndUpdate(listingId, { $push: { images: mediaUrl } }).catch(() => null);
+    }
+  } catch (e) {
+    console.error("[fetchAndAddImageToListing] error:", e);
   }
 }
