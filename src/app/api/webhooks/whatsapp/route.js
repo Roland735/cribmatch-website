@@ -2027,10 +2027,35 @@ export async function POST(request) {
   // edit my listings
   if (cmd === "menu_edit_listings" || cmd === "edit my listings") {
     if (dbAvailable && typeof Listing?.find === "function") {
-      const myListings = await Listing.find({ listerPhoneNumber: phone }).sort({ createdAt: -1 }).limit(10).lean().exec().catch(() => []);
+      let myListings = await Listing.find({ listerPhoneNumber: phone }).sort({ createdAt: -1 }).limit(10).lean().exec().catch(() => []);
       if (!myListings.length) {
-        await sendWithMainMenuButton(phone, "You don't have any listings yet.", "Tap Main menu, then List a property.");
-        return NextResponse.json({ ok: true, note: "edit-listings-empty" });
+        // Fallback: try without country code if starts with 263
+        let altPhone = null;
+        if (phone.startsWith("263")) {
+          altPhone = "0" + phone.slice(3);
+        }
+
+        let myListingsAlt = [];
+        if (altPhone) {
+          myListingsAlt = await Listing.find({ listerPhoneNumber: altPhone }).sort({ createdAt: -1 }).limit(10).lean().exec().catch(() => []);
+        }
+
+        if (myListingsAlt.length > 0) {
+          myListings = myListingsAlt;
+        } else {
+          // Fallback 2: Regex search for last 8 digits (catch-all for format mismatches)
+          const last8 = phone.length > 8 ? phone.slice(-8) : phone;
+          console.log(`[edit-listings] Try regex fallback for last8: ${last8}`);
+          const myListingsRegex = await Listing.find({ listerPhoneNumber: { $regex: last8, $options: "i" } }).sort({ createdAt: -1 }).limit(10).lean().exec().catch(() => []);
+
+          if (myListingsRegex.length > 0) {
+            myListings = myListingsRegex;
+          } else {
+            console.log(`[edit-listings] No listings found for phone: ${phone}`);
+            await sendWithMainMenuButton(phone, `You don't have any listings yet. (ID: ${phone})`, "Tap Main menu, then List a property.");
+            return NextResponse.json({ ok: true, note: "edit-listings-empty" });
+          }
+        }
       }
 
       const rows = myListings.map((l) => {
