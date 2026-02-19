@@ -2429,17 +2429,6 @@ async function tryRevealByIdOrCached(listingId, phone, idsFromMeta = [], results
   }
 }
 
-async function sendPostSelectionButtons(listing, phone) {
-  try {
-    const theId = getIdFromListing(listing) || String(listing._id || "");
-    await sendInteractiveButtons(phone, "What next?", [
-      { id: "menu_main", title: "Main menu" },
-      { id: "menu_contacts", title: "View my contacts" },
-      { id: `view_images_${theId}`, title: "View images" },
-    ], { headerText: "Instructions: Tap an option" });
-  } catch (e) { console.warn("[sendPostSelectionButtons] error:", e); }
-}
-
 async function saveUserSelectedListing(phone, listingId, dbAvailable) {
   try {
     if (!dbAvailable) return;
@@ -2459,6 +2448,7 @@ async function revealFromObject(listing, phone) {
     listing = ensuredListing;
     const title = listing.title || listing.name || "Listing";
     const suburb = listing.suburb || listing.location?.suburb || "";
+    const address = listing.address || listing.location?.address || "";
     const price = listing.pricePerMonth != null ? `$${listing.pricePerMonth}` : (listing.price != null ? `$${listing.price}` : "N/A");
     const bedrooms = listing.bedrooms != null ? `${listing.bedrooms} bed(s)` : "";
     const description = listing.description ? String(listing.description).slice(0, 700) : "";
@@ -2476,6 +2466,7 @@ async function revealFromObject(listing, phone) {
       code ? `CODE: ${code}` : null,
       ensuredId ? `Listing ID: ${ensuredId}` : null,
       suburb ? `Suburb: ${suburb}` : null,
+      address ? `Address: ${address}` : null,
       bedrooms ? `Bedrooms: ${bedrooms}` : null,
       `Price: ${price}`,
       "",
