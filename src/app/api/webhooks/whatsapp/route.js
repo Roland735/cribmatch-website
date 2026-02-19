@@ -2390,7 +2390,6 @@ export async function POST(request) {
     if (dbAvailable && typeof Purchase?.find === "function") {
       const purchases = await Purchase.find({ phone: digitsOnly(phone) })
         .sort({ createdAt: -1 })
-        .populate("listingId", "title status price currency")
         .limit(20)
         .lean()
         .exec()
@@ -2401,9 +2400,37 @@ export async function POST(request) {
         return NextResponse.json({ ok: true, note: "no-purchases" });
       }
 
+      // Manual populate to handle both DB listings and snapshots (e.g. seed listings)
+      const listingIds = purchases.map(p => p.listingId).filter(Boolean);
+      let foundListings = [];
+
+      if (listingIds.length > 0 && typeof Listing?.find === "function") {
+        try {
+          // Only query valid ObjectIds to prevent CastError
+          const validObjectIds = listingIds.filter(id => /^[0-9a-fA-F]{24}$/.test(id));
+          if (validObjectIds.length > 0) {
+            foundListings = await Listing.find({ _id: { $in: validObjectIds } })
+              .select("title status price currency")
+              .lean()
+              .exec();
+          }
+        } catch (e) {
+          console.warn("[menu_purchases] Manual populate error", e);
+        }
+      }
+
       const rows = purchases
         .map((p) => {
-          const listing = p.listingId;
+          const id = p.listingId;
+          let listing = foundListings.find(l => String(l._id) === String(id));
+          let fromSnapshot = false;
+
+          // Fallback to snapshot if not found in DB (e.g. seed listing or deleted)
+          if (!listing && p.listingSnapshot) {
+            listing = { ...p.listingSnapshot, _id: id };
+            fromSnapshot = true;
+          }
+
           if (!listing) return null;
 
           const isPublished = listing.status === "published";
@@ -2747,19 +2774,27 @@ async function recordPurchase(phone, listing, dbAvailable) {
   if (!dbAvailable || !listing) return;
   try {
     const listingId = getIdFromListing(listing);
-    // Check if valid ObjectId string (24 hex chars)
-    if (!listingId || !/^[0-9a-fA-F]{24}$/.test(listingId)) return;
+    if (!listingId) return;
 
     // Also save to Message (existing logic)
     if (typeof Message?.findOneAndUpdate === "function") {
       await Message.findOneAndUpdate({ phone: digitsOnly(phone) }, { $set: { "meta.listingIdSelected": listingId, "meta.state": "CONTACT_REVEALED" } }, { sort: { createdAt: -1 }, upsert: false }).exec().catch(() => null);
     }
 
-    // Save to Purchase
+    // Save to Purchase with snapshot
     if (typeof Purchase?.updateOne === "function") {
+      const snapshot = {
+        title: listing.title,
+        price: listing.price || listing.pricePerMonth,
+        currency: listing.currency,
+        status: listing.status
+      };
       await Purchase.updateOne(
         { phone: digitsOnly(phone), listingId: listingId },
-        { $setOnInsert: { createdAt: new Date() } },
+        {
+          $set: { listingSnapshot: snapshot },
+          $setOnInsert: { createdAt: new Date() }
+        },
         { upsert: true }
       ).exec();
     }

@@ -149,7 +149,8 @@ export const WebhookEvent =
 
 const PurchaseSchema = new mongoose.Schema({
   phone: { type: String, required: true, index: true },
-  listingId: { type: mongoose.Schema.Types.ObjectId, ref: 'Listing', required: true },
+  listingId: { type: String, ref: 'Listing', required: true },
+  listingSnapshot: { type: mongoose.Schema.Types.Mixed }, // Fallback for when listing is deleted or ID is generated
   createdAt: { type: Date, default: Date.now }
 });
 PurchaseSchema.index({ phone: 1, listingId: 1 }, { unique: true });
