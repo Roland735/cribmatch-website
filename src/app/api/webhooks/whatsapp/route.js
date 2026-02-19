@@ -935,7 +935,7 @@ async function sendResidentialSearchFlow(phoneNumber, data = {}) {
     screen: "SEARCH",
     payloadData,
     headerText: "Find rentals — filters",
-    bodyText: "Choose from predefined options or leave blanks for broader search.",
+    bodyText: "Choose from predefined options or leave blanks for broader search.\n\nInstructions: Fill and submit the form.",
     footerText: "Search",
     flow_cta: "Search",
   });
@@ -1970,10 +1970,12 @@ export async function POST(request) {
 
   if (cmd === "search_residential") {
     const flowResp = await sendResidentialSearchFlow(phone).catch((e) => ({ error: e }));
-    if (flowResp?.error || flowResp?.suppressed) {
+    if (flowResp?.suppressed) {
+      return NextResponse.json({ ok: true, note: "search-residential-suppressed", flowResp });
+    }
+    if (flowResp?.error) {
       await sendWithMainMenuButton(phone, "Couldn't open the residential search form right now.", "Tap Main menu and try again.");
-    } else {
-      await sendWithMainMenuButton(phone, "Residential search form opened.", "Fill and submit the form.");
+      return NextResponse.json({ ok: true, note: "search-residential-open-failed", flowResp });
     }
     return NextResponse.json({ ok: true, note: "search-residential-opened", flowResp });
   }
