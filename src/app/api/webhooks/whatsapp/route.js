@@ -2504,16 +2504,10 @@ async function revealFromObject(listing, phone) {
     await sendInteractiveButtons(phone, body, [{ id: "menu_main", title: "Main menu" }], { headerText: "Instructions: Use the details below to contact the lister." });
 
     if (images.length) {
+      // NOTE: sendImages has built-in deduplication, so it's safe to call here.
+      // But we will pass a custom hash suffix or rely on image URL hashing to avoid accidental suppression
+      // if the user requested the same images recently.
       await sendImages(phone, images, { max: 6, caption: `Photos: ${title}` });
-      // We do NOT send a separate "Return to main menu" button message anymore, 
-      // as the user requested "one message with instructions" (or at least fewer messages),
-      // and the button is already in the details message above.
-      // However, if images push the button up, user can scroll or type 'menu'.
-      // But to be safe and ensure "always an option", maybe we SHOULD send it if images are sent?
-      // The user complained "here its not doing anithing".
-      // Let's try sending the images, and if the user wants to go back they have the button above.
-      // Or we can send a simple text "Type 'menu' to go back" if we want to avoid another button message.
-      // But let's stick to the Details+Button strategy first.
     }
   } catch (e) {
     console.error("[revealFromObject] error:", e);
