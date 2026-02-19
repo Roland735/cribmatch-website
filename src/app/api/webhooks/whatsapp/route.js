@@ -987,7 +987,7 @@ async function sendBoardingSearchFlow(phoneNumber, data = {}) {
     screen: "BOARDING_SEARCH",
     payloadData,
     headerText: "Boarding search — filters",
-    bodyText: "Fill the form to find boarding houses.",
+    bodyText: "Fill the form to find boarding houses.\n\nInstructions: Fill and submit the form.",
     footerText: "Search",
     flow_cta: "Search",
   });
@@ -1042,7 +1042,7 @@ async function sendShopSearchFlow(phoneNumber, data = {}) {
     screen: "SHOP_SEARCH",
     payloadData,
     headerText: "Commercial/Shop search — filters",
-    bodyText: "Fill the form to find shops and commercial spaces.",
+    bodyText: "Fill the form to find shops and commercial spaces.\n\nInstructions: Fill and submit the form.",
     footerText: "Search",
     flow_cta: "Search",
   });
@@ -1072,7 +1072,7 @@ async function sendRentAChairSearchFlow(phoneNumber, data = {}) {
     screen: "RENT_A_CHAIR_SEARCH",
     payloadData,
     headerText: "Rent a chair — filters",
-    bodyText: "Fill the form to find chair/station rentals.",
+    bodyText: "Fill the form to find chair/station rentals.\n\nInstructions: Fill and submit the form.",
     footerText: "Search",
     flow_cta: "Search",
   });
@@ -1929,17 +1929,19 @@ export async function POST(request) {
   if (cmd === "list" || cmd === "list a property" || cmd === "menu_list") {
     const flowResp = await sendListPropertyFlow(phone, {
       headerText: "List a property — lister flow",
-      bodyText: "Fill the fields below. Required fields are marked.",
+      bodyText: "Fill the fields below. Required fields are marked.\n\nInstructions: Fill and submit the form to publish your listing.",
       footerText: "Publish listing",
       flow_cta: "Publish listing",
     }).catch((e) => ({ error: e }));
 
-    if (flowResp?.error || flowResp?.suppressed) {
+    if (flowResp?.suppressed) {
+      return NextResponse.json({ ok: true, note: "list-flow-suppressed", flowResp });
+    }
+    if (flowResp?.error) {
       await sendWithMainMenuButton(phone, "Couldn't open the listing form right now.", "Tap Main menu and try again.");
       return NextResponse.json({ ok: true, note: "list-flow-open-failed" });
     }
 
-    await sendWithMainMenuButton(phone, "Listing form opened.", "Fill and submit the form to publish your listing.");
     return NextResponse.json({ ok: true, note: "list-flow-opened" });
   }
 
@@ -1982,30 +1984,36 @@ export async function POST(request) {
 
   if (cmd === "search_boarding") {
     const flowResp = await sendBoardingSearchFlow(phone).catch((e) => ({ error: e }));
-    if (flowResp?.error || flowResp?.suppressed) {
+    if (flowResp?.suppressed) {
+      return NextResponse.json({ ok: true, note: "search-boarding-suppressed", flowResp });
+    }
+    if (flowResp?.error) {
       await sendWithMainMenuButton(phone, "Couldn't open the boarding search form right now.", "Tap Main menu and try again.");
-    } else {
-      await sendWithMainMenuButton(phone, "Boarding search form opened.", "Fill and submit the form.");
+      return NextResponse.json({ ok: true, note: "search-boarding-open-failed", flowResp });
     }
     return NextResponse.json({ ok: true, note: "search-boarding-opened", flowResp });
   }
 
   if (cmd === "search_shop") {
     const flowResp = await sendShopSearchFlow(phone).catch((e) => ({ error: e }));
-    if (flowResp?.error || flowResp?.suppressed) {
+    if (flowResp?.suppressed) {
+      return NextResponse.json({ ok: true, note: "search-shop-suppressed", flowResp });
+    }
+    if (flowResp?.error) {
       await sendWithMainMenuButton(phone, "Couldn't open the commercial/shop search form right now.", "Tap Main menu and try again.");
-    } else {
-      await sendWithMainMenuButton(phone, "Commercial/shop search form opened.", "Fill and submit the form.");
+      return NextResponse.json({ ok: true, note: "search-shop-open-failed", flowResp });
     }
     return NextResponse.json({ ok: true, note: "search-shop-opened", flowResp });
   }
 
   if (cmd === "search_rent_a_chair") {
     const flowResp = await sendRentAChairSearchFlow(phone).catch((e) => ({ error: e }));
-    if (flowResp?.error || flowResp?.suppressed) {
+    if (flowResp?.suppressed) {
+      return NextResponse.json({ ok: true, note: "search-chair-suppressed", flowResp });
+    }
+    if (flowResp?.error) {
       await sendWithMainMenuButton(phone, "Couldn't open the rent-a-chair search form right now.", "Tap Main menu and try again.");
-    } else {
-      await sendWithMainMenuButton(phone, "Rent-a-chair search form opened.", "Fill and submit the form.");
+      return NextResponse.json({ ok: true, note: "search-chair-open-failed", flowResp });
     }
     return NextResponse.json({ ok: true, note: "search-chair-opened", flowResp });
   }
