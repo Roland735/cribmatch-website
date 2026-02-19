@@ -794,6 +794,13 @@ function resolveTitleById(id, options = []) {
   return match ? String(match.title || "").trim() : raw;
 }
 
+function resolveIdByTitle(title, options = []) {
+  const raw = String(title || "").trim().toLowerCase();
+  if (!raw) return "";
+  const match = Array.isArray(options) ? options.find((o) => String(o.title || "").trim().toLowerCase() === raw) : null;
+  return match ? match.id : "";
+}
+
 function buildInstructionHeader(instructionText) {
   const raw = String(instructionText || "").trim();
   if (!raw) return "Instructions: Reply with your answer or tap Main menu.";
@@ -1425,6 +1432,7 @@ function getCanonicalMessage(payload) {
 async function sendMainMenu(phone) {
   const buttons = [
     { id: "menu_list", title: "List a property" },
+    { id: "menu_edit_listings", title: "Edit my listings" },
     { id: "menu_search", title: "Search properties" },
     { id: "menu_contacts", title: "View past messages" },
     { id: "menu_report", title: "Report listing" },
@@ -1695,7 +1703,8 @@ export async function POST(request) {
       }
 
       const suburb = `${suburbTitle}${cityTitle ? `, ${cityTitle}` : ""}`.trim();
-      const createDoc = {
+
+      const baseDoc = {
         title,
         listerPhoneNumber,
         suburb,
@@ -1706,7 +1715,6 @@ export async function POST(request) {
         bedrooms: bedroomsSafe,
         description,
         features,
-        images,
         contactName,
         contactPhone,
         contactWhatsApp,
@@ -1718,26 +1726,38 @@ export async function POST(request) {
         status: "published",
       };
 
-      const createWithRetry = async (attemptsLeft) => {
-        try {
-          return await Listing.create(createDoc);
-        } catch (err) {
-          const msg = String(err?.message || "");
-          const isDupShortId =
-            err?.code === 11000 &&
-            (err?.keyPattern?.shortId || err?.keyValue?.shortId || /shortId/i.test(msg));
-          if (!isDupShortId || attemptsLeft <= 1) throw err;
-          return createWithRetry(attemptsLeft - 1);
-        }
-      };
+      const editingListingId = lastMeta?.editingListingId;
+      let created = null;
 
-      const created = await createWithRetry(5);
-      if (!created) throw new Error("listing-create-failed");
+      if (editingListingId) {
+        if (mongoose.connection.readyState === 1 && typeof Listing?.findByIdAndUpdate === "function") {
+          created = await Listing.findByIdAndUpdate(editingListingId, { $set: baseDoc }, { new: true });
+        }
+      } else {
+        const createDoc = { ...baseDoc, images: [] };
+        const createWithRetry = async (attemptsLeft) => {
+          try {
+            return await Listing.create(createDoc);
+          } catch (err) {
+            const msg = String(err?.message || "");
+            const isDupShortId =
+              err?.code === 11000 &&
+              (err?.keyPattern?.shortId || err?.keyValue?.shortId || /shortId/i.test(msg));
+            if (!isDupShortId || attemptsLeft <= 1) throw err;
+            return createWithRetry(attemptsLeft - 1);
+          }
+        };
+        created = await createWithRetry(5);
+      }
+
+      if (!created) throw new Error(editingListingId ? "listing-update-failed" : "listing-create-failed");
 
       const listingId = created?._id?.toString?.() ?? String(created?._id || "");
       const shortId = getShortIdFromListing(created);
+      const actionText = editingListingId ? "Listing updated." : "Listing published.";
+
       const confirmText = [
-        `Listing published.`,
+        actionText,
         shortId ? `CODE: ${shortId}` : null,
         listingId ? `ID: ${listingId}` : null,
         `Title: ${title}`,
@@ -1748,7 +1768,7 @@ export async function POST(request) {
         `Price: ${pricePerMonth}`,
       ].filter(Boolean).join("\n");
 
-      await sendTextWithInstructionHeader(phone, confirmText, "Listing published.");
+      await sendTextWithInstructionHeader(phone, confirmText, actionText);
 
       // Prompt for photos
       await sendText(phone, "Now, please send up to 5 photos for your listing. Send 'done' when finished.");
@@ -2001,6 +2021,95 @@ export async function POST(request) {
   if (/^menu$|^menu_main$|^main menu$/i.test(userRaw)) {
     await sendMainMenu(phone);
     return NextResponse.json({ ok: true, note: "menu-sent" });
+  }
+
+  // edit my listings
+  if (cmd === "menu_edit_listings" || cmd === "edit my listings") {
+    if (dbAvailable && typeof Listing?.find === "function") {
+      const myListings = await Listing.find({ listerPhoneNumber: phone }).sort({ createdAt: -1 }).limit(10).lean().exec().catch(() => []);
+      if (!myListings.length) {
+        await sendWithMainMenuButton(phone, "You don't have any listings yet.", "Tap Main menu, then List a property.");
+        return NextResponse.json({ ok: true, note: "edit-listings-empty" });
+      }
+
+      const rows = myListings.map((l) => {
+        const title = String(l.title || "Untitled").slice(0, 24);
+        const price = l.pricePerMonth ? `$${l.pricePerMonth}` : "No Price";
+        return {
+          id: `edit_listing_${l._id}`,
+          title: title,
+          description: `${price} - ${String(l.suburb || "").slice(0, 20)}`
+        };
+      });
+
+      await sendInteractiveList(phone, "Select a listing to edit:", rows, { headerText: "Your Listings", buttonText: "Edit", sectionTitle: "My Listings" });
+      return NextResponse.json({ ok: true, note: "edit-listings-sent" });
+    }
+    return NextResponse.json({ ok: true, note: "edit-listings-no-db" });
+  }
+
+  // handle listing selection for edit
+  if (cmd.startsWith("edit_listing_")) {
+    const listingId = cmd.replace("edit_listing_", "");
+    if (dbAvailable && typeof Listing?.findById === "function") {
+      const listing = await Listing.findById(listingId).lean().exec().catch(() => null);
+      if (!listing) {
+        await sendWithMainMenuButton(phone, "Listing not found.", "Tap Main menu.");
+        return NextResponse.json({ ok: true, note: "edit-listing-not-found" });
+      }
+
+      const suburbParts = String(listing.suburb || "").split(",");
+      const suburbTitle = suburbParts[0]?.trim();
+      const cityTitle = suburbParts[1]?.trim() || "Harare";
+
+      const payloadOverrides = {
+        listing_type: listing.propertyCategory || "residential",
+        title: listing.title || "",
+        lister_phone_number: listing.listerPhoneNumber || "",
+        contact_name: listing.contactName || "",
+        contact_phone: listing.contactPhone || "",
+        contact_whatsapp: listing.contactWhatsApp || "",
+        contact_email: listing.contactEmail || "",
+        selected_city: resolveIdByTitle(cityTitle, PREDEFINED_CITIES) || "harare",
+        selected_suburb: resolveIdByTitle(suburbTitle, PREDEFINED_SUBURBS) || "any",
+        selected_property_type: listing.propertyCategory === "residential" ? (resolveIdByTitle(listing.propertyType, PREDEFINED_PROPERTY_TYPES) || "any") : "any",
+        selected_shop_type: listing.propertyCategory === "commercial" ? (resolveIdByTitle(listing.propertyType, SHOP_TYPES) || "any") : "any",
+        selected_room_type: listing.propertyCategory === "boarding" ? (resolveIdByTitle(listing.propertyType, BOARDING_ROOM_TYPES) || "any") : "any",
+        selected_service_type: listing.propertyCategory === "rent_a_chair" ? (resolveIdByTitle(listing.propertyType, CHAIR_SERVICE_TYPES) || "any") : "any",
+        selected_bedrooms: String(listing.bedrooms || "any"),
+        selected_occupancy: String(listing.occupancy || "any"),
+        selected_gender: String(listing.genderPreference || "any"),
+        selected_duration: String(listing.duration || "any"),
+        number_of_students: String(listing.numberOfStudents || "1"),
+        price_per_month: String(listing.pricePerMonth || ""),
+        deposit_amount: String(listing.deposit || ""),
+        description: listing.description || "",
+        selected_residential_features: (listing.features || []).map(f => resolveIdByTitle(f, PREDEFINED_FEATURES_OPTIONS)).filter(Boolean),
+        selected_boarding_features: (listing.features || []).map(f => resolveIdByTitle(f, BOARDING_FEATURES_OPTIONS)).filter(Boolean),
+        selected_commercial_features: (listing.features || []).map(f => resolveIdByTitle(f, SHOP_FEATURES_OPTIONS)).filter(Boolean),
+        selected_chair_features: (listing.features || []).map(f => resolveIdByTitle(f, CHAIR_FEATURES_OPTIONS)).filter(Boolean),
+      };
+
+      const flowResp = await sendListPropertyFlow(phone, {
+        headerText: "Edit Listing",
+        bodyText: "Update the fields below. Submit to save changes.",
+        footerText: "Update Listing",
+        flow_cta: "Update",
+        payloadOverrides
+      });
+
+      if (flowResp?.error) {
+        await sendWithMainMenuButton(phone, "Couldn't open the edit form.", "Tap Main menu.");
+        return NextResponse.json({ ok: true, note: "edit-flow-failed" });
+      }
+
+      if (savedMsg && savedMsg._id) {
+        await Message.findByIdAndUpdate(savedMsg._id, {
+          $set: { "meta.state": "EDITING_LISTING", "meta.editingListingId": listingId }
+        }).catch(() => null);
+      }
+      return NextResponse.json({ ok: true, note: "edit-flow-opened" });
+    }
   }
 
   // lookup by CODE (4 chars)
