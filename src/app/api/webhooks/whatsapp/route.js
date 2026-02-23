@@ -2399,9 +2399,12 @@ export async function POST(request) {
   // Handle "Delete Photos Menu"
   if (cmd.startsWith("delete_photos_menu_")) {
     const listingId = cmd.replace("delete_photos_menu_", "");
-    // Clear selection state
+    // Clear selection state and set flow state
     if (savedMsg && savedMsg._id) {
-      await Message.findByIdAndUpdate(savedMsg._id, { $unset: { "meta.deleteSelection": "" } }).catch(() => null);
+      await Message.findByIdAndUpdate(savedMsg._id, {
+        $unset: { "meta.deleteSelection": "" },
+        $set: { "meta.state": "DELETING_PHOTOS" }
+      }).catch(() => null);
     }
     await showDeletePhotosMenu(phone, listingId, []);
     return NextResponse.json({ ok: true, note: "delete-photos-menu" });
@@ -2421,9 +2424,14 @@ export async function POST(request) {
         ? currentSelection.filter(i => i !== idx)
         : [...currentSelection, idx];
 
-      // Save selection state
+      // Save selection state and ensure we stay in DELETING_PHOTOS state so lastMeta picks this up
       if (savedMsg && savedMsg._id) {
-        await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.deleteSelection": newSelection } }).catch(() => null);
+        await Message.findByIdAndUpdate(savedMsg._id, {
+          $set: {
+            "meta.deleteSelection": newSelection,
+            "meta.state": "DELETING_PHOTOS"
+          }
+        }).catch(() => null);
       }
 
       await showDeletePhotosMenu(phone, listingId, newSelection);
@@ -2449,14 +2457,22 @@ export async function POST(request) {
         await sendText(phone, `✅ Deleted ${selection.length} photo(s).`);
       }
 
-      // Clear selection and show menu again
+      // Reset selection and keep state active for further deletions if needed
       if (savedMsg && savedMsg._id) {
-        await Message.findByIdAndUpdate(savedMsg._id, { $unset: { "meta.deleteSelection": "" } }).catch(() => null);
+        await Message.findByIdAndUpdate(savedMsg._id, {
+          $set: { "meta.state": "DELETING_PHOTOS", "meta.deleteSelection": [] }
+        }).catch(() => null);
       }
       await showDeletePhotosMenu(phone, listingId, []);
       return NextResponse.json({ ok: true, note: "photos-deleted-selection" });
     } else {
       await sendText(phone, "⚠️ No photos selected.");
+      // Ensure state is preserved even if nothing was deleted
+      if (savedMsg && savedMsg._id) {
+        await Message.findByIdAndUpdate(savedMsg._id, {
+          $set: { "meta.state": "DELETING_PHOTOS", "meta.deleteSelection": [] }
+        }).catch(() => null);
+      }
       await showDeletePhotosMenu(phone, listingId, []);
       return NextResponse.json({ ok: true, note: "photos-deleted-none" });
     }
