@@ -2329,7 +2329,7 @@ export async function POST(request) {
 
   // Handle "Manage Photos" Menu
   if (cmd.startsWith("manage_photos_")) {
-    const listingId = cmd.replace("manage_photos_", "");
+    const listingId = cmd.replace("manage_photos_", "").trim();
     if (dbAvailable && typeof Listing?.findById === "function") {
       const listing = await Listing.findById(listingId).select("images title").lean().exec().catch(() => null);
       if (!listing) return NextResponse.json({ ok: true });
@@ -2337,14 +2337,52 @@ export async function POST(request) {
       const count = (listing.images || []).length;
       const body = `📷 Photos for "${listing.title}"\n📊 Current count: ${count} photo(s).`;
 
-      const buttons = [
-        { id: `add_photos_${listingId}`, title: "➕ Add Photos" },
-        { id: `delete_photos_menu_${listingId}`, title: "🗑️ Delete Photos" },
-        { id: `edit_listing_${listingId}`, title: "🔙 Back" }
+      const rows = [
+        { id: `view_photos_${listingId}`, title: "👁️ View Photos", description: "See current photos" },
+        { id: `add_photos_${listingId}`, title: "➕ Add Photos", description: "Upload new photos" },
+        { id: `delete_photos_menu_${listingId}`, title: "🗑️ Delete Photos", description: "Remove specific photos" },
+        { id: `edit_listing_${listingId}`, title: "🔙 Back", description: "Return to listing menu" }
       ];
 
-      await sendInteractiveButtons(phone, body, buttons, { headerText: "📸 Manage Photos" });
+      await sendInteractiveList(phone, body, rows, {
+        headerText: "📸 Manage Photos",
+        buttonText: "Options",
+        sectionTitle: "Actions"
+      });
       return NextResponse.json({ ok: true, note: "manage-photos-menu" });
+    }
+  }
+
+  // Handle "View Photos"
+  if (cmd.startsWith("view_photos_")) {
+    const listingId = cmd.replace("view_photos_", "").trim();
+    if (dbAvailable && typeof Listing?.findById === "function") {
+      const listing = await Listing.findById(listingId).select("images title").lean().exec().catch(() => null);
+      if (!listing) return NextResponse.json({ ok: true });
+
+      const images = listing.images || [];
+      if (images.length === 0) {
+        await sendInteractiveButtons(phone, "No photos to view.", [{ id: `manage_photos_${listingId}`, title: "🔙 Back" }], { headerText: "View Photos" });
+        return NextResponse.json({ ok: true, note: "view-photos-empty" });
+      }
+
+      await sendText(phone, `📷 Sending ${images.length} photo(s) for "${listing.title}"...`);
+      await sendImages(phone, images, { max: 10, caption: listing.title });
+
+      // Show menu again after a short delay (or just send it)
+      const rows = [
+        { id: `add_photos_${listingId}`, title: "➕ Add Photos", description: "Upload new photos" },
+        { id: `delete_photos_menu_${listingId}`, title: "🗑️ Delete Photos", description: "Remove specific photos" },
+        { id: `manage_photos_${listingId}`, title: "🔙 Back to Menu", description: "Return to photo menu" }
+      ];
+
+      await sendInteractiveList(phone, "What would you like to do next?", rows, {
+        headerText: "Photos Sent",
+        buttonText: "Next",
+        sectionTitle: "Options"
+      });
+
+      return NextResponse.json({ ok: true, note: "view-photos-sent" });
     }
   }
 
