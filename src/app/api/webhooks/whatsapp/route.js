@@ -1599,7 +1599,8 @@ export async function POST(request) {
     const listingId = lastMeta.listingId;
     await sendInteractiveButtons(phone, "Photos updated.", [{ id: `manage_photos_${listingId}`, title: "Back to Photos" }], { headerText: "Done" });
     if (savedMsg && savedMsg._id) {
-      await Message.findByIdAndUpdate(savedMsg._id, { $unset: { "meta.state": "" } }).catch(() => null);
+      // Clear state by setting it to IDLE so we don't fall back to previous state
+      await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.state": "IDLE" } }).catch(() => null);
     }
     return NextResponse.json({ ok: true, note: "listing-photos-edit-done" });
   }
@@ -1661,7 +1662,7 @@ export async function POST(request) {
 
     // Clear state
     if (savedMsg && savedMsg._id) {
-      await Message.findByIdAndUpdate(savedMsg._id, { $unset: { "meta.state": "" } }).catch(() => null);
+      await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.state": "IDLE" } }).catch(() => null);
     }
 
     if (code.length < 3) {
@@ -1690,7 +1691,7 @@ export async function POST(request) {
     // If user types 'menu', clear state and fall through to global menu handler
     if (cmdLower === "menu" || cmdLower === "main menu") {
       if (savedMsg && savedMsg._id) {
-        await Message.findByIdAndUpdate(savedMsg._id, { $unset: { "meta.state": "" } }).catch(() => null);
+        await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.state": "IDLE" } }).catch(() => null);
       }
       // Fall through...
     } else {
@@ -1704,7 +1705,7 @@ export async function POST(request) {
 
         await sendTextWithInstructionHeader(phone, "🎉 Listing complete! Your property is now live.", "Tap Main menu.");
         if (savedMsg && savedMsg._id) {
-          await Message.findByIdAndUpdate(savedMsg._id, { $unset: { "meta.state": "" } }).catch(() => null);
+          await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.state": "IDLE" } }).catch(() => null);
         }
         await sendMainMenu(phone);
         return NextResponse.json({ ok: true, note: "listing-address-done" });
@@ -1907,7 +1908,7 @@ export async function POST(request) {
 
         // Clear state
         if (dbAvailable && savedMsg && savedMsg._id) {
-          await Message.findByIdAndUpdate(savedMsg._id, { $unset: { "meta.state": "" } }).catch(() => null);
+          await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.state": "IDLE" } }).catch(() => null);
         }
         return NextResponse.json({ ok: true, note: "list-flow-updated-done", listingId });
       } else {
