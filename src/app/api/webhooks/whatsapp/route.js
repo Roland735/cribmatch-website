@@ -1593,6 +1593,20 @@ export async function POST(request) {
   }
 
   /* -------------------------
+     Catch-all for AWAITING_PHOTOS (prevent menu interruption)
+  ------------------------- */
+  if (lastMeta?.state === "AWAITING_PHOTOS" || lastMeta?.state === "AWAITING_PHOTOS_EDIT") {
+    // We already handled valid images and "done" command above.
+    // If we are here, it's unhandled input while expecting photos.
+    if (msg?.type === "image") {
+      // Suppress menu for unhandled images (e.g. missing listingId or duplicates)
+      return NextResponse.json({ ok: true, note: "image-upload-fallback-suppressed" });
+    }
+    await sendText(phone, "📷 Please send photos one by one. Type 'done' when finished.");
+    return NextResponse.json({ ok: true, note: "awaiting-photos-catchall" });
+  }
+
+  /* -------------------------
      Handle Search by Code (AWAITING_SEARCH_CODE)
   ------------------------- */
   if (lastMeta?.state === "AWAITING_SEARCH_CODE" && parsedText && !msg?.type?.includes("interactive")) {
@@ -1649,6 +1663,14 @@ export async function POST(request) {
         return NextResponse.json({ ok: true, note: "listing-address-done" });
       }
     }
+  }
+
+  /* -------------------------
+     Catch-all for AWAITING_ADDRESS (e.g. image sent instead of text)
+  ------------------------- */
+  if (lastMeta?.state === "AWAITING_ADDRESS" && (!parsedText || msg?.type === "image")) {
+    await sendText(phone, "✅ Photos received. Please type the property address to finish.");
+    return NextResponse.json({ ok: true, note: "awaiting-address-fallback" });
   }
 
   /* -------------------------
@@ -1827,21 +1849,36 @@ export async function POST(request) {
 
       await sendTextWithInstructionHeader(phone, confirmText, actionText);
 
-      // Prompt for photos
-      await sendText(phone, "📸 Now, please send up to 5 photos for your listing.\n\nType 'done' when you are finished sending photos.");
+      if (editingListingId) {
+        // Edit flow: Done.
+        const buttons = [
+          { id: `edit_listing_${listingId}`, title: "✏️ Edit Details" },
+          { id: `manage_photos_${listingId}`, title: "📷 Manage Photos" },
+          { id: "menu_main", title: "🏠 Main Menu" }
+        ];
+        await sendInteractiveButtons(phone, "✅ Update complete. What would you like to do next?", buttons, { headerText: "Listing Updated" });
 
-      // Update state to AWAITING_PHOTOS
-      if (dbAvailable && savedMsg && savedMsg._id) {
-        await Message.findByIdAndUpdate(savedMsg._id, {
-          $set: {
-            "meta.state": "AWAITING_PHOTOS",
-            "meta.listingId": listingId,
-            "meta.photoCount": 0
-          }
-        }).catch(() => null);
+        // Clear state
+        if (dbAvailable && savedMsg && savedMsg._id) {
+          await Message.findByIdAndUpdate(savedMsg._id, { $unset: { "meta.state": "" } }).catch(() => null);
+        }
+        return NextResponse.json({ ok: true, note: "list-flow-updated-done", listingId });
+      } else {
+        // New Listing flow: Prompt for photos
+        await sendText(phone, "📸 Now, please send up to 5 photos for your listing.\n\nType 'done' when you are finished sending photos.");
+
+        // Update state to AWAITING_PHOTOS
+        if (dbAvailable && savedMsg && savedMsg._id) {
+          await Message.findByIdAndUpdate(savedMsg._id, {
+            $set: {
+              "meta.state": "AWAITING_PHOTOS",
+              "meta.listingId": listingId,
+              "meta.photoCount": 0
+            }
+          }).catch(() => null);
+        }
+        return NextResponse.json({ ok: true, note: "list-flow-published-awaiting-photos", listingId });
       }
-
-      return NextResponse.json({ ok: true, note: "list-flow-published-awaiting-photos", listingId });
     } catch (e) {
       console.error("[webhook] list property flow error FULL:", e);
       const msg = e instanceof Error ? e.message : String(e);
