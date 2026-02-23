@@ -1604,9 +1604,9 @@ export async function POST(request) {
     }
   }
 
-  if (cmd === "done" && lastMeta?.state === "AWAITING_PHOTOS_EDIT") {
+  if ((cmd === "done" || cmd === "done_photos_edit") && lastMeta?.state === "AWAITING_PHOTOS_EDIT") {
     const listingId = lastMeta.listingId;
-    await sendInteractiveButtons(phone, "Photos updated.", [{ id: `manage_photos_${listingId}`, title: "Back to Photos" }], { headerText: "Done" });
+    await sendInteractiveButtons(phone, "Photos updated.", [{ id: `manage_photos_${listingId}`, title: "Back to Photos" }, { id: "menu_main", title: "Main Menu" }], { headerText: "Done" });
     if (savedMsg && savedMsg._id) {
       // Clear state by setting it to IDLE so we don't fall back to previous state
       await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.state": "IDLE" } }).catch(() => null);
@@ -1632,7 +1632,8 @@ export async function POST(request) {
       }
 
       if (newCount >= 5) {
-        await sendText(phone, "That's 5 photos. Almost done! Please enter the address for this listing (e.g. 123 Samora Machel Ave).");
+        await sendTextWithInstructionHeader(phone, "That's 5 photos. Almost done! Please enter the address for this listing (e.g. 123 Samora Machel Ave).", "Type the address.");
+        await sendButtonsWithInstructionHeader(phone, "Or return to main menu:", [{ id: "menu_main", title: "Main Menu" }], "Tap Main menu.");
         if (savedMsg && savedMsg._id) {
           await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.state": "AWAITING_ADDRESS", "meta.listingId": listingId } }).catch(() => null);
         }
@@ -1641,8 +1642,9 @@ export async function POST(request) {
     }
   }
 
-  if (cmd === "done" && lastMeta?.state === "AWAITING_PHOTOS") {
-    await sendText(phone, "Photos saved. Please enter the address for this listing (e.g. 123 Samora Machel Ave).");
+  if ((cmd === "done" || cmd === "done_photos_new" || cmd === "done_photos_catchall") && lastMeta?.state === "AWAITING_PHOTOS") {
+    await sendTextWithInstructionHeader(phone, "Photos saved. Please enter the address for this listing (e.g. 123 Samora Machel Ave).", "Type the address.");
+    await sendButtonsWithInstructionHeader(phone, "Or return to main menu:", [{ id: "menu_main", title: "Main Menu" }], "Tap Main menu.");
     if (savedMsg && savedMsg._id) {
       await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.state": "AWAITING_ADDRESS", "meta.listingId": lastMeta.listingId } }).catch(() => null);
     }
@@ -1653,14 +1655,27 @@ export async function POST(request) {
      Catch-all for AWAITING_PHOTOS (prevent menu interruption)
   ------------------------- */
   if (lastMeta?.state === "AWAITING_PHOTOS" || lastMeta?.state === "AWAITING_PHOTOS_EDIT") {
-    // We already handled valid images and "done" command above.
-    // If we are here, it's unhandled input while expecting photos.
-    if (msg?.type === "image") {
-      // Suppress menu for unhandled images (e.g. missing listingId or duplicates)
-      return NextResponse.json({ ok: true, note: "image-upload-fallback-suppressed" });
+    // If user types 'menu', clear state and fall through to global menu handler
+    if (cmd === "menu" || cmd === "main menu" || cmd === "menu_main") {
+      if (savedMsg && savedMsg._id) {
+        await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.state": "IDLE" } }).catch(() => null);
+      }
+      // Fall through to allow menu to process
+    } else {
+      // We already handled valid images and "done" command above.
+      // If we are here, it's unhandled input while expecting photos.
+      if (msg?.type === "image") {
+        // Suppress menu for unhandled images (e.g. missing listingId or duplicates)
+        return NextResponse.json({ ok: true, note: "image-upload-fallback-suppressed" });
+      }
+      await sendInteractiveButtons(
+        phone,
+        "📷 Please send photos one by one. Tap 'Done' when finished.",
+        [{ id: "menu_main", title: "Main Menu" }, { id: "done_photos_catchall", title: "Done" }],
+        { headerText: "Photos" }
+      );
+      return NextResponse.json({ ok: true, note: "awaiting-photos-catchall" });
     }
-    await sendText(phone, "📷 Please send photos one by one. Type 'done' when finished.");
-    return NextResponse.json({ ok: true, note: "awaiting-photos-catchall" });
   }
 
   /* -------------------------
@@ -1726,7 +1741,12 @@ export async function POST(request) {
      Catch-all for AWAITING_ADDRESS (e.g. image sent instead of text)
   ------------------------- */
   if (lastMeta?.state === "AWAITING_ADDRESS" && (!parsedText || msg?.type === "image")) {
-    await sendText(phone, "✅ Photos received. Please type the property address to finish.");
+    await sendInteractiveButtons(
+      phone,
+      "✅ Photos received. Please type the property address to finish.",
+      [{ id: "menu_main", title: "Main Menu" }],
+      { headerText: "Address" }
+    );
     return NextResponse.json({ ok: true, note: "awaiting-address-fallback" });
   }
 
@@ -1922,7 +1942,12 @@ export async function POST(request) {
         return NextResponse.json({ ok: true, note: "list-flow-updated-done", listingId });
       } else {
         // New Listing flow: Prompt for photos
-        await sendText(phone, "📸 Now, please send up to 5 photos for your listing.\n\nType 'done' when you are finished sending photos.");
+        await sendInteractiveButtons(
+          phone,
+          "📸 Now, please send up to 5 photos for your listing.\n\nTap 'Done' when you are finished sending photos.",
+          [{ id: "done_photos_new", title: "Done" }],
+          { headerText: "Upload Photos" }
+        );
 
         // Update state to AWAITING_PHOTOS
         if (dbAvailable && savedMsg && savedMsg._id) {
@@ -2218,6 +2243,12 @@ export async function POST(request) {
         };
       });
 
+      rows.push({
+        id: "menu_main",
+        title: "🏠 Main Menu",
+        description: "Return to main menu"
+      });
+
       await sendInteractiveList(phone, "Select a listing to edit:", rows, { headerText: "Your Listings", buttonText: "Edit", sectionTitle: "My Listings" });
       return NextResponse.json({ ok: true, note: "edit-listings-sent" });
     }
@@ -2238,17 +2269,18 @@ export async function POST(request) {
       const isPublished = listing.status === "published";
       const statusAction = isPublished ? "Deactivate" : "Activate";
 
-      const buttons = [
-        { id: `edit_details_${listingId}`, title: "Edit Details" },
-        { id: `manage_photos_${listingId}`, title: "Manage Photos" },
-        { id: `toggle_status_${listingId}`, title: statusAction }
+      const rows = [
+        { id: `edit_details_${listingId}`, title: "✏️ Edit Details", description: "Update listing info" },
+        { id: `manage_photos_${listingId}`, title: "📷 Manage Photos", description: "Add/remove photos" },
+        { id: `toggle_status_${listingId}`, title: statusAction, description: isPublished ? "Hide from search" : "Make visible" },
+        { id: "menu_main", title: "🏠 Main Menu", description: "Return to main menu" }
       ];
 
       const title = String(listing.title || "Untitled");
       const statusDisplay = isPublished ? "✅ Active" : "⏸️ Inactive";
       const body = `Manage Listing: ${title}\nStatus: ${statusDisplay}\n\nChoose an action:`;
 
-      await sendInteractiveButtons(phone, body, buttons, { headerText: "Listing Options" });
+      await sendInteractiveList(phone, body, rows, { headerText: "Listing Options", buttonText: "Actions" });
       return NextResponse.json({ ok: true, note: "edit-listing-menu-sent" });
 
     }
@@ -2490,7 +2522,12 @@ export async function POST(request) {
         }
       }).catch(() => null);
     }
-    await sendText(phone, "📤 Please send your photos now.\n\nType 'done' when you are finished sending photos.");
+    await sendInteractiveButtons(
+      phone,
+      "📤 Please send your photos now.\n\nTap 'Done' when you are finished sending photos.",
+      [{ id: "done_photos_edit", title: "Done" }],
+      { headerText: "Add Photos" }
+    );
     return NextResponse.json({ ok: true, note: "awaiting-photos-set" });
   }
 
@@ -2553,6 +2590,7 @@ export async function POST(request) {
       { id: "search_boarding", title: "🛏️ Boarding House", description: "Student/Shared Accommodation" },
       { id: "search_shop", title: "🏪 Commercial/Shop", description: "Retail & Office Spaces" },
       { id: "search_code", title: "🔢 Search by Code", description: "Enter a 4-digit property code" },
+      { id: "menu_main", title: "🏠 Main Menu", description: "Return to main menu" },
     ];
     await sendInteractiveList(
       phone,
@@ -2619,7 +2657,11 @@ export async function POST(request) {
      Handle "Search by Code"
   ------------------------- */
   if (cmd === "search_code") {
-    await sendTextWithInstructionHeader(phone, "🔢 Please enter the 4-character Property Code (e.g. SIVR):", "Type the code to view details.");
+    await sendWithMainMenuButton(
+      phone,
+      "🔢 Please enter the 4-character Property Code (e.g. SIVR):",
+      "Type the code to view details."
+    );
 
     // Save state
     if (savedMsg && typeof Message?.findByIdAndUpdate === "function") {
@@ -2694,6 +2736,12 @@ export async function POST(request) {
         await sendInteractiveButtons(phone, "⚠️ No valid purchases found.", [{ id: "menu_main", title: "🏠 Main Menu" }]);
         return NextResponse.json({ ok: true, note: "no-valid-purchases" });
       }
+
+      rows.push({
+        id: "menu_main",
+        title: "🏠 Main Menu",
+        description: "Return to main menu"
+      });
 
       await sendInteractiveList(phone, "Here are your past viewed properties:", rows, {
         headerText: "🛍️ Past Purchases",
