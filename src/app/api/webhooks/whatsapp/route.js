@@ -2867,35 +2867,35 @@ async function revealFromObject(listing, phone) {
 
     const code = getShortIdFromListing(listing);
     const detailsLines = [
-      `Contact for: ${title}`,
-      code ? `CODE: ${code}` : null,
-      ensuredId ? `Listing ID: ${ensuredId}` : null,
-      suburb ? `Suburb: ${suburb}` : null,
-      address ? `Address: ${address}` : null,
-      bedrooms ? `Bedrooms: ${bedrooms}` : null,
-      `Price: ${price}`,
+      `🏠 Contact for: ${title}`,
+      code ? `🏷️ CODE: ${code}` : null,
+      ensuredId ? `🆔 Listing ID: ${ensuredId}` : null,
+      suburb ? `📍 Suburb: ${suburb}` : null,
+      address ? `📍 Address: ${address}` : null,
+      bedrooms ? `🛏️ Bedrooms: ${bedrooms}` : null,
+      `💰 Price: ${price}`,
       "",
-      `Contact: ${contactName}`,
-      `Phone: ${contactPhone}`,
-      contactWhatsApp ? `WhatsApp: ${contactWhatsApp}` : null,
-      contactEmail ? `Email: ${contactEmail}` : null,
+      `👤 Contact: ${contactName}`,
+      `📞 Phone: ${contactPhone}`,
+      contactWhatsApp ? `📱 WhatsApp: ${contactWhatsApp}` : null,
+      contactEmail ? `📧 Email: ${contactEmail}` : null,
     ].filter(Boolean);
 
     const blocks = [detailsLines.join("\n")];
 
     if (description) {
-      blocks.push(`Description:\n${description}`);
+      blocks.push(`📝 Description:\n${description}`);
     }
 
     if (features && features.length) {
-      blocks.push(`Features:\n• ${features.slice(0, 12).join("\n• ")}`);
+      blocks.push(`✨ Features:\n• ${features.slice(0, 12).join("\n• ")}`);
     }
 
     if (images.length) {
-      blocks.push(`Photos: ${images.length} image(s). Sending now...`);
+      blocks.push(`📷 Photos: ${images.length} image(s). Sending now...`);
     }
 
-    blocks.push(`\nNext:\n- Reply with a number from your last results anytime\n- To see photos again: images ${ensuredId}\n- Main menu: menu`);
+    // blocks.push(`\nNext:\n- Reply with a number from your last results anytime\n- To see photos again: images ${ensuredId}\n- Main menu: menu`);
 
     let body = blocks.join("\n\n").trim();
     // Truncate to 1000 chars to ensure it fits in an interactive button message (limit ~1024)
