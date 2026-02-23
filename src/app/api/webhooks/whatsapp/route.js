@@ -6,8 +6,7 @@
 // - WHATSAPP_PHONE_NUMBER_ID (or WHATSAPP_PHONE_ID)
 // - WHATSAPP_FLOW_ID (optional; fallback ID included)
 // - WHATSAPP_WEBHOOK_VERIFY_TOKEN
-// - APP_SECRET (optional)
-//
+// - APP_SECRET (optiona
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import mongoose from "mongoose";
@@ -947,10 +946,10 @@ async function sendResidentialSearchFlow(phoneNumber, data = {}) {
     flowId: RESIDENTIAL_SEARCH_FLOW_ID,
     screen: "SEARCH",
     payloadData,
-    headerText: "Find rentals — filters",
-    bodyText: "Choose from predefined options or leave blanks for broader search.\n\nInstructions: Fill and submit the form.\n\nTo go back, type \"menu\".",
-    footerText: "CribMatch",
-    flow_cta: "Search",
+    headerText: "🏠 Find Rentals",
+    bodyText: "Fill in the details below to find your perfect home.\n\nInstructions: Select your preferences and tap Search.",
+    footerText: "Start Search",
+    flow_cta: "🔎 Search",
   });
 }
 
@@ -999,10 +998,10 @@ async function sendBoardingSearchFlow(phoneNumber, data = {}) {
     flowId: BOARDING_SEARCH_FLOW_ID,
     screen: "BOARDING_SEARCH",
     payloadData,
-    headerText: "Boarding search — filters",
-    bodyText: "Fill the form to find boarding houses.\n\nInstructions: Fill and submit the form.\n\nTo go back, type \"menu\".",
-    footerText: "CribMatch",
-    flow_cta: "Search",
+    headerText: "🛏️ Find Boarding House",
+    bodyText: "Looking for student or shared accommodation?\n\nInstructions: Select your preferences and tap Search.",
+    footerText: "Start Search",
+    flow_cta: "🔎 Search",
   });
 }
 
@@ -1054,10 +1053,10 @@ async function sendShopSearchFlow(phoneNumber, data = {}) {
     flowId: SHOP_SEARCH_FLOW_ID,
     screen: "SHOP_SEARCH",
     payloadData,
-    headerText: "Commercial/Shop search — filters",
-    bodyText: "Fill the form to find shops and commercial spaces.\n\nInstructions: Fill and submit the form.\n\nTo go back, type \"menu\".",
-    footerText: "CribMatch",
-    flow_cta: "Search",
+    headerText: "🏪 Find Commercial/Shop",
+    bodyText: "Searching for retail or office space?\n\nInstructions: Select your preferences and tap Search.",
+    footerText: "Start Search",
+    flow_cta: "🔎 Search",
   });
 }
 
@@ -1092,10 +1091,10 @@ async function sendRentAChairSearchFlow(phoneNumber, data = {}) {
     flowId: RENT_A_CHAIR_SEARCH_FLOW_ID,
     screen: "RENT_A_CHAIR_SEARCH",
     payloadData,
-    headerText: "Rent a chair — filters",
-    bodyText: "Fill the form to find chair/station rentals.\n\nInstructions: Fill and submit the form.\n\nTo go back, type \"menu\".",
-    footerText: "CribMatch",
-    flow_cta: "Search",
+    headerText: "💇 Find Rent a Chair",
+    bodyText: "Looking for a salon or barber station?\n\nInstructions: Select your preferences and tap Search.",
+    footerText: "Start Search",
+    flow_cta: "🔎 Search",
   });
 }
 
@@ -1152,10 +1151,10 @@ async function sendListPropertyFlow(phoneNumber, data = {}) {
     flowId: String(LIST_PROPERTY_FLOW_ID),
     screen: "LIST_PROPERTY",
     payloadData,
-    headerText: data.headerText || "List a Property",
-    bodyText: (data.bodyText || "Instructions: Fill and submit the form to publish your listing.") + "\n\nTo go back, type \"menu\".",
-    footerText: "CribMatch",
-    flow_cta: data.flow_cta || "Publish listing",
+    headerText: data.headerText || "📝 List a Property",
+    bodyText: (data.bodyText || "Ready to find a tenant/buyer? Fill out the details below.") + "\n\nInstructions: Fill and submit to publish.",
+    footerText: "Open Listing Form",
+    flow_cta: data.flow_cta || "📝 Create Listing",
   });
 }
 
@@ -1170,15 +1169,15 @@ async function sendResultsFlow(phoneNumber, resultsPayload = {}) {
     type: "interactive",
     interactive: {
       type: "flow",
-      header: { type: "text", text: resultsPayload.headerText || "Instructions: Tap View" },
-      body: { text: resultsPayload.bodyText || (resultsPayload.data && resultsPayload.data.listingText0) || "Results" },
-      footer: { text: resultsPayload.footerText || "Done" },
+      header: { type: "text", text: resultsPayload.headerText || "🔍 Search Results" },
+      body: { text: resultsPayload.bodyText || (resultsPayload.data && resultsPayload.data.listingText0) || "Results found:" },
+      footer: { text: resultsPayload.footerText || "View Results" },
       action: {
         name: "flow",
         parameters: {
           flow_message_version: "3",
           flow_id: String(DEFAULT_FLOW_ID),
-          flow_cta: resultsPayload.flow_cta || "View",
+          flow_cta: resultsPayload.flow_cta || "👁️ View Results",
           flow_action: "navigate",
           flow_action_payload: { screen: resultsPayload.screen || "RESULTS", data: resultsPayload.data || {} },
         },
@@ -1294,17 +1293,17 @@ function formatListingResultText(listing, indexHint = 0) {
   const featuresShort = features.slice(0, 6);
 
   const lines = [
-    `${indexHint + 1}) ${title} — ${suburb} — $${price}`,
-    shortId ? `CODE:${shortId}` : null,
-    `ID:${id}`,
+    `${indexHint + 1}) 🏠 ${title} — 📍 ${suburb} — 💰 $${price}`,
+    shortId ? `🏷️ CODE: ${shortId}` : null,
+    `🆔 ID: ${id}`,
   ].filter(Boolean);
 
   if (descriptionShort) {
-    lines.push("", "Description:", ` ${descriptionShort}`);
+    lines.push("", "📝 Description:", ` ${descriptionShort}`);
   }
 
   if (featuresShort.length) {
-    lines.push("", "Features:", featuresShort.map((f) => ` * ${f}`).join("\n"));
+    lines.push("", "✨ Features:", featuresShort.map((f) => ` • ${f}`).join("\n"));
   }
 
   return lines.join("\n");
@@ -1431,16 +1430,16 @@ function getCanonicalMessage(payload) {
 ------------------------- */
 async function sendMainMenu(phone) {
   const rows = [
-    { id: "menu_search", title: "Search properties", description: "Find a place to rent/buy" },
-    { id: "menu_list", title: "List a property", description: "Add a new listing" },
-    { id: "menu_edit_listings", title: "Edit my listings", description: "Manage your listings" },
-    { id: "menu_purchases", title: "View past purchases", description: "See properties you viewed" },
-    { id: "menu_contacts", title: "View past messages", description: "See contact details revealed" },
-    { id: "menu_report", title: "Report listing", description: "Report an issue" }
+    { id: "menu_search", title: "🔍 Search properties", description: "Find a place to rent/buy" },
+    { id: "menu_list", title: "📝 List a property", description: "Add a new listing" },
+    { id: "menu_edit_listings", title: "✏️ Edit my listings", description: "Manage your listings" },
+    { id: "menu_purchases", title: "🛍️ View past purchases", description: "See properties you viewed" },
+    { id: "menu_contacts", title: "💬 View past messages", description: "See contact details revealed" },
+    { id: "menu_report", title: "⚠️ Report listing", description: "Report an issue" }
   ];
 
-  await sendInteractiveList(phone, "Welcome to CribMatch — please choose an option:", rows, {
-    headerText: "Main Menu",
+  await sendInteractiveList(phone, "👋 Welcome to CribMatch — please choose an option:", rows, {
+    headerText: "🏠 Main Menu",
     buttonText: "Menu",
     sectionTitle: "Options"
   });
@@ -1605,13 +1604,13 @@ export async function POST(request) {
     }
 
     if (code.length < 3) {
-      await sendWithMainMenuButton(phone, "Code is too short.", "Please try searching again.");
+      await sendWithMainMenuButton(phone, "⚠️ Code is too short.", "Please try searching again.");
       return NextResponse.json({ ok: true, note: "code-too-short" });
     }
 
     const listing = await getListingByShortId(code);
     if (!listing) {
-      await sendWithMainMenuButton(phone, `No listing found for code "${code}".`, "Please check the code and try again.");
+      await sendWithMainMenuButton(phone, `❌ No listing found for code "${code}".`, "Please check the code and try again.");
       return NextResponse.json({ ok: true, note: "code-not-found" });
     }
 
@@ -1642,7 +1641,7 @@ export async function POST(request) {
           await Listing.findByIdAndUpdate(listingId, { $set: { address: address } }).catch(() => null);
         }
 
-        await sendTextWithInstructionHeader(phone, "Listing complete! Your property is now live.", "Tap Main menu.");
+        await sendTextWithInstructionHeader(phone, "🎉 Listing complete! Your property is now live.", "Tap Main menu.");
         if (savedMsg && savedMsg._id) {
           await Message.findByIdAndUpdate(savedMsg._id, { $unset: { "meta.state": "" } }).catch(() => null);
         }
@@ -1751,12 +1750,12 @@ export async function POST(request) {
       const images = [];
 
       if (!title || !listerPhoneNumber || !listingTypeNormalized || !cityId || !suburbId || !propertyTypeByListingType || pricePerMonth === null) {
-        await sendWithMainMenuButton(phone, "Some required fields are missing. Please open the listing form again and submit.", "Tap Main menu, then List a property.");
+        await sendWithMainMenuButton(phone, "⚠️ Some required fields are missing. Please open the listing form again and submit.", "Tap Main menu, then List a property.");
         return NextResponse.json({ ok: true, note: "list-flow-missing-required" });
       }
 
       if (!dbAvailable || !process.env.MONGODB_URI || typeof Listing?.create !== "function") {
-        await sendWithMainMenuButton(phone, "Listing received, but publishing is not available (database not configured).", "Tap Main menu.");
+        await sendWithMainMenuButton(phone, "⚠️ Listing received, but publishing is not available (database not configured).", "Tap Main menu.");
         return NextResponse.json({ ok: true, note: "list-flow-no-db" });
       }
 
@@ -1816,20 +1815,20 @@ export async function POST(request) {
 
       const confirmText = [
         actionText,
-        shortId ? `CODE: ${shortId}` : null,
-        listingId ? `ID: ${listingId}` : null,
-        `Title: ${title}`,
-        `Suburb: ${suburb}`,
-        `Type: ${listingTypeTitle || listingTypeNormalized}`,
-        `Listing: ${propertyTypeByListingType}`,
-        bedroomsId ? `Bedrooms: ${bedroomsId}` : null,
-        `Price: ${pricePerMonth}`,
+        shortId ? `🏷️ CODE: ${shortId}` : null,
+        listingId ? `🆔 ID: ${listingId}` : null,
+        `🏠 Title: ${title}`,
+        `📍 Suburb: ${suburb}`,
+        `🏢 Type: ${listingTypeTitle || listingTypeNormalized}`,
+        `📋 Category: ${propertyTypeByListingType}`,
+        bedroomsId ? `🛏️ Bedrooms: ${bedroomsId}` : null,
+        `💰 Price: ${pricePerMonth}`,
       ].filter(Boolean).join("\n");
 
       await sendTextWithInstructionHeader(phone, confirmText, actionText);
 
       // Prompt for photos
-      await sendText(phone, "Now, please send up to 5 photos for your listing. Send 'done' when finished.");
+      await sendText(phone, "📸 Now, please send up to 5 photos for your listing.\n\nType 'done' when you are finished sending photos.");
 
       // Update state to AWAITING_PHOTOS
       if (dbAvailable && savedMsg && savedMsg._id) {
@@ -1865,8 +1864,8 @@ export async function POST(request) {
         }
       } catch (err) { }
       const userMessage = isValidation
-        ? "Some values look invalid (for example: price). Please edit and submit the form again."
-        : (isDup ? "That listing code collided. Please submit the form again." : `Something went wrong while publishing your listing. Ref: ${ref} Err: ${msg.slice(0, 200)}`);
+        ? "⚠️ Some values look invalid (for example: price). Please edit and submit the form again."
+        : (isDup ? "⚠️ That listing code collided. Please submit the form again." : `❌ Something went wrong while publishing your listing. Ref: ${ref} Err: ${msg.slice(0, 200)}`);
       await sendWithMainMenuButton(phone, userMessage, "Tap Main menu and try again.");
       return NextResponse.json({ ok: true, note: "list-flow-error", error: msg, stack: String(e?.stack || "") });
     }
@@ -2042,7 +2041,7 @@ export async function POST(request) {
 
     const items = (results.listings || []).slice(0, 6);
     if (!items.length) {
-      await sendWithMainMenuButton(phone, "No matches found for your search.", "Try adjusting filters or a broader search.");
+      await sendWithMainMenuButton(phone, "🔍 No matches found for your search.", "Try adjusting filters or a broader search.");
       return NextResponse.json({ ok: true, note: "flow-search-no-results" });
     }
 
@@ -2052,7 +2051,7 @@ export async function POST(request) {
     const numbered = ensuredItems.map((l, i) => formatListingResultText(l, i)).filter(Boolean).join("\n\n");
 
     await saveSearchContext(phone, ids, ensuredItems, dbAvailable);
-    let msgText = `Reply with the number (e.g. 1) to get contact details, or type a listing CODE (e.g. H4WH).\n\n${numbered}`.trim();
+    let msgText = `👇 Reply with the number (e.g. 1) to get contact details, or type a listing CODE (e.g. H4WH).\n\n${numbered}`.trim();
     if (msgText.length > 3900) msgText = `${msgText.slice(0, 3880).trim()}\n…`;
     await sendText(phone, msgText);
 
@@ -2252,15 +2251,15 @@ export async function POST(request) {
       if (!listing) return NextResponse.json({ ok: true });
 
       const count = (listing.images || []).length;
-      const body = `Photos for "${listing.title}"\nCurrent count: ${count} photo(s).`;
+      const body = `📷 Photos for "${listing.title}"\n📊 Current count: ${count} photo(s).`;
 
       const buttons = [
-        { id: `add_photos_${listingId}`, title: "Add Photos" },
-        { id: `delete_photos_${listingId}`, title: "Delete All Photos" },
-        { id: `edit_listing_${listingId}`, title: "Back" }
+        { id: `add_photos_${listingId}`, title: "➕ Add Photos" },
+        { id: `delete_photos_${listingId}`, title: "🗑️ Delete All Photos" },
+        { id: `edit_listing_${listingId}`, title: "🔙 Back" }
       ];
 
-      await sendInteractiveButtons(phone, body, buttons, { headerText: "Manage Photos" });
+      await sendInteractiveButtons(phone, body, buttons, { headerText: "📸 Manage Photos" });
       return NextResponse.json({ ok: true, note: "manage-photos-menu" });
     }
   }
@@ -2270,7 +2269,7 @@ export async function POST(request) {
     const listingId = cmd.replace("delete_photos_", "");
     if (dbAvailable && typeof Listing?.findByIdAndUpdate === "function") {
       await Listing.findByIdAndUpdate(listingId, { $set: { images: [] } });
-      await sendInteractiveButtons(phone, "All photos have been deleted.", [{ id: `manage_photos_${listingId}`, title: "Back to Photos" }], { headerText: "Photos Deleted" });
+      await sendInteractiveButtons(phone, "✅ All photos have been deleted.", [{ id: `manage_photos_${listingId}`, title: "🔙 Back to Photos" }], { headerText: "🗑️ Photos Deleted" });
       return NextResponse.json({ ok: true, note: "photos-deleted" });
     }
   }
@@ -2287,7 +2286,7 @@ export async function POST(request) {
         }
       }).catch(() => null);
     }
-    await sendText(phone, "Please send your photos now. Send 'done' when finished.");
+    await sendText(phone, "📤 Please send your photos now.\n\nType 'done' when you are finished sending photos.");
     return NextResponse.json({ ok: true, note: "awaiting-photos-set" });
   }
 
@@ -2305,7 +2304,7 @@ export async function POST(request) {
         listing = mem?.results?.find((r) => getShortIdFromListing(r) === code) || null;
       }
       if (!listing) {
-        await sendWithMainMenuButton(phone, `No listing found for CODE: ${code}`, "Tap Main menu to search.");
+        await sendWithMainMenuButton(phone, `❌ No listing found for CODE: ${code}`, "Tap Main menu to search.");
         return NextResponse.json({ ok: true, note: "code-not-found" });
       }
       await revealFromObject(listing, phone);
@@ -2316,17 +2315,17 @@ export async function POST(request) {
   // list a property
   if (cmd === "list" || cmd === "list a property" || cmd === "menu_list") {
     const flowResp = await sendListPropertyFlow(phone, {
-      headerText: "List a property — lister flow",
-      bodyText: "Fill the fields below. Required fields are marked.\n\nInstructions: Fill and submit the form to publish your listing.",
-      footerText: "Publish listing",
-      flow_cta: "Publish listing",
+      headerText: "📝 List a property",
+      bodyText: "Ready to list your property? Fill out the form below to get started.\n\nRequired fields are marked.",
+      footerText: "Open Listing Form",
+      flow_cta: "📝 Create Listing",
     }).catch((e) => ({ error: e }));
 
     if (flowResp?.suppressed) {
       return NextResponse.json({ ok: true, note: "list-flow-suppressed", flowResp });
     }
     if (flowResp?.error) {
-      await sendWithMainMenuButton(phone, "Couldn't open the listing form right now.", "Tap Main menu and try again.");
+      await sendWithMainMenuButton(phone, "⚠️ Couldn't open the listing form right now.", "Tap Main menu and try again.");
       return NextResponse.json({ ok: true, note: "list-flow-open-failed" });
     }
 
@@ -2336,8 +2335,8 @@ export async function POST(request) {
   if (cmd === "help") {
     await sendWithMainMenuButton(
       phone,
-      "Help\n\n- Tap buttons to choose options.\n- When you see a list, reply with the number (e.g. 1).\n- You can type menu anytime.",
-      "Read the steps above, then tap Main menu."
+      "❓ Help Center\n\n• Tap buttons to choose options.\n• Reply with numbers (e.g. 1) when seeing a list.\n• Type 'menu' anytime to start over.",
+      "Tap Main menu to continue."
     );
     return NextResponse.json({ ok: true, note: "help" });
   }
@@ -2345,20 +2344,20 @@ export async function POST(request) {
   // SEARCH command (robust)
   if (cmd === "search" || cmd === "search properties" || cmd === "menu_search") {
     const rows = [
-      { id: "search_residential", title: "Residential housing" },
-      { id: "search_rent_a_chair", title: "Rent a chair" },
-      { id: "search_boarding", title: "Boarding House" },
-      { id: "search_shop", title: "Commercial/Shoping" },
-      { id: "search_code", title: "Search by Code" },
+      { id: "search_residential", title: "🏠 Residential Housing", description: "Apartments, Houses, Rooms" },
+      { id: "search_rent_a_chair", title: "💇 Rent a Chair", description: "Salon/Barber Spaces" },
+      { id: "search_boarding", title: "🛏️ Boarding House", description: "Student/Shared Accommodation" },
+      { id: "search_shop", title: "🏪 Commercial/Shop", description: "Retail & Office Spaces" },
+      { id: "search_code", title: "🔢 Search by Code", description: "Enter a 4-digit property code" },
     ];
     await sendInteractiveList(
       phone,
-      "Choose what you want to search for:",
+      "🔍 What are you looking for?",
       rows,
       {
-        headerText: "Search Properties",
-        buttonText: "Search",
-        sectionTitle: "Categories"
+        headerText: "Property Search",
+        buttonText: "Categories",
+        sectionTitle: "Select a Category"
       }
     );
     return NextResponse.json({ ok: true, note: "search-category-picker" });
@@ -2370,7 +2369,7 @@ export async function POST(request) {
       return NextResponse.json({ ok: true, note: "search-residential-suppressed", flowResp });
     }
     if (flowResp?.error) {
-      await sendWithMainMenuButton(phone, "Couldn't open the residential search form right now.", "Tap Main menu and try again.");
+      await sendWithMainMenuButton(phone, "⚠️ Couldn't open residential search.", "Tap Main menu and try again.");
       return NextResponse.json({ ok: true, note: "search-residential-open-failed", flowResp });
     }
     return NextResponse.json({ ok: true, note: "search-residential-opened", flowResp });
@@ -2382,7 +2381,7 @@ export async function POST(request) {
       return NextResponse.json({ ok: true, note: "search-boarding-suppressed", flowResp });
     }
     if (flowResp?.error) {
-      await sendWithMainMenuButton(phone, "Couldn't open the boarding search form right now.", "Tap Main menu and try again.");
+      await sendWithMainMenuButton(phone, "⚠️ Couldn't open boarding search.", "Tap Main menu and try again.");
       return NextResponse.json({ ok: true, note: "search-boarding-open-failed", flowResp });
     }
     return NextResponse.json({ ok: true, note: "search-boarding-opened", flowResp });
@@ -2394,7 +2393,7 @@ export async function POST(request) {
       return NextResponse.json({ ok: true, note: "search-shop-suppressed", flowResp });
     }
     if (flowResp?.error) {
-      await sendWithMainMenuButton(phone, "Couldn't open the commercial/shop search form right now.", "Tap Main menu and try again.");
+      await sendWithMainMenuButton(phone, "⚠️ Couldn't open commercial search.", "Tap Main menu and try again.");
       return NextResponse.json({ ok: true, note: "search-shop-open-failed", flowResp });
     }
     return NextResponse.json({ ok: true, note: "search-shop-opened", flowResp });
@@ -2406,7 +2405,7 @@ export async function POST(request) {
       return NextResponse.json({ ok: true, note: "search-chair-suppressed", flowResp });
     }
     if (flowResp?.error) {
-      await sendWithMainMenuButton(phone, "Couldn't open the rent-a-chair search form right now.", "Tap Main menu and try again.");
+      await sendWithMainMenuButton(phone, "⚠️ Couldn't open rent-a-chair search.", "Tap Main menu and try again.");
       return NextResponse.json({ ok: true, note: "search-chair-open-failed", flowResp });
     }
     return NextResponse.json({ ok: true, note: "search-chair-opened", flowResp });
@@ -2416,7 +2415,7 @@ export async function POST(request) {
      Handle "Search by Code"
   ------------------------- */
   if (cmd === "search_code") {
-    await sendTextWithInstructionHeader(phone, "Please enter the 4-character Property Code (e.g. SIVR):", "Type the code below to view details.");
+    await sendTextWithInstructionHeader(phone, "🔢 Please enter the 4-character Property Code (e.g. SIVR):", "Type the code to view details.");
 
     // Save state
     if (savedMsg && typeof Message?.findByIdAndUpdate === "function") {
@@ -2438,7 +2437,7 @@ export async function POST(request) {
         .catch(() => []);
 
       if (!purchases || purchases.length === 0) {
-        await sendInteractiveButtons(phone, "You haven't viewed any properties yet.", [{ id: "menu_search", title: "Search Properties" }], { headerText: "No Purchases" });
+        await sendInteractiveButtons(phone, "🛍️ You haven't viewed any properties yet.", [{ id: "menu_search", title: "🔍 Search Properties" }], { headerText: "No History" });
         return NextResponse.json({ ok: true, note: "no-purchases" });
       }
 
@@ -2476,7 +2475,7 @@ export async function POST(request) {
           if (!listing) return null;
 
           const isPublished = listing.status === "published";
-          const statusTag = isPublished ? "✅ Available" : "❌ Unavailable";
+          const statusTag = isPublished ? "✅" : "❌";
           const priceStr = listing.price ? `${listing.currency || "USD"} ${listing.price}` : "";
 
           return {
@@ -2488,18 +2487,18 @@ export async function POST(request) {
         .filter(Boolean);
 
       if (rows.length === 0) {
-        await sendInteractiveButtons(phone, "No valid purchases found.", [{ id: "menu_main", title: "Main Menu" }]);
+        await sendInteractiveButtons(phone, "⚠️ No valid purchases found.", [{ id: "menu_main", title: "🏠 Main Menu" }]);
         return NextResponse.json({ ok: true, note: "no-valid-purchases" });
       }
 
       await sendInteractiveList(phone, "Here are your past viewed properties:", rows, {
-        headerText: "Past Purchases",
+        headerText: "🛍️ Past Purchases",
         buttonText: "View",
-        sectionTitle: "Properties"
+        sectionTitle: "Select Property"
       });
       return NextResponse.json({ ok: true, note: "purchases-list-sent" });
     } else {
-      await sendInteractiveButtons(phone, "History unavailable.", [{ id: "menu_main", title: "Main Menu" }]);
+      await sendInteractiveButtons(phone, "⚠️ History unavailable.", [{ id: "menu_main", title: "🏠 Main Menu" }]);
       return NextResponse.json({ ok: true, note: "db-unavailable" });
     }
   }
@@ -2516,7 +2515,7 @@ export async function POST(request) {
       if (mem && Array.isArray(mem.ids)) listingIds = Array.from(new Set(mem.ids.filter(Boolean)));
     }
     if (!listingIds || listingIds.length === 0) {
-      await sendWithMainMenuButton(phone, "You haven't requested any contacts yet.", "From the main menu, tap Search properties.");
+      await sendWithMainMenuButton(phone, "📭 You haven't requested any contacts yet.", "Tap 'Search properties' to find listings.");
       return NextResponse.json({ ok: true, note: "no-past-messages" });
     }
     let found = [];
@@ -2531,11 +2530,11 @@ export async function POST(request) {
       if (r) return { id, code: getShortIdFromListing(r), title: r.title || "Listing", suburb: r.suburb || "", price: r.pricePerMonth || r.price || 0 };
       return { id, code: "", title: `Listing ${id.slice(0, 8)}`, suburb: "", price: 0 };
     });
-    const text = ["Your recent contacts:"].concat(
-      summaries.map((s, i) => `${i + 1}) ${s.title} — ${s.suburb} — $${s.price}${s.code ? ` — CODE:${s.code}` : ""} — ID:${s.id}`),
+    const text = ["💬 Your recent contacts:"].concat(
+      summaries.map((s, i) => `${i + 1}) 🏠 ${s.title} — 📍 ${s.suburb} — 💰 $${s.price}${s.code ? ` — 🏷️ ${s.code}` : ""} — 🆔 ${s.id}`),
     ).join("\n\n");
     await sendTextWithInstructionHeader(phone, text, "Reply with the number (e.g. 1) to view contact details again.");
-    await sendButtonsWithInstructionHeader(phone, "Return to main menu:", [{ id: "menu_main", title: "Main menu" }], "Tap Main menu.");
+    await sendButtonsWithInstructionHeader(phone, "Return to main menu:", [{ id: "menu_main", title: "🏠 Main menu" }], "Tap Main menu.");
     selectionMap.set(phone, { ids: listingIds, results: summaries.map((s) => ({ _id: s.id, shortId: s.code, title: s.title, suburb: s.suburb, price: s.price })) });
     return NextResponse.json({ ok: true, note: "past-messages-sent" });
   }
@@ -2543,7 +2542,7 @@ export async function POST(request) {
   // report listing
   if (cmd === "report listing" || cmd === "menu_report" || cmd === "report") {
     if (dbAvailable && savedMsg && savedMsg._id) await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.state": "REPORT_WAIT_ID" } }).catch(() => null);
-    await sendWithMainMenuButton(phone, "Report a listing.\n\nStep 1 of 2: What is the listing ID? (e.g. 60df12ab...)", "Reply with the listing ID.");
+    await sendWithMainMenuButton(phone, "⚠️ Report a listing.\n\nStep 1 of 2: What is the listing ID? (e.g. 60df12ab...)", "Reply with the listing ID.");
     return NextResponse.json({ ok: true, note: "report-started" });
   }
 
@@ -2554,7 +2553,7 @@ export async function POST(request) {
     if (dbAvailable && savedMsg && savedMsg._id) {
       await Message.findByIdAndUpdate(savedMsg._id, { $unset: { "meta.listingDraft": "", "meta.state": "" } }).catch(() => null);
     }
-    await sendWithMainMenuButton(phone, "Listing is done using the form only.", "Tap Main menu, then choose List a property.");
+    await sendWithMainMenuButton(phone, "ℹ️ Listing is done using the form only.", "Tap Main menu, then choose List a property.");
     return NextResponse.json({ ok: true, note: "listing-form-only" });
   }
 
@@ -2563,7 +2562,7 @@ export async function POST(request) {
   ------------------------- */
   if (lastMeta && lastMeta.state && lastMeta.state === "REPORT_WAIT_ID") {
     const listingId = userRaw;
-    if (!listingId) { await sendWithMainMenuButton(phone, "Listing ID missing.", "Reply with the listing ID."); return NextResponse.json({ ok: true }); }
+    if (!listingId) { await sendWithMainMenuButton(phone, "⚠️ Listing ID missing.", "Reply with the listing ID."); return NextResponse.json({ ok: true }); }
     if (dbAvailable && savedMsg && savedMsg._id) await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.report.listingId": listingId, "meta.state": "REPORT_WAIT_REASON" } }).catch(() => null);
     await sendWithMainMenuButton(phone, `Reporting ${listingId}.\n\nStep 2 of 2: What is the reason? (e.g. spam, duplicate, wrong price)`, "Reply with the reason.");
     return NextResponse.json({ ok: true, note: "report-step2" });
@@ -2574,7 +2573,7 @@ export async function POST(request) {
     if (dbAvailable && savedMsg && savedMsg._id) {
       await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.report.reason": reason, "meta.report.submittedAt": new Date(), "meta.state": "REPORT_SUBMITTED" } }).catch(() => null);
     }
-    await sendWithMainMenuButton(phone, `Thanks — your report for listing ${listingId || ""} has been received. Our team will review it.`, "Tap Main menu.");
+    await sendWithMainMenuButton(phone, `✅ Thanks — your report for listing ${listingId || ""} has been received. Our team will review it.`, "Tap Main menu.");
     return NextResponse.json({ ok: true, note: "report-submitted" });
   }
 
@@ -2585,7 +2584,7 @@ export async function POST(request) {
     const m = userRaw.match(/^images?\s+(.+)$/i);
     const listingRef = /^view_images_/.test(userRaw) ? userRaw.slice("view_images_".length).trim() : (m ? m[1].trim() : null);
     if (!listingRef) {
-      await sendWithMainMenuButton(phone, "Image request missing listing ID.", "Reply like: images <listing-id>.");
+      await sendWithMainMenuButton(phone, "⚠️ Image request missing listing ID.", "Reply like: images <listing-id>.");
       return NextResponse.json({ ok: true, note: "images-missing-id" });
     }
     const refUpper = String(listingRef).trim().toUpperCase();
@@ -2602,13 +2601,13 @@ export async function POST(request) {
     if (!listing && typeof Listing?.findById === "function") listing = await Listing.findById(listingRef).lean().exec().catch(() => null);
     const imgs = (listing && (listing.images || listing.photos || listing.photosUrls || [])) || [];
     if (!imgs || imgs.length === 0) {
-      await sendWithMainMenuButton(phone, "No images found for this listing.", "Tap Main menu.");
+      await sendWithMainMenuButton(phone, "🖼️ No images found for this listing.", "Tap Main menu to continue.");
       return NextResponse.json({ ok: true, note: "images-not-found" });
     }
     const title = listing?.title ? String(listing.title) : "Listing";
-    await sendTextWithInstructionHeader(phone, `Sending photos for: ${title}`, "Photos are sent below.");
+    await sendTextWithInstructionHeader(phone, `📷 Sending photos for: ${title}`, "Photos will appear below.");
     await sendImages(phone, imgs, { max: 6, caption: `Photos: ${title}` });
-    await sendButtonsWithInstructionHeader(phone, "Return to main menu:", [{ id: "menu_main", title: "Main menu" }], "Tap Main menu.");
+    await sendButtonsWithInstructionHeader(phone, "Return to main menu:", [{ id: "menu_main", title: "🏠 Main menu" }], "Tap Main menu.");
     return NextResponse.json({ ok: true, note: "images-sent" });
   }
 
@@ -2677,7 +2676,7 @@ export async function POST(request) {
     console.log("[webhook] selection resolved:", { listingId });
 
     if (!listingId) {
-      await sendWithMainMenuButton(phone, "Couldn't determine the listing from your reply.", "Reply: contact <CODE> (e.g. H4WH) or contact <ID>.");
+      await sendWithMainMenuButton(phone, "⚠️ Couldn't determine the listing from your reply.", "Reply: contact <CODE> (e.g. H4WH) or contact <ID>.");
       return NextResponse.json({ ok: true, note: "selection-unknown" });
     }
 
@@ -2698,7 +2697,7 @@ export async function POST(request) {
         null;
     }
     if (!listing) {
-      await sendWithMainMenuButton(phone, "Sorry, listing not found.", "Reply again with the number shown (e.g. 1), or tap Main menu.");
+      await sendWithMainMenuButton(phone, "⚠️ Sorry, listing not found.", "Reply again with the number shown (e.g. 1), or tap Main menu.");
       return NextResponse.json({ ok: true, note: "listing-not-found" });
     }
 
@@ -2736,7 +2735,7 @@ export async function POST(request) {
      Simple search fallback (area, $budget)
   ------------------------- */
   if (userRaw && !lastMeta) {
-    await sendWithMainMenuButton(phone, "Search is available via the form only.", "Tap Main menu, then choose Search properties.");
+    await sendWithMainMenuButton(phone, "ℹ️ Search is available via the form only.", "Tap Main menu, then choose Search properties.");
     return NextResponse.json({ ok: true, note: "search-form-only" });
   }
 
@@ -2803,11 +2802,11 @@ async function tryRevealByIdOrCached(listingId, phone, idsFromMeta = [], results
       }
     }
 
-    await sendWithMainMenuButton(phone, "Sorry, listing not found.", "If you still see results, reply again with the number shown (e.g. 1), or tap Main menu.");
+    await sendWithMainMenuButton(phone, "⚠️ Sorry, listing not found.", "If you still see results, reply again with the number shown (e.g. 1), or tap Main menu.");
     return false;
   } catch (e) {
     console.error("[tryRevealByIdOrCached] unexpected error:", e);
-    try { await sendWithMainMenuButton(phone, "Sorry — couldn't fetch contact details right now.", "Tap Main menu."); } catch { }
+    try { await sendWithMainMenuButton(phone, "⚠️ Sorry — couldn't fetch contact details right now.", "Tap Main menu."); } catch { }
     return false;
   }
 }
@@ -2845,10 +2844,10 @@ async function recordPurchase(phone, listing, dbAvailable) {
 
 async function revealFromObject(listing, phone) {
   try {
-    if (!listing) { await sendWithMainMenuButton(phone, "Sorry, listing not found.", "Tap Main menu."); return; }
+    if (!listing) { await sendWithMainMenuButton(phone, "⚠️ Sorry, listing not found.", "Tap Main menu."); return; }
 
     const { listing: ensuredListing, id: ensuredId } = ensureListingHasId(listing, 0);
-    if (!ensuredListing) { await sendWithMainMenuButton(phone, "Sorry, listing not found.", "Tap Main menu."); return; }
+    if (!ensuredListing) { await sendWithMainMenuButton(phone, "⚠️ Sorry, listing not found.", "Tap Main menu."); return; }
 
     listing = ensuredListing;
     const title = listing.title || listing.name || "Listing";
@@ -2895,28 +2894,20 @@ async function revealFromObject(listing, phone) {
       blocks.push(`📷 Photos: ${images.length} image(s). Sending now...`);
     }
 
-    // blocks.push(`\nNext:\n- Reply with a number from your last results anytime\n- To see photos again: images ${ensuredId}\n- Main menu: menu`);
-
     let body = blocks.join("\n\n").trim();
     // Truncate to 1000 chars to ensure it fits in an interactive button message (limit ~1024)
     if (body.length > 1000) body = `${body.slice(0, 950).trim()}\n…\n(Reply 'more' for full text)`;
 
     // Send details with a Main menu button
-    // If images exist, we send them after.
-    // If no images, this is the only message (plus instructions).
-
-    // We use sendButtonsWithInstructionHeader but adapted to ensure it uses the body we built
-    await sendInteractiveButtons(phone, body, [{ id: "menu_main", title: "Main menu" }], { headerText: "Instructions: Use the details below to contact the lister." });
+    await sendInteractiveButtons(phone, body, [{ id: "menu_main", title: "🏠 Main menu" }], { headerText: "✅ Here are the details you requested:" });
 
     if (images.length) {
-      // NOTE: sendImages has built-in deduplication, so it's safe to call here.
-      // But we will pass a custom hash suffix or rely on image URL hashing to avoid accidental suppression
-      // if the user requested the same images recently.
-      await sendImages(phone, images, { max: 6, caption: `Photos: ${title}` });
+      // NOTE: sendImages has built-in deduplication
+      await sendImages(phone, images, { max: 6, caption: `📷 Photos: ${title}` });
     }
   } catch (e) {
     console.error("[revealFromObject] error:", e);
-    try { await sendWithMainMenuButton(phone, "Sorry — couldn't fetch contact details right now.", "Tap Main menu."); } catch { }
+    try { await sendWithMainMenuButton(phone, "⚠️ Sorry — couldn't fetch contact details right now.", "Tap Main menu."); } catch { }
   }
 }
 
