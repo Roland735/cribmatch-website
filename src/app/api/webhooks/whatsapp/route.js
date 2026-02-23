@@ -2209,6 +2209,17 @@ export async function POST(request) {
     if (msgText.length > 3900) msgText = `${msgText.slice(0, 3880).trim()}\n…`;
     await sendText(phone, msgText);
 
+    // Add navigation buttons
+    await sendInteractiveButtons(
+      phone,
+      "What would you like to do next?",
+      [
+        { id: "menu_search", title: "Return to Search" },
+        { id: "menu_main", title: "Main Menu" }
+      ],
+      { headerText: "Navigation" }
+    );
+
     selectionMap.set(phone, { ids, results: ensuredItems });
     if (dbAvailable && savedMsg && savedMsg._id) {
       await Message.findByIdAndUpdate(savedMsg._id, {
