@@ -2206,19 +2206,33 @@ export async function POST(request) {
 
     await saveSearchContext(phone, ids, ensuredItems, dbAvailable);
     let msgText = `👇 Reply with the number (e.g. 1) to get contact details, or type a listing CODE (e.g. H4WH).\n\n${numbered}`.trim();
-    if (msgText.length > 3900) msgText = `${msgText.slice(0, 3880).trim()}\n…`;
-    await sendText(phone, msgText);
 
-    // Add navigation buttons
-    await sendInteractiveButtons(
-      phone,
-      "What would you like to do next?",
-      [
-        { id: "menu_search", title: "Return to Search" },
-        { id: "menu_main", title: "Main Menu" }
-      ],
-      { headerText: "Navigation" }
-    );
+    const navButtons = [
+      { id: "menu_search", title: "Return to Search" },
+      { id: "menu_main", title: "Main Menu" }
+    ];
+
+    // If message is short enough, send as interactive button message (attached buttons)
+    if (msgText.length <= 1000) {
+      await sendInteractiveButtons(
+        phone,
+        msgText,
+        navButtons,
+        { headerText: "Search Results" }
+      );
+    } else {
+      // Fallback for long messages: separate text + buttons
+      if (msgText.length > 3900) msgText = `${msgText.slice(0, 3880).trim()}\n…`;
+      await sendText(phone, msgText);
+
+      // Add navigation buttons
+      await sendInteractiveButtons(
+        phone,
+        "What would you like to do next?",
+        navButtons,
+        { headerText: "Navigation" }
+      );
+    }
 
     selectionMap.set(phone, { ids, results: ensuredItems });
     if (dbAvailable && savedMsg && savedMsg._id) {
