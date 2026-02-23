@@ -68,6 +68,18 @@ async function _shouldSendDb(phone, hash) {
     if (!process.env.MONGODB_URI) return true;
     await dbConnect();
 
+    // 1. Global Debounce (5 seconds) - prevent double-send across instances/restarts
+    const DEBOUNCE_MS = 5000;
+    const recent = await Message.findOne({
+      phone,
+      "meta.direction": "outbound",
+      "meta.hash": hash,
+      createdAt: { $gt: new Date(Date.now() - DEBOUNCE_MS) }
+    }).select("_id").lean().exec().catch(() => null);
+
+    if (recent) return false;
+
+    // 2. Per-Message Dedupe (prevent re-sending for same inbound trigger)
     const lastInbound = await Message.findOne({ phone, "meta.direction": "inbound" })
       .sort({ createdAt: -1 })
       .select({ createdAt: 1 })
@@ -1547,15 +1559,37 @@ export async function POST(request) {
 
   // dedupe incoming
   try {
-    const already = await isAlreadyHandledMsg(dbAvailable, msgId);
-    if (already) return NextResponse.json({ ok: true, note: "duplicate-event" });
-    await markHandledMsg(dbAvailable, msgId);
+    // 1. Fast memory check
+    if (isSeenInMemory(msgId)) {
+      console.log("[webhook] Duplicate (Memory):", msgId);
+      return NextResponse.json({ ok: true, note: "duplicate-event-mem" });
+    }
+
+    // 2. Atomic DB check-and-set
+    if (dbAvailable && msgId) {
+      // Attempt to set handled=true.
+      // If document exists, we get the OLD version (new: false).
+      // If it didn't exist, we create it with handled=true.
+      const prev = await Message.findOneAndUpdate(
+        { wa_message_id: msgId },
+        { $set: { "meta.handled": true, lastSeenAt: new Date() } },
+        { upsert: true, new: false, setDefaultsOnInsert: true }
+      ).select("meta.handled").lean().exec().catch(() => null);
+
+      // If previous version existed AND was already handled, it's a duplicate.
+      if (prev && prev.meta?.handled) {
+        console.log("[webhook] Duplicate (DB):", msgId);
+        markSeenInMemory(msgId);
+        return NextResponse.json({ ok: true, note: "duplicate-event-db" });
+      }
+    }
+    markSeenInMemory(msgId);
   } catch (e) { console.warn("[webhook] dedupe error", e); }
 
   // persist incoming message as Message (best-effort)
   let savedMsg = null;
   try {
-    if (dbAvailable && typeof Message?.create === "function") {
+    if (dbAvailable && typeof Message?.findOneAndUpdate === "function") {
       const doc = {
         phone,
         from: "user",
@@ -1563,13 +1597,14 @@ export async function POST(request) {
         type: parsedText ? "text" : "interactive",
         text: parsedText || "",
         raw: payload,
-        meta: { direction: "inbound" },
+        meta: { direction: "inbound", handled: true },
       };
-      try {
-        savedMsg = await Message.create(doc);
-      } catch (e) {
-        try { savedMsg = await Message.findOneAndUpdate({ wa_message_id: msgId }, { $setOnInsert: doc }, { upsert: true, new: true }).exec(); } catch (e2) { savedMsg = null; }
-      }
+      // Upsert with $set to ensure content is saved even if document exists (from dedupe)
+      savedMsg = await Message.findOneAndUpdate(
+        { wa_message_id: msgId },
+        { $set: doc },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      ).exec();
     }
   } catch (e) { console.warn("[webhook] save message error", e); }
 
