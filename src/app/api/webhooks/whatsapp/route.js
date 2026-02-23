@@ -2213,24 +2213,24 @@ export async function POST(request) {
     ];
 
     // If message is short enough, send as interactive button message (attached buttons)
-    if (msgText.length <= 1000) {
+    if (msgText.length <= 1024) {
       await sendInteractiveButtons(
         phone,
         msgText,
-        navButtons,
-        { headerText: "Search Results" }
+        navButtons
+        // No header to keep it clean
       );
     } else {
       // Fallback for long messages: separate text + buttons
       if (msgText.length > 3900) msgText = `${msgText.slice(0, 3880).trim()}\n…`;
       await sendText(phone, msgText);
 
-      // Add navigation buttons
+      // Add navigation buttons with minimal body text
       await sendInteractiveButtons(
         phone,
-        "What would you like to do next?",
-        navButtons,
-        { headerText: "Navigation" }
+        "👇",
+        navButtons
+        // No header
       );
     }
 
