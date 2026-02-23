@@ -340,7 +340,7 @@ async function sendInteractiveList(phoneNumber, bodyText, rows = [], opts = {}) 
   return res;
 }
 
-async function showDeletePhotosMenu(phone, listingId) {
+async function showDeletePhotosMenu(phone, listingId, selectedIndices = []) {
   if (mongoose.connection.readyState === 1 && typeof Listing?.findById === "function") {
     const listing = await Listing.findById(listingId).select("images title").lean().exec().catch(() => null);
     if (!listing) return;
@@ -351,26 +351,33 @@ async function showDeletePhotosMenu(phone, listingId) {
       return;
     }
 
-    await sendText(phone, `📷 Loading ${images.length} photo(s) for "${listing.title}"...`);
-
-    // Send images with captions
-    for (let i = 0; i < images.length; i++) {
-      await sendImage(phone, images[i], `Photo ${i + 1}`);
+    // Only send images if starting fresh (no selection)
+    if (selectedIndices.length === 0) {
+      await sendText(phone, `📷 Loading ${images.length} photo(s) for "${listing.title}"...`);
+      // Send images with captions
+      for (let i = 0; i < images.length; i++) {
+        await sendImage(phone, images[i], `Photo ${i + 1}`);
+      }
     }
 
     // Build rows
-    const rows = images.map((_, i) => ({
-      id: `delete_photo_idx_${listingId}_${i}`,
-      title: `Delete Photo ${i + 1}`,
-      description: "Remove this photo"
-    }));
-
-    // Add "Delete All" option
-    rows.push({
-      id: `delete_all_photos_confirm_${listingId}`,
-      title: "🗑️ Delete ALL",
-      description: "Remove all photos"
+    const rows = images.map((_, i) => {
+      const isSelected = selectedIndices.includes(i);
+      return {
+        id: `toggle_photo_delete_${listingId}_${i}`,
+        title: isSelected ? `✅ Photo ${i + 1} (Selected)` : `Photo ${i + 1}`,
+        description: isSelected ? "Tap to unselect" : "Tap to select for deletion"
+      };
     });
+
+    // Add "Confirm Delete" option if any selected
+    if (selectedIndices.length > 0) {
+      rows.unshift({
+        id: `confirm_delete_photos_${listingId}`,
+        title: `🗑️ Delete (${selectedIndices.length})`,
+        description: "Confirm deletion"
+      });
+    }
 
     // Add "Back" option
     rows.push({
@@ -379,10 +386,12 @@ async function showDeletePhotosMenu(phone, listingId) {
       description: "Go back to photo management"
     });
 
-    await sendInteractiveList(phone, "Select a photo to delete below:", rows, {
-      headerText: "Delete Photos",
+    const headerText = selectedIndices.length > 0 ? `Delete Photos (${selectedIndices.length} selected)` : "Delete Photos";
+
+    await sendInteractiveList(phone, "Select photos to delete below:", rows, {
+      headerText: headerText,
       sectionTitle: "Options",
-      buttonText: "Delete"
+      buttonText: "Select"
     });
   }
 }
@@ -2390,41 +2399,66 @@ export async function POST(request) {
   // Handle "Delete Photos Menu"
   if (cmd.startsWith("delete_photos_menu_")) {
     const listingId = cmd.replace("delete_photos_menu_", "");
-    await showDeletePhotosMenu(phone, listingId);
+    // Clear selection state
+    if (savedMsg && savedMsg._id) {
+      await Message.findByIdAndUpdate(savedMsg._id, { $unset: { "meta.deleteSelection": "" } }).catch(() => null);
+    }
+    await showDeletePhotosMenu(phone, listingId, []);
     return NextResponse.json({ ok: true, note: "delete-photos-menu" });
   }
 
-  // Handle "Delete Specific Photo" (by index)
-  if (cmd.startsWith("delete_photo_idx_")) {
-    const parts = cmd.replace("delete_photo_idx_", "").split("_");
+  // Handle "Toggle Photo Selection"
+  if (cmd.startsWith("toggle_photo_delete_")) {
+    const parts = cmd.replace("toggle_photo_delete_", "").split("_");
     const idxStr = parts.pop();
     const listingId = parts.join("_");
     const idx = parseInt(idxStr, 10);
 
-    if (dbAvailable && typeof Listing?.findById === "function" && !isNaN(idx)) {
-      const listing = await Listing.findById(listingId).exec().catch(() => null);
-      if (listing && Array.isArray(listing.images)) {
-        if (idx >= 0 && idx < listing.images.length) {
-          listing.images.splice(idx, 1);
-          await listing.save();
-          await sendText(phone, "✅ Photo deleted.");
-        } else {
-          await sendText(phone, "⚠️ Photo not found (already deleted?).");
-        }
+    if (!isNaN(idx)) {
+      // Get previous selection
+      const currentSelection = lastMeta?.deleteSelection || [];
+      const newSelection = currentSelection.includes(idx)
+        ? currentSelection.filter(i => i !== idx)
+        : [...currentSelection, idx];
+
+      // Save selection state
+      if (savedMsg && savedMsg._id) {
+        await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.deleteSelection": newSelection } }).catch(() => null);
       }
-      // Show menu again
-      await showDeletePhotosMenu(phone, listingId);
-      return NextResponse.json({ ok: true, note: "photo-idx-deleted" });
+
+      await showDeletePhotosMenu(phone, listingId, newSelection);
+      return NextResponse.json({ ok: true, note: "photo-selection-toggled" });
     }
   }
 
-  // Handle "Delete All Photos Confirm"
-  if (cmd.startsWith("delete_all_photos_confirm_")) {
-    const listingId = cmd.replace("delete_all_photos_confirm_", "");
-    if (dbAvailable && typeof Listing?.findByIdAndUpdate === "function") {
-      await Listing.findByIdAndUpdate(listingId, { $set: { images: [] } });
-      await sendInteractiveButtons(phone, "✅ All photos have been deleted.", [{ id: `manage_photos_${listingId}`, title: "🔙 Back to Photos" }], { headerText: "🗑️ Photos Deleted" });
-      return NextResponse.json({ ok: true, note: "photos-deleted-all" });
+  // Handle "Confirm Delete Selected Photos"
+  if (cmd.startsWith("confirm_delete_photos_")) {
+    const listingId = cmd.replace("confirm_delete_photos_", "");
+    const selection = lastMeta?.deleteSelection || [];
+
+    if (selection.length > 0 && dbAvailable && typeof Listing?.findById === "function") {
+      const listing = await Listing.findById(listingId).exec().catch(() => null);
+      if (listing && Array.isArray(listing.images)) {
+        // Filter out selected indices
+        // IMPORTANT: We must filter based on index, so we keep items where index is NOT in selection
+        const newImages = listing.images.filter((_, i) => !selection.includes(i));
+
+        listing.images = newImages;
+        await listing.save();
+
+        await sendText(phone, `✅ Deleted ${selection.length} photo(s).`);
+      }
+
+      // Clear selection and show menu again
+      if (savedMsg && savedMsg._id) {
+        await Message.findByIdAndUpdate(savedMsg._id, { $unset: { "meta.deleteSelection": "" } }).catch(() => null);
+      }
+      await showDeletePhotosMenu(phone, listingId, []);
+      return NextResponse.json({ ok: true, note: "photos-deleted-selection" });
+    } else {
+      await sendText(phone, "⚠️ No photos selected.");
+      await showDeletePhotosMenu(phone, listingId, []);
+      return NextResponse.json({ ok: true, note: "photos-deleted-none" });
     }
   }
 
