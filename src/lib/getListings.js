@@ -720,3 +720,23 @@ export async function getListingById(id) {
   if (!listing) return null;
   return normalizeListingDoc(listing);
 }
+
+export async function getListingByShortId(code) {
+  if (!code) return null;
+  const shortId = code.trim().toUpperCase();
+
+  // 1. Check DB
+  if (process.env.MONGODB_URI) {
+    await dbConnect();
+    const listing = await Listing.findOne({ shortId });
+    if (listing) return normalizeListingDoc(listing);
+  }
+
+  // 2. Check Seed Listings (fallback)
+  // Try with index 0 (most common/default)
+  const found = seedListings
+    .map(l => withSeedShortId(l, 0))
+    .find(l => l.shortId === shortId);
+
+  return found ? withSeedShortId(found, 0) : null;
+}

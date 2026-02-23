@@ -13,7 +13,7 @@ import crypto from "crypto";
 import mongoose from "mongoose";
 import { dbConnect, WebhookEvent, Listing, Purchase } from "@/lib/db";
 import Message from "@/lib/Message";
-import { getListingById, searchPublishedListings, getListingFacets } from "@/lib/getListings";
+import { getListingById, searchPublishedListings, getListingFacets, getListingByShortId } from "@/lib/getListings";
 
 export const runtime = "nodejs";
 
@@ -1594,6 +1594,34 @@ export async function POST(request) {
   }
 
   /* -------------------------
+     Handle Search by Code (AWAITING_SEARCH_CODE)
+  ------------------------- */
+  if (lastMeta?.state === "AWAITING_SEARCH_CODE" && parsedText && !msg?.type?.includes("interactive")) {
+    const code = parsedText.trim().toUpperCase();
+
+    // Clear state
+    if (savedMsg && savedMsg._id) {
+      await Message.findByIdAndUpdate(savedMsg._id, { $unset: { "meta.state": "" } }).catch(() => null);
+    }
+
+    if (code.length < 3) {
+      await sendWithMainMenuButton(phone, "Code is too short.", "Please try searching again.");
+      return NextResponse.json({ ok: true, note: "code-too-short" });
+    }
+
+    const listing = await getListingByShortId(code);
+    if (!listing) {
+      await sendWithMainMenuButton(phone, `No listing found for code "${code}".`, "Please check the code and try again.");
+      return NextResponse.json({ ok: true, note: "code-not-found" });
+    }
+
+    // Found! Show details
+    await revealFromObject(listing, phone);
+    await recordPurchase(phone, listing, dbAvailable);
+    return NextResponse.json({ ok: true, note: "code-found-revealed" });
+  }
+
+  /* -------------------------
      Handle Address Entry (AWAITING_ADDRESS)
   ------------------------- */
   if (lastMeta?.state === "AWAITING_ADDRESS" && parsedText && !msg?.type?.includes("interactive")) {
@@ -2321,6 +2349,7 @@ export async function POST(request) {
       { id: "search_rent_a_chair", title: "Rent a chair" },
       { id: "search_boarding", title: "Boarding House" },
       { id: "search_shop", title: "Commercial/Shoping" },
+      { id: "search_code", title: "Search by Code" },
     ];
     await sendInteractiveList(
       phone,
@@ -2381,6 +2410,19 @@ export async function POST(request) {
       return NextResponse.json({ ok: true, note: "search-chair-open-failed", flowResp });
     }
     return NextResponse.json({ ok: true, note: "search-chair-opened", flowResp });
+  }
+
+  /* -------------------------
+     Handle "Search by Code"
+  ------------------------- */
+  if (cmd === "search_code") {
+    await sendTextWithInstructionHeader(phone, "Please enter the 4-character Property Code (e.g. SIVR):", "Type the code below to view details.");
+
+    // Save state
+    if (savedMsg && typeof Message?.findByIdAndUpdate === "function") {
+      await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.state": "AWAITING_SEARCH_CODE" } }).catch(() => null);
+    }
+    return NextResponse.json({ ok: true, note: "awaiting-search-code" });
   }
 
   /* -------------------------
