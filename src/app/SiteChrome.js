@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 
 function shouldHideChrome(pathname) {
@@ -31,8 +32,14 @@ export default function SiteChrome({ children }) {
         <nav className="mx-auto max-w-screen-2xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between gap-3">
             <Link href="/" className="flex shrink-0 items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-400/10 ring-1 ring-emerald-400/50">
-                <span className="text-sm font-semibold text-emerald-300">CM</span>
+              <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-emerald-400/10 ring-1 ring-emerald-400/50">
+                <Image
+                  src="/logo.png"
+                  alt="CribMatch Logo"
+                  width={36}
+                  height={36}
+                  className="h-full w-full object-cover"
+                />
               </div>
               <span className="text-lg font-semibold tracking-tight">CribMatch</span>
               <span className="hidden sm:inline-flex rounded-full bg-emerald-400/10 px-2.5 py-1 text-xs font-semibold text-emerald-200 ring-1 ring-inset ring-emerald-400/30">

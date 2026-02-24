@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { getListingById } from "@/lib/getListings";
 import { authOptions } from "@/lib/auth";
+import ListingImageSlider from "../ListingImageSlider";
 
 function formatPrice(pricePerMonth) {
   if (typeof pricePerMonth !== "number") return "";
@@ -142,43 +143,7 @@ export default async function ListingDetail({ params }) {
         </div>
 
         <div className="mt-8 grid gap-10 lg:grid-cols-2 lg:items-start">
-          <div className="space-y-4">
-            {listing.images?.[0] ? (
-              <div className="relative aspect-[16/9] overflow-hidden rounded-3xl border border-white/10 bg-slate-950/60">
-                <Image
-                  src={listing.images[0]}
-                  alt={listing.title}
-                  fill
-                  priority
-                  sizes="(min-width: 1024px) 50vw, 100vw"
-                  className="object-cover"
-                />
-              </div>
-            ) : (
-              <div className="flex aspect-[16/9] items-center justify-center rounded-3xl border border-white/10 bg-slate-950/60 text-sm text-slate-400">
-                No photo available
-              </div>
-            )}
-
-            {Array.isArray(listing.images) && listing.images.length > 1 ? (
-              <div className="grid grid-cols-3 gap-3">
-                {listing.images.slice(1, 4).map((src) => (
-                  <div
-                    key={src}
-                    className="relative aspect-[16/10] overflow-hidden rounded-2xl border border-white/10 bg-slate-950/60"
-                  >
-                    <Image
-                      src={src}
-                      alt={listing.title}
-                      fill
-                      sizes="(min-width: 1024px) 16vw, 33vw"
-                      className="object-cover"
-                    />
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </div>
+          <ListingImageSlider images={listing.images} title={listing.title} />
 
           <div className="space-y-8">
             <div className="space-y-3">
@@ -249,51 +214,68 @@ export default async function ListingDetail({ params }) {
               <p className="text-xs font-semibold uppercase tracking-wide text-emerald-200">
                 Contact
               </p>
-              <p className="mt-3 text-sm text-emerald-100/90">
-                {listing.contactName ? listing.contactName : "Landlord / Agent"}
-              </p>
 
-              <div className="mt-4 grid gap-3 text-sm">
-                {hasWhatsApp ? (
-                  <>
-                    <a
-                      href={whatsappViewingHref}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-400 px-3 py-2 font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300"
-                    >
-                      Request viewing
-                    </a>
-                    <a
-                      href={whatsappOfferHref}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex w-full items-center justify-center rounded-xl border border-emerald-400/30 px-3 py-2 font-semibold text-emerald-100 transition hover:bg-emerald-400/10"
-                    >
-                      Make an offer
-                    </a>
-                  </>
-                ) : null}
-                {hasPhone ? (
-                  <a
-                    href={`tel:${phoneDigits}`}
-                    className="inline-flex w-full items-center justify-center rounded-xl border border-emerald-400/30 px-3 py-2 font-semibold text-emerald-100 transition hover:bg-emerald-400/10"
+              {session ? (
+                <>
+                  <p className="mt-3 text-sm text-emerald-100/90">
+                    {listing.contactName ? listing.contactName : "Landlord / Agent"}
+                  </p>
+
+                  <div className="mt-4 grid gap-3 text-sm">
+                    {hasWhatsApp ? (
+                      <>
+                        <a
+                          href={whatsappViewingHref}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-400 px-3 py-2 font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300"
+                        >
+                          Request viewing
+                        </a>
+                        <a
+                          href={whatsappOfferHref}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex w-full items-center justify-center rounded-xl border border-emerald-400/30 px-3 py-2 font-semibold text-emerald-100 transition hover:bg-emerald-400/10"
+                        >
+                          Make an offer
+                        </a>
+                      </>
+                    ) : null}
+                    {hasPhone ? (
+                      <a
+                        href={`tel:${phoneDigits}`}
+                        className="inline-flex w-full items-center justify-center rounded-xl border border-emerald-400/30 px-3 py-2 font-semibold text-emerald-100 transition hover:bg-emerald-400/10"
+                      >
+                        Call
+                      </a>
+                    ) : null}
+                    {hasEmail ? (
+                      <a
+                        href={`mailto:${listing.contactEmail}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(viewingMessage)}`}
+                        className="inline-flex w-full items-center justify-center rounded-xl border border-emerald-400/30 px-3 py-2 font-semibold text-emerald-100 transition hover:bg-emerald-400/10"
+                      >
+                        Email
+                      </a>
+                    ) : null}
+                    <p className="text-xs text-emerald-100/80">
+                      Stay safe: view in person and confirm details before paying.
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <div className="mt-4 space-y-4">
+                  <p className="text-sm text-emerald-100/90">
+                    Please login to view contact details for this listing.
+                  </p>
+                  <Link
+                    href={`/login?callbackUrl=/listings/${listing._id}`}
+                    className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-400 px-3 py-2 font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300"
                   >
-                    Call
-                  </a>
-                ) : null}
-                {hasEmail ? (
-                  <a
-                    href={`mailto:${listing.contactEmail}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(viewingMessage)}`}
-                    className="inline-flex w-full items-center justify-center rounded-xl border border-emerald-400/30 px-3 py-2 font-semibold text-emerald-100 transition hover:bg-emerald-400/10"
-                  >
-                    Email
-                  </a>
-                ) : null}
-                <p className="text-xs text-emerald-100/80">
-                  Stay safe: view in person and confirm details before paying.
-                </p>
-              </div>
+                    Login to view contact
+                  </Link>
+                </div>
+              )}
             </div>
           </div>
         </div>

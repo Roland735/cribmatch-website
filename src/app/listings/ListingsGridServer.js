@@ -1,5 +1,8 @@
 import Link from "next/link";
 import Image from "next/image";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import ListingCardSlider from "./ListingCardSlider";
 
 function formatPrice(pricePerMonth) {
   if (typeof pricePerMonth !== "number") return "";
@@ -19,12 +22,13 @@ function formatTitle(value) {
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }
 
-export default function ListingsGridServer({
+export default async function ListingsGridServer({
   listings = [],
   compact = false,
   emptyTitle = "Featured rentals",
   emptyMessage = "No listings yet. Check back soon or ask on WhatsApp.",
 }) {
+  const session = await getServerSession(authOptions);
   const hasListings = Array.isArray(listings) && listings.length > 0;
 
   if (!hasListings) {
@@ -45,23 +49,11 @@ export default function ListingsGridServer({
           key={listing._id || listing.title}
           className="rounded-2xl border border-white/10 bg-slate-900/60 p-6 transition hover:border-white/20"
         >
-          <Link href={`/listings/${listing._id}`} className="block" prefetch={false}>
-            {listing.images?.[0] ? (
-              <div className="relative aspect-[16/9] overflow-hidden rounded-2xl bg-slate-950/60 ring-1 ring-inset ring-white/10">
-                <Image
-                  src={listing.images[0]}
-                  alt={listing.title}
-                  fill
-                  sizes="(min-width: 1024px) 33vw, 100vw"
-                  className="object-cover"
-                />
-              </div>
-            ) : (
-              <div className="flex aspect-[16/9] items-center justify-center rounded-2xl bg-slate-950/60 text-xs text-slate-500 ring-1 ring-inset ring-white/10">
-                Property image
-              </div>
-            )}
-          </Link>
+          <ListingCardSlider
+            images={listing.images}
+            title={listing.title}
+            href={`/listings/${listing._id}`}
+          />
 
           <div className="mt-6 flex flex-wrap items-center gap-2 text-xs">
             {listing.suburb ? (
@@ -129,21 +121,24 @@ export default function ListingsGridServer({
               : null}
           </div>
 
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Link
-              href={`/listings/${listing._id}`}
-              className="inline-flex items-center justify-center rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold text-slate-50 transition hover:border-white/30 hover:bg-white/5"
-              prefetch={false}
-            >
-              View details
-            </Link>
-            <Link
-              href={`/listings/${listing._id}#contact`}
-              className="inline-flex items-center justify-center rounded-xl bg-emerald-400 px-3 py-2 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300"
-              prefetch={false}
-            >
-              View contacts
-            </Link>
+          <div className="mt-6">
+            {session ? (
+              <Link
+                href={`/listings/${listing._id}#contact`}
+                className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-400 px-3 py-2 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300"
+                prefetch={false}
+              >
+                View contact
+              </Link>
+            ) : (
+              <Link
+                href="/login"
+                className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-400/10 px-3 py-2 text-sm font-semibold text-emerald-200 ring-1 ring-inset ring-emerald-400/30 transition hover:bg-emerald-400/20"
+                prefetch={false}
+              >
+                Login to view contact
+              </Link>
+            )}
           </div>
         </article>
       ))}
