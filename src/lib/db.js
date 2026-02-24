@@ -156,3 +156,14 @@ const PurchaseSchema = new mongoose.Schema({
 PurchaseSchema.index({ phone: 1, listingId: 1 }, { unique: true });
 
 export const Purchase = mongoose.models.Purchase || mongoose.model("Purchase", PurchaseSchema);
+
+const ReportSchema = new mongoose.Schema({
+  phone: { type: String, required: true, index: true },
+  listingId: { type: String, ref: 'Listing', required: true },
+  reason: { type: String, required: true },
+  story: { type: String, default: "" },
+  status: { type: String, enum: ['pending', 'reviewed', 'resolved'], default: 'pending' },
+  createdAt: { type: Date, default: Date.now }
+});
+
+export const Report = mongoose.models.Report || mongoose.model("Report", ReportSchema);

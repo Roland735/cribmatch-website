@@ -2358,12 +2358,19 @@ export async function POST(request) {
         $set: { "meta.report.listingId": listingId, "meta.state": "REPORT_WAIT_REASON" }
       }).catch(() => null);
     }
-    await sendWithMainMenuButton(
-      phone,
-      `Reporting listing: ${listingId}.\n\nStep 2 of 2: What is the reason? (e.g. scam, already rented, wrong price)`,
-      "Reply with the reason."
-    );
-    return NextResponse.json({ ok: true, note: "report-step2-from-button" });
+
+    const seriousMsg = "🛡️ *We take your reports seriously.*\n\nCribMatch is committed to a safe marketplace. Reports help us remove scammers and keep listings accurate. Every report is reviewed by our security team.\n\n*Step 2 of 3: Why are you reporting this?*";
+    const reasons = [
+      { id: "reason_scam", title: "🚨 Scam / Fraud", description: "Asking for money before viewing" },
+      { id: "reason_rented", title: "✅ Already Rented", description: "Property is no longer available" },
+      { id: "reason_price", title: "💰 Wrong Price", description: "Price is different from listing" },
+      { id: "reason_fake", title: "🖼️ Fake Photos", description: "Photos don't match property" },
+      { id: "reason_other", title: "❓ Other Category", description: "Something else is wrong" },
+      { id: "menu_main", title: "🏠 Cancel", description: "Back to main menu" }
+    ];
+
+    await sendInteractiveList(phone, seriousMsg, reasons, { headerText: "Report Listing", buttonText: "Choose Reason" });
+    return NextResponse.json({ ok: true, note: "report-step2-reasons-sent" });
   }
 
   // Handle "Edit Details" -> Opens the Flow
@@ -2971,17 +2978,80 @@ export async function POST(request) {
     if (dbAvailable && savedMsg && savedMsg._id) {
       await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.report.listingId": listingId, "meta.state": "REPORT_WAIT_REASON" } }).catch(() => null);
     }
-    await sendWithMainMenuButton(phone, `Reporting listing: ${listingId}.\n\nStep 2 of 2: What is the reason? (e.g. spam, already rented, wrong price)`, "Reply with the reason.");
+
+    const seriousMsg = "🛡️ *We take your reports seriously.*\n\nCribMatch is committed to a safe marketplace. Reports help us remove scammers and keep listings accurate. Every report is reviewed by our security team.\n\n*Step 2 of 3: Why are you reporting this?*";
+    const reasons = [
+      { id: "reason_scam", title: "🚨 Scam / Fraud", description: "Asking for money before viewing" },
+      { id: "reason_rented", title: "✅ Already Rented", description: "Property is no longer available" },
+      { id: "reason_price", title: "💰 Wrong Price", description: "Price is different from listing" },
+      { id: "reason_fake", title: "🖼️ Fake Photos", description: "Photos don't match property" },
+      { id: "reason_other", title: "❓ Other Category", description: "Something else is wrong" },
+      { id: "menu_main", title: "🏠 Cancel", description: "Back to main menu" }
+    ];
+    await sendInteractiveList(phone, seriousMsg, reasons, { headerText: "Report Listing", buttonText: "Choose Reason" });
     return NextResponse.json({ ok: true, note: "report-step2" });
   }
+
   if (lastMeta && lastMeta.state && lastMeta.state === "REPORT_WAIT_REASON") {
-    const reason = userRaw || "unspecified";
-    const listingId = lastMeta.report?.listingId || (dbAvailable && savedMsg && savedMsg._id ? (await Message.findById(savedMsg._id).lean().exec().catch(() => null))?.meta?.report?.listingId : null);
-    if (dbAvailable && savedMsg && savedMsg._id) {
-      await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.report.reason": reason, "meta.report.submittedAt": new Date(), "meta.state": "REPORT_SUBMITTED" } }).catch(() => null);
+    let reason = userRaw || "unspecified";
+    if (reason.startsWith("reason_")) {
+      reason = reason.replace("reason_", "").replace("_", " ").toUpperCase();
     }
-    await sendWithMainMenuButton(phone, `✅ Thanks — your report for listing ${listingId || ""} has been received. Our team will review it.`, "Tap Main menu.");
-    return NextResponse.json({ ok: true, note: "report-submitted" });
+
+    if (dbAvailable && savedMsg && savedMsg._id) {
+      await Message.findByIdAndUpdate(savedMsg._id, {
+        $set: {
+          "meta.report.reason": reason,
+          "meta.state": "REPORT_WAIT_STORY"
+        }
+      }).catch(() => null);
+    }
+
+    await sendWithMainMenuButton(
+      phone,
+      "📖 *Step 3 of 3: Tell us more.*\n\nPlease describe what happened or why you are reporting this listing. Your story helps our team take the right action.",
+      "Reply with your story."
+    );
+    return NextResponse.json({ ok: true, note: "report-step3-story-wait" });
+  }
+
+  if (lastMeta && lastMeta.state && lastMeta.state === "REPORT_WAIT_STORY") {
+    const story = userRaw || "";
+    const reportData = lastMeta.report || {};
+    const listingId = reportData.listingId;
+    const reason = reportData.reason;
+
+    if (dbAvailable) {
+      try {
+        const { Report } = await import("@/lib/db");
+        await new Report({
+          phone: digitsOnly(phone),
+          listingId: listingId,
+          reason: reason,
+          story: story,
+          status: 'pending'
+        }).save();
+      } catch (e) {
+        console.error("[report] failed to save to DB:", e);
+      }
+    }
+
+    if (dbAvailable && savedMsg && savedMsg._id) {
+      await Message.findByIdAndUpdate(savedMsg._id, {
+        $set: {
+          "meta.report.story": story,
+          "meta.report.submittedAt": new Date(),
+          "meta.state": "REPORT_SUBMITTED"
+        }
+      }).catch(() => null);
+    }
+
+    await sendWithMainMenuButton(
+      phone,
+      "✅ *Report Submitted.*\n\nThank you for helping keep CribMatch safe. Our team will investigate this listing immediately. If we need more details, we will reach out to you.",
+      "Tap Main menu."
+    );
+    return NextResponse.json({ ok: true, note: "report-finished" });
   }
 
   /* -------------------------
