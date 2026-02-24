@@ -2629,6 +2629,7 @@ export async function POST(request) {
         return NextResponse.json({ ok: true, note: "code-not-found" });
       }
       await revealFromObject(listing, phone);
+      await recordPurchase(phone, listing, dbAvailable);
       return NextResponse.json({ ok: true, note: "code-found" });
     }
   }
@@ -3109,6 +3110,7 @@ export async function POST(request) {
 
     // reveal contact
     await revealFromObject(listing, phone);
+    await recordPurchase(phone, listing, dbAvailable);
 
     // save that user viewed this contact
     if (dbAvailable && savedMsg && savedMsg._id) {
