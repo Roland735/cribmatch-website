@@ -1432,6 +1432,7 @@ function detectRequestedScreen(rawPayload = {}) {
       if (keys.includes("city") || keys.includes("selected_city") || keys.includes("q") || keys.includes("min_price")) return "SEARCH";
     }
   }
+
   const flowData = getFlowDataFromPayload(rawPayload);
   if (flowData && (flowData.title || flowData.listerPhoneNumber || flowData.pricePerMonth || flowData.listing_type || flowData.lister_phone_number || flowData.price_per_month)) return "LIST_PROPERTY";
   if (flowData && (flowData.room_type || flowData.occupancy || flowData.gender_preference || flowData.duration)) return "BOARDING_SEARCH";
@@ -2346,6 +2347,22 @@ export async function POST(request) {
     }
   }
 
+  // Handle direct report command from button (attached to listing details)
+  if (cmd.startsWith("report_listing_")) {
+    const listingId = cmd.replace("report_listing_", "");
+    if (dbAvailable && savedMsg && savedMsg._id) {
+      await Message.findByIdAndUpdate(savedMsg._id, {
+        $set: { "meta.report.listingId": listingId, "meta.state": "REPORT_WAIT_REASON" }
+      }).catch(() => null);
+    }
+    await sendWithMainMenuButton(
+      phone,
+      `Reporting listing: ${listingId}.\n\nStep 2 of 2: What is the reason? (e.g. scam, already rented, wrong price)`,
+      "Reply with the reason."
+    );
+    return NextResponse.json({ ok: true, note: "report-step2-from-button" });
+  }
+
   // Handle "Edit Details" -> Opens the Flow
   if (cmd.startsWith("edit_details_")) {
     const listingId = cmd.replace("edit_details_", "");
@@ -2873,10 +2890,37 @@ export async function POST(request) {
      Report flow
   ------------------------- */
   if (lastMeta && lastMeta.state && lastMeta.state === "REPORT_WAIT_ID") {
-    const listingId = userRaw;
-    if (!listingId) { await sendWithMainMenuButton(phone, "⚠️ Listing ID missing.", "Reply with the listing ID."); return NextResponse.json({ ok: true }); }
-    if (dbAvailable && savedMsg && savedMsg._id) await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.report.listingId": listingId, "meta.state": "REPORT_WAIT_REASON" } }).catch(() => null);
-    await sendWithMainMenuButton(phone, `Reporting ${listingId}.\n\nStep 2 of 2: What is the reason? (e.g. spam, duplicate, wrong price)`, "Reply with the reason.");
+    const listingIdInput = userRaw.trim();
+    if (!listingIdInput) {
+      await sendWithMainMenuButton(phone, "⚠️ Listing ID missing.", "Reply with the listing ID.");
+      return NextResponse.json({ ok: true });
+    }
+
+    let listingId = listingIdInput;
+    // Resolve shortId if needed
+    if (dbAvailable && listingIdInput.length === 4 && /^[A-Z0-9]{4}$/i.test(listingIdInput)) {
+      const l = await Listing.findOne({ shortId: listingIdInput.toUpperCase() }).lean().exec().catch(() => null);
+      if (l) listingId = String(l._id);
+    }
+
+    // Verify purchase
+    if (dbAvailable) {
+      const hasPurchased = await Purchase.findOne({ phone, listingId }).lean().exec().catch(() => null);
+      if (!hasPurchased) {
+        await sendWithMainMenuButton(
+          phone,
+          "❌ Access Denied\n\nYou can only report listings that you have previously viewed contact details for. Please search and unlock a listing first.",
+          "Tap Main menu."
+        );
+        if (savedMsg && savedMsg._id) await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.state": "IDLE" } }).catch(() => null);
+        return NextResponse.json({ ok: true, note: "report-denied-no-purchase" });
+      }
+    }
+
+    if (dbAvailable && savedMsg && savedMsg._id) {
+      await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.report.listingId": listingId, "meta.state": "REPORT_WAIT_REASON" } }).catch(() => null);
+    }
+    await sendWithMainMenuButton(phone, `Reporting listing: ${listingId}.\n\nStep 2 of 2: What is the reason? (e.g. spam, already rented, wrong price)`, "Reply with the reason.");
     return NextResponse.json({ ok: true, note: "report-step2" });
   }
   if (lastMeta && lastMeta.state && lastMeta.state === "REPORT_WAIT_REASON") {
@@ -3210,8 +3254,16 @@ async function revealFromObject(listing, phone) {
     // Truncate to 1000 chars to ensure it fits in an interactive button message (limit ~1024)
     if (body.length > 1000) body = `${body.slice(0, 950).trim()}\n…\n(Reply 'more' for full text)`;
 
-    // Send details with a Main menu button
-    await sendInteractiveButtons(phone, body, [{ id: "menu_main", title: "🏠 Main menu" }], { headerText: "✅ Here are the details you requested:" });
+    // Send details with Report and Main menu buttons
+    await sendInteractiveButtons(
+      phone,
+      body,
+      [
+        { id: `report_listing_${ensuredId}`, title: "🚩 Report Listing" },
+        { id: "menu_main", title: "🏠 Main menu" }
+      ],
+      { headerText: "✅ Here are the details you requested:" }
+    );
 
     if (images.length) {
       // NOTE: sendImages has built-in deduplication
