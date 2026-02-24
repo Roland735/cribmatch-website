@@ -122,6 +122,10 @@ export default async function ListingDetail({ params }) {
         : undefined,
   };
 
+  const photos = Array.isArray(listing.images || listing.photos || listing.photosUrls)
+    ? (listing.images || listing.photos || listing.photosUrls).filter((url) => typeof url === "string")
+    : [];
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-50">
       <div className="mx-auto max-w-6xl px-6 py-12 lg:px-8 lg:py-16">
@@ -143,7 +147,7 @@ export default async function ListingDetail({ params }) {
         </div>
 
         <div className="mt-8 grid gap-10 lg:grid-cols-2 lg:items-start">
-          <ListingImageSlider images={listing.images} title={listing.title} />
+          <ListingImageSlider images={photos} title={listing.title} />
 
           <div className="space-y-8">
             <div className="space-y-3">

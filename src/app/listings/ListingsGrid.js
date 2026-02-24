@@ -42,8 +42,8 @@ function normalizeListings(raw) {
       features: Array.isArray(item.features)
         ? item.features.filter((f) => typeof f === "string").slice(0, 6)
         : [],
-      images: Array.isArray(item.images)
-        ? item.images.filter((url) => typeof url === "string").slice(0, 6)
+      images: Array.isArray(item.images || item.photos || item.photosUrls)
+        ? (item.images || item.photos || item.photosUrls).filter((url) => typeof url === "string").slice(0, 12)
         : [],
     }));
 }

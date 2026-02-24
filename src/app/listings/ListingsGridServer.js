@@ -1,5 +1,4 @@
 import Link from "next/link";
-import Image from "next/image";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import ListingCardSlider from "./ListingCardSlider";
@@ -42,106 +41,104 @@ export default async function ListingsGridServer({
 
   return (
     <div
-      className={`mx-auto mt-12 grid max-w-2xl grid-cols-1 gap-6 lg:mx-0 lg:max-w-none ${compact ? "lg:grid-cols-3" : "lg:grid-cols-3"}`}
+      className={`mx-auto mt-12 grid max-w-2xl grid-cols-1 gap-6 lg:mx-0 lg:max-w-none ${compact ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}
     >
-      {listings.map((listing) => (
-        <article
-          key={listing._id || listing.title}
-          className="rounded-2xl border border-white/10 bg-slate-900/60 p-6 transition hover:border-white/20"
-        >
-          <ListingCardSlider
-            images={listing.images}
-            title={listing.title}
-            href={`/listings/${listing._id}`}
-          />
+      {listings.map((listing) => {
+        const photos = Array.isArray(listing.images || listing.photos || listing.photosUrls)
+          ? (listing.images || listing.photos || listing.photosUrls).filter((url) => typeof url === "string")
+          : [];
 
-          <div className="mt-6 flex flex-wrap items-center gap-2 text-xs">
-            {listing.suburb ? (
-              <span className="rounded-full bg-white/5 px-3 py-1 text-slate-200 ring-1 ring-inset ring-white/10">
-                {listing.suburb}
-              </span>
-            ) : null}
-            {listing.propertyCategory ? (
-              <span className="rounded-full bg-white/5 px-3 py-1 text-slate-200 ring-1 ring-inset ring-white/10">
-                {formatTitle(listing.propertyCategory)}
-              </span>
-            ) : null}
-            {listing.propertyType ? (
-              <span className="rounded-full bg-white/5 px-3 py-1 text-slate-200 ring-1 ring-inset ring-white/10">
-                {listing.propertyType}
-              </span>
-            ) : null}
-            {typeof listing.pricePerMonth === "number" ? (
-              <span className="rounded-full bg-emerald-400/10 px-3 py-1 text-emerald-200 ring-1 ring-inset ring-emerald-400/20">
-                {formatPrice(listing.pricePerMonth)}/mo
-              </span>
-            ) : null}
-            {typeof listing.deposit === "number" ? (
-              <span className="rounded-full bg-white/5 px-3 py-1 text-slate-200 ring-1 ring-inset ring-white/10">
-                {formatPrice(listing.deposit)} deposit
-              </span>
-            ) : null}
-          </div>
-
-          <h2 className="mt-4 text-base font-semibold text-white">
-            <Link
+        return (
+          <article
+            key={listing._id?.toString() || listing.title}
+            className="rounded-2xl border border-white/10 bg-slate-900/60 p-6 transition hover:border-white/20"
+          >
+            <ListingCardSlider
+              images={photos}
+              title={formatTitle(listing.title)}
               href={`/listings/${listing._id}`}
-              className="hover:underline"
-              prefetch={false}
-            >
-              {listing.title}
-            </Link>
-          </h2>
+            />
 
-          {listing.description ? (
-            <p className="mt-2 text-sm leading-6 text-slate-300">
-              {listing.description}
-            </p>
-          ) : (
-            <p className="mt-2 text-sm leading-6 text-slate-300">
-              Message us on WhatsApp for photos and viewing slots.
-            </p>
-          )}
+            <div className="mt-6 flex flex-wrap items-center gap-2 text-xs">
+              {listing.suburb && (
+                <span className="rounded-full bg-white/5 px-3 py-1 text-slate-200 ring-1 ring-inset ring-white/10">
+                  {listing.suburb}
+                </span>
+              )}
+              {listing.propertyCategory && (
+                <span className="rounded-full bg-white/5 px-3 py-1 text-slate-200 ring-1 ring-inset ring-white/10">
+                  {formatTitle(listing.propertyCategory)}
+                </span>
+              )}
+              {listing.propertyType && (
+                <span className="rounded-full bg-white/5 px-3 py-1 text-slate-200 ring-1 ring-inset ring-white/10">
+                  {listing.propertyType}
+                </span>
+              )}
+              {typeof listing.pricePerMonth === "number" && (
+                <span className="rounded-full bg-emerald-400/10 px-3 py-1 text-emerald-200 ring-1 ring-inset ring-emerald-400/20">
+                  {formatPrice(listing.pricePerMonth)}/mo
+                </span>
+              )}
+              {typeof listing.deposit === "number" && (
+                <span className="rounded-full bg-white/5 px-3 py-1 text-slate-200 ring-1 ring-inset ring-white/10">
+                  {formatPrice(listing.deposit)} deposit
+                </span>
+              )}
+            </div>
 
-          <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-400">
-            {typeof listing.bedrooms === "number" ? (
-              <span className="rounded-full bg-white/5 px-3 py-1 ring-1 ring-inset ring-white/10">
-                {listing.bedrooms} bed
-              </span>
-            ) : null}
-            {Array.isArray(listing.features)
-              ? listing.features.slice(0, 6).map((feature) => (
+            <h2 className="mt-4 text-base font-semibold text-white">
+              <Link
+                href={`/listings/${listing._id}`}
+                className="hover:underline"
+                prefetch={false}
+              >
+                {formatTitle(listing.title)}
+              </Link>
+            </h2>
+
+            <p className="mt-2 text-sm leading-6 text-slate-300">
+              {listing.description || "Message us on WhatsApp for photos and viewing slots."}
+            </p>
+
+            <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-400">
+              {typeof listing.bedrooms === "number" && (
+                <span className="rounded-full bg-white/5 px-3 py-1 ring-1 ring-inset ring-white/10">
+                  {listing.bedrooms} bed
+                </span>
+              )}
+              {Array.isArray(listing.features) && listing.features.slice(0, 6).map((feature) => (
                 <span
                   key={feature}
                   className="rounded-full bg-white/5 px-3 py-1 ring-1 ring-inset ring-white/10"
                 >
                   {feature}
                 </span>
-              ))
-              : null}
-          </div>
+              ))}
+            </div>
 
-          <div className="mt-6">
-            {session ? (
-              <Link
-                href={`/listings/${listing._id}#contact`}
-                className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-400 px-3 py-2 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300"
-                prefetch={false}
-              >
-                View contact
-              </Link>
-            ) : (
-              <Link
-                href="/login"
-                className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-400/10 px-3 py-2 text-sm font-semibold text-emerald-200 ring-1 ring-inset ring-emerald-400/30 transition hover:bg-emerald-400/20"
-                prefetch={false}
-              >
-                Login to view contact
-              </Link>
-            )}
-          </div>
-        </article>
-      ))}
+            <div className="mt-6">
+              {session ? (
+                <Link
+                  href={`/listings/${listing._id}#contact`}
+                  className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-400 px-3 py-2 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300"
+                  prefetch={false}
+                >
+                  View contact
+                </Link>
+              ) : (
+                <Link
+                  href="/login"
+                  className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-400/10 px-3 py-2 text-sm font-semibold text-emerald-200 ring-1 ring-inset ring-emerald-400/30 transition hover:bg-emerald-400/20"
+                  prefetch={false}
+                >
+                  Login to view contact
+                </Link>
+              )}
+            </div>
+          </article>
+        );
+      })}
     </div>
   );
 }
