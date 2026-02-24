@@ -33,7 +33,8 @@ function normalizePhone(raw) {
 }
 
 export async function generateMetadata({ params }) {
-  const listing = await getListingById(params?.id);
+  const { id } = await params;
+  const listing = await getListingById(id);
   if (!listing) {
     return { title: "Listing not found | CribMatch" };
   }
@@ -42,7 +43,12 @@ export async function generateMetadata({ params }) {
   const description =
     listing.description ||
     `Rental in ${listing.suburb}. ${typeof listing.bedrooms === "number" ? `${listing.bedrooms} bedrooms.` : ""} ${typeof listing.pricePerMonth === "number" ? `${formatPrice(listing.pricePerMonth)}/month.` : ""}`.trim();
-  const images = Array.isArray(listing.images) ? listing.images : [];
+
+  const photos = [
+    ...(Array.isArray(listing.images) ? listing.images : []),
+    ...(Array.isArray(listing.photos) ? listing.photos : []),
+    ...(Array.isArray(listing.photosUrls) ? listing.photosUrls : []),
+  ].filter((url) => typeof url === "string" && url.trim() !== "");
 
   return {
     title,
@@ -50,13 +56,14 @@ export async function generateMetadata({ params }) {
     openGraph: {
       title,
       description,
-      images: images.length ? [images[0]] : [],
+      images: photos.length ? [photos[0]] : [],
     },
   };
 }
 
 export default async function ListingDetail({ params }) {
-  const listing = await getListingById(params?.id);
+  const { id } = await params;
+  const listing = await getListingById(id);
   if (!listing) notFound();
 
   const session = await getServerSession(authOptions);
@@ -122,9 +129,11 @@ export default async function ListingDetail({ params }) {
         : undefined,
   };
 
-  const photos = Array.isArray(listing.images || listing.photos || listing.photosUrls)
-    ? (listing.images || listing.photos || listing.photosUrls).filter((url) => typeof url === "string")
-    : [];
+  const photos = [
+    ...(Array.isArray(listing.images) ? listing.images : []),
+    ...(Array.isArray(listing.photos) ? listing.photos : []),
+    ...(Array.isArray(listing.photosUrls) ? listing.photosUrls : []),
+  ].filter((url) => typeof url === "string" && url.trim() !== "");
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-50">

@@ -21,8 +21,8 @@ export const metadata = {
     images: [
       {
         url: "/logo.png",
-        width: 800,
-        height: 600,
+        width: 8000,
+        height: 6000,
         alt: "CribMatch Zimbabwe",
       },
     ],

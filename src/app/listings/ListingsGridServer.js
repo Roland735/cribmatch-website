@@ -44,9 +44,11 @@ export default async function ListingsGridServer({
       className={`mx-auto mt-12 grid max-w-2xl grid-cols-1 gap-6 lg:mx-0 lg:max-w-none ${compact ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}
     >
       {listings.map((listing) => {
-        const photos = Array.isArray(listing.images || listing.photos || listing.photosUrls)
-          ? (listing.images || listing.photos || listing.photosUrls).filter((url) => typeof url === "string")
-          : [];
+        const photos = [
+          ...(Array.isArray(listing.images) ? listing.images : []),
+          ...(Array.isArray(listing.photos) ? listing.photos : []),
+          ...(Array.isArray(listing.photosUrls) ? listing.photosUrls : []),
+        ].filter((url) => typeof url === "string" && url.trim() !== "");
 
         return (
           <article

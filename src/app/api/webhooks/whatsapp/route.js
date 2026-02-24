@@ -13,6 +13,7 @@ import mongoose from "mongoose";
 import { dbConnect, WebhookEvent, Listing, Purchase } from "@/lib/db";
 import Message from "@/lib/Message";
 import { getListingById, searchPublishedListings, getListingFacets, getListingByShortId } from "@/lib/getListings";
+import { supabaseAdmin } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 
@@ -3416,13 +3417,72 @@ async function revealFromObject(listing, phone) {
 
 
 async function fetchAndAddImageToListing(listingId, imageId, token) {
-  if (!listingId || !imageId) return;
-  // NOTE: Storing media ID directly for now as user-uploaded media expires in 30 days.
-  // For production, we should download from FB URL and upload to persistent storage (S3/Cloudinary).
-  // The FB URL requires Auth headers which WhatsApp 'send image by link' does not support.
-  // So we use 'send image by ID' which works for media uploaded to WhatsApp.
+  if (!listingId || !imageId || !token) return;
 
-  if (mongoose.connection.readyState === 1 && typeof Listing?.findByIdAndUpdate === "function") {
-    await Listing.findByIdAndUpdate(listingId, { $push: { images: imageId } }).catch(() => null);
+  try {
+    // 1. Get media URL from WhatsApp Graph API
+    const mediaUrlResponse = await fetch(`https://graph.facebook.com/v24.0/${imageId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!mediaUrlResponse.ok) {
+      console.error("[webhook] Failed to get media URL from WhatsApp:", await mediaUrlResponse.text());
+      return;
+    }
+
+    const mediaData = await mediaUrlResponse.json();
+    const downloadUrl = mediaData.url;
+    const mimeType = mediaData.mime_type || "image/jpeg";
+    const extension = mimeType.split("/")[1] || "jpg";
+
+    if (!downloadUrl) {
+      console.error("[webhook] No download URL in media data");
+      return;
+    }
+
+    // 2. Download the actual image binary
+    const imageResponse = await fetch(downloadUrl, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!imageResponse.ok) {
+      console.error("[webhook] Failed to download image from WhatsApp:", await imageResponse.text());
+      return;
+    }
+
+    const imageBuffer = await imageResponse.arrayBuffer();
+
+    // 3. Upload to Supabase Storage
+    const fileName = `${listingId}/${Date.now()}-${imageId}.${extension}`;
+    const { data: uploadData, error: uploadError } = await supabaseAdmin
+      .storage
+      .from("listings")
+      .upload(fileName, imageBuffer, {
+        contentType: mimeType,
+        upsert: true
+      });
+
+    if (uploadError) {
+      console.error("[webhook] Supabase upload error:", uploadError);
+      // Fallback to storing the imageId if upload fails, though it expires
+      if (mongoose.connection.readyState === 1 && typeof Listing?.findByIdAndUpdate === "function") {
+        await Listing.findByIdAndUpdate(listingId, { $push: { images: imageId } }).catch(() => null);
+      }
+      return;
+    }
+
+    // 4. Get the public URL
+    const { data: { publicUrl } } = supabaseAdmin
+      .storage
+      .from("listings")
+      .getPublicUrl(fileName);
+
+    // 5. Save the public URL to the listing in MongoDB
+    if (mongoose.connection.readyState === 1 && typeof Listing?.findByIdAndUpdate === "function") {
+      await Listing.findByIdAndUpdate(listingId, { $push: { images: publicUrl } }).catch(() => null);
+      console.log("[webhook] Image uploaded to Supabase and saved to listing:", publicUrl);
+    }
+  } catch (err) {
+    console.error("[webhook] Error in fetchAndAddImageToListing:", err);
   }
 }

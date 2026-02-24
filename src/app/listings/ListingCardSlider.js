@@ -4,11 +4,38 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 
+function isValidUrl(urlString) {
+  if (!urlString || typeof urlString !== "string") return false;
+  try {
+    // Check if it's a relative path starting with /
+    if (urlString.startsWith("/")) return true;
+    // Check if it's a data URI (base64 image)
+    if (urlString.startsWith("data:")) return true;
+    // Check if it's a valid absolute URL
+    new URL(urlString);
+    return true;
+  } catch (e) {
+    // Try prepending https:// for common domain-only URLs
+    try {
+      if (urlString.includes(".") && !urlString.startsWith("http")) {
+        new URL("https://" + urlString);
+        return true;
+      }
+    } catch (e2) { }
+    return false;
+  }
+}
+
 export default function ListingCardSlider({ images, title, href }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [failedImages, setFailedImages] = useState(new Set());
 
-  if (!Array.isArray(images) || images.length === 0) {
+  // Filter out any completely invalid values that aren't strings
+  const validImages = Array.isArray(images)
+    ? images.filter(img => typeof img === "string" && img.trim() !== "")
+    : [];
+
+  if (validImages.length === 0) {
     return (
       <Link href={href} className="flex aspect-[16/9] flex-col items-center justify-center rounded-2xl bg-slate-900 ring-1 ring-inset ring-white/10">
         <svg className="h-10 w-10 text-slate-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
@@ -22,21 +49,25 @@ export default function ListingCardSlider({ images, title, href }) {
   const next = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    setCurrentIndex((prev) => (prev + 1) % images.length);
+    setCurrentIndex((prev) => (prev + 1) % validImages.length);
   };
 
   const prev = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    setCurrentIndex((prev) => (prev - 1 + images.length) % images.length);
+    setCurrentIndex((prev) => (prev - 1 + validImages.length) % validImages.length);
   };
 
   const handleImageError = () => {
     setFailedImages((prev) => new Set(prev).add(currentIndex));
   };
 
-  const currentImage = images[currentIndex];
-  const isFailed = failedImages.has(currentIndex);
+  const currentImage = validImages[currentIndex];
+  let srcToUse = currentImage;
+  if (currentImage && !currentImage.startsWith("/") && !currentImage.startsWith("data:") && !currentImage.startsWith("http")) {
+    srcToUse = `https://${currentImage}`;
+  }
+  const isFailed = failedImages.has(currentIndex) || !isValidUrl(currentImage);
 
   return (
     <div className="group relative aspect-[16/9] overflow-hidden rounded-2xl bg-slate-950 ring-1 ring-inset ring-white/10">
@@ -50,7 +81,7 @@ export default function ListingCardSlider({ images, title, href }) {
           </div>
         ) : (
           <Image
-            src={currentImage}
+            src={srcToUse}
             alt={title}
             fill
             sizes="(min-width: 1024px) 33vw, 100vw"
@@ -60,7 +91,7 @@ export default function ListingCardSlider({ images, title, href }) {
         )}
       </Link>
 
-      {images.length > 1 && (
+      {validImages.length > 1 && (
         <>
           <button
             onClick={prev}
@@ -82,7 +113,7 @@ export default function ListingCardSlider({ images, title, href }) {
           </button>
 
           <div className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 gap-1.5">
-            {images.map((_, i) => (
+            {validImages.map((_, i) => (
               <div
                 key={i}
                 className={`h-1 w-1 rounded-full transition-all ${i === currentIndex ? "w-3 bg-white" : "bg-white/40"

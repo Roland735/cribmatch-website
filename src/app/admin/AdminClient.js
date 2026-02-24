@@ -2,10 +2,8 @@
 
 import Image from "next/image";
 import { signOut } from "next-auth/react";
-import { getDownloadURL, ref, uploadBytesResumable } from "firebase/storage";
+import { supabase } from "@/lib/supabase";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-
-import { getFirebaseStorage } from "@/lib/firebase/client";
 
 function toNumber(value) {
   const asNumber = Number(value);
@@ -183,78 +181,55 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
 
       setImageUploads((current) => [...current, ...queued]);
 
-      queued.forEach((item, index) => {
+      queued.forEach(async (item, index) => {
         const file = selected[index];
-        const storage = getFirebaseStorage();
         const safeName = sanitizeFilename(file?.name || "photo");
-        const path = `listings/${new Date().toISOString().slice(0, 10)}/${item.id}-${safeName}`;
-        const fileRef = ref(storage, path);
-        const task = uploadBytesResumable(fileRef, file, {
-          contentType: file?.type || "image/jpeg",
-          cacheControl: "public,max-age=31536000",
-        });
+        const path = `${new Date().toISOString().slice(0, 10)}/${item.id}-${safeName}`;
 
-        uploadTasksRef.current.set(item.id, task);
+        try {
+          // Set progress to something to show it started
+          setImageUploads((current) =>
+            current.map((entry) => (entry.id === item.id ? { ...entry, progress: 10 } : entry)),
+          );
 
-        task.on(
-          "state_changed",
-          (snapshot) => {
-            const totalBytes =
-              typeof snapshot?.totalBytes === "number" && snapshot.totalBytes > 0
-                ? snapshot.totalBytes
-                : 0;
-            const bytesTransferred =
-              typeof snapshot?.bytesTransferred === "number" ? snapshot.bytesTransferred : 0;
-            const progress = totalBytes
-              ? Math.min(100, Math.round((bytesTransferred / totalBytes) * 100))
-              : 0;
-            setImageUploads((current) =>
-              current.map((entry) => (entry.id === item.id ? { ...entry, progress } : entry)),
-            );
-          },
-          (error) => {
-            uploadTasksRef.current.delete(item.id);
-            setImageUploads((current) =>
-              current.map((entry) =>
-                entry.id === item.id
-                  ? {
-                    ...entry,
-                    status: "error",
-                    error: error?.message || "Upload failed",
-                  }
-                  : entry,
-              ),
-            );
-          },
-          async () => {
-            uploadTasksRef.current.delete(item.id);
-            try {
-              const url = await getDownloadURL(task.snapshot.ref);
-              setImageUploads((current) =>
-                current.map((entry) =>
-                  entry.id === item.id
-                    ? { ...entry, status: "done", progress: 100, url, error: "" }
-                    : entry,
-                ),
-              );
-              if (typeof item.previewUrl === "string" && item.previewUrl.startsWith("blob:")) {
-                URL.revokeObjectURL(item.previewUrl);
-              }
-            } catch (error) {
-              setImageUploads((current) =>
-                current.map((entry) =>
-                  entry.id === item.id
-                    ? {
-                      ...entry,
-                      status: "error",
-                      error: error?.message || "Upload failed",
-                    }
-                    : entry,
-                ),
-              );
-            }
-          },
-        );
+          const { data, error } = await supabase.storage
+            .from("listings")
+            .upload(path, file, {
+              contentType: file?.type || "image/jpeg",
+              upsert: true
+            });
+
+          if (error) throw error;
+
+          const { data: { publicUrl } } = supabase.storage
+            .from("listings")
+            .getPublicUrl(path);
+
+          setImageUploads((current) =>
+            current.map((entry) =>
+              entry.id === item.id
+                ? { ...entry, status: "done", progress: 100, url: publicUrl, error: "" }
+                : entry,
+            ),
+          );
+
+          if (typeof item.previewUrl === "string" && item.previewUrl.startsWith("blob:")) {
+            URL.revokeObjectURL(item.previewUrl);
+          }
+        } catch (error) {
+          console.error("Upload error:", error);
+          setImageUploads((current) =>
+            current.map((entry) =>
+              entry.id === item.id
+                ? {
+                  ...entry,
+                  status: "error",
+                  error: error?.message || "Upload failed",
+                }
+                : entry,
+            ),
+          );
+        }
       });
     },
     [imageUploads.length],
