@@ -1366,6 +1366,22 @@ function formatListingResultText(listing, indexHint = 0) {
     `🆔 ID: ${id}`,
   ].filter(Boolean);
 
+  // Picture available status
+  const photos = (ensured.images || ensured.photos || ensured.photosUrls || []);
+  if (photos.length > 0) {
+    lines.push(`🖼️ Picture available (${photos.length})`);
+  } else {
+    lines.push("🚫 No pictures available");
+  }
+
+  // Deposit info
+  const deposit = ensured.deposit ?? ensured.securityDeposit;
+  if (deposit === 0 || deposit === "0" || !deposit) {
+    lines.push("🆓 No deposit required");
+  } else {
+    lines.push(`💵 Deposit: $${deposit}`);
+  }
+
   if (descriptionShort) {
     lines.push("", "📝 Description:", ` ${descriptionShort}`);
   }
