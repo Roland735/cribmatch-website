@@ -2348,8 +2348,11 @@ export async function POST(request) {
   }
 
   // Handle direct report command from button (attached to listing details)
-  if (cmd.startsWith("report_listing_")) {
-    const listingId = cmd.replace("report_listing_", "");
+  if (cmd.startsWith("report_listing_") || cmd.startsWith("report_purchase_")) {
+    const listingId = cmd.startsWith("report_listing_")
+      ? cmd.replace("report_listing_", "")
+      : cmd.replace("report_purchase_", "");
+
     if (dbAvailable && savedMsg && savedMsg._id) {
       await Message.findByIdAndUpdate(savedMsg._id, {
         $set: { "meta.report.listingId": listingId, "meta.state": "REPORT_WAIT_REASON" }
@@ -2870,6 +2873,53 @@ export async function POST(request) {
 
   // report listing
   if (cmd === "report listing" || cmd === "menu_report" || cmd === "report") {
+    if (dbAvailable && typeof Purchase?.find === "function") {
+      // Find user's purchases
+      const purchases = await Purchase.find({ phone })
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .populate("listingId")
+        .lean()
+        .exec()
+        .catch(() => []);
+
+      if (!purchases || purchases.length === 0) {
+        await sendWithMainMenuButton(
+          phone,
+          "❌ No Purchases Found\n\nYou can only report listings that you have previously viewed contact details for. Please search and unlock a listing first.",
+          "Tap Main menu."
+        );
+        return NextResponse.json({ ok: true, note: "report-no-purchases" });
+      }
+
+      const rows = purchases.map((p) => {
+        const l = p.listingId || p.listingSnapshot || {};
+        const title = String(l.title || "Untitled Listing").slice(0, 24);
+        const price = l.pricePerMonth ? `$${l.pricePerMonth}` : "N/A";
+        const shortId = l.shortId || "ID";
+        return {
+          id: `report_purchase_${l._id || p.listingId}`,
+          title: title,
+          description: `${shortId} - ${price}`
+        };
+      });
+
+      rows.push({
+        id: "menu_main",
+        title: "🏠 Main Menu",
+        description: "Return to main menu"
+      });
+
+      await sendInteractiveList(
+        phone,
+        "Select a listing you have purchased to report:",
+        rows,
+        { headerText: "Report Listing", buttonText: "Select", sectionTitle: "Your Purchases" }
+      );
+      return NextResponse.json({ ok: true, note: "report-purchases-list-sent" });
+    }
+
+    // Fallback if DB not available or something else
     if (dbAvailable && savedMsg && savedMsg._id) await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.state": "REPORT_WAIT_ID" } }).catch(() => null);
     await sendWithMainMenuButton(phone, "⚠️ Report a listing.\n\nStep 1 of 2: What is the listing ID? (e.g. 60df12ab...)", "Reply with the listing ID.");
     return NextResponse.json({ ok: true, note: "report-started" });
