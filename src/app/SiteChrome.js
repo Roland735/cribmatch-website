@@ -4,23 +4,25 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 
-function shouldHideChrome(pathname) {
+import { useSession, signOut } from "next-auth/react";
+
+function shouldHideChrome(pathname, session) {
   if (typeof pathname !== "string") return false;
-  return (
-    pathname === "/admin" ||
-    pathname.startsWith("/admin/") ||
-    pathname === "/agent" ||
-    pathname.startsWith("/agent/") ||
-    pathname === "/user" ||
-    pathname.startsWith("/user/") ||
-    pathname === "/dashboard" ||
-    pathname.startsWith("/dashboard/")
-  );
+
+  // Only hide chrome if user is an admin AND on an admin route
+  const isAdminRoute = pathname === "/admin" || pathname.startsWith("/admin/");
+  const isAdmin = session?.user?.role === "admin";
+
+  if (isAdminRoute && isAdmin) return true;
+
+  // For other dashboard-like routes, standard users should still see the main navbar
+  return false;
 }
 
 export default function SiteChrome({ children }) {
   const pathname = usePathname();
-  const hideChrome = shouldHideChrome(pathname);
+  const { data: session } = useSession();
+  const hideChrome = shouldHideChrome(pathname, session);
 
   if (hideChrome) {
     return <>{children}</>;
@@ -32,16 +34,16 @@ export default function SiteChrome({ children }) {
         <nav className="mx-auto max-w-screen-2xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between gap-3">
             <Link href="/" className="flex shrink-0 items-center gap-2">
-              <div className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/5 ring-1 ring-white/10">
+              <div className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/5 ring-1 ring-white/10">
                 <Image
                   src="/logo.png"
                   alt="CribMatch Logo"
                   fill
                   priority
-                  className="object-contain"
+                  className="object-contain scale-110"
                 />
               </div>
-              <span className="text-lg font-semibold tracking-tight">CribMatch</span>
+              <span className="text-xl font-bold tracking-tight">CribMatch</span>
               <span className="hidden sm:inline-flex rounded-full bg-emerald-400/10 px-2.5 py-1 text-xs font-semibold text-emerald-200 ring-1 ring-inset ring-emerald-400/30">
                 Zimbabwe
               </span>
@@ -49,47 +51,51 @@ export default function SiteChrome({ children }) {
 
             <div className="hidden flex-1 items-center justify-center gap-1 text-sm text-slate-200 xl:flex">
               <Link
-                href="/how-it-works"
-                className="rounded-full px-3 py-2 transition hover:bg-white/5 hover:text-white"
-              >
-                How it works
-              </Link>
-              <Link
                 href="/listings"
                 className="rounded-full px-3 py-2 transition hover:bg-white/5 hover:text-white"
               >
                 Listings
               </Link>
-              <Link
-                href="/pricing"
-                className="rounded-full px-3 py-2 transition hover:bg-white/5 hover:text-white"
-              >
-                Pricing
-              </Link>
-              <Link
-                href="/contact"
-                className="rounded-full px-3 py-2 transition hover:bg-white/5 hover:text-white"
-              >
-                Contact
-              </Link>
-              <Link
-                href="/renters"
-                className="hidden rounded-full px-3 py-2 transition hover:bg-white/5 hover:text-white 2xl:inline-flex"
-              >
-                For Renters
-              </Link>
-              <Link
-                href="/landlords"
-                className="hidden rounded-full px-3 py-2 transition hover:bg-white/5 hover:text-white 2xl:inline-flex"
-              >
-                Landlords & Agents
-              </Link>
-              <Link
-                href="/faq"
-                className="hidden rounded-full px-3 py-2 transition hover:bg-white/5 hover:text-white 2xl:inline-flex"
-              >
-                FAQ
-              </Link>
+              {!session && (
+                <>
+                  <Link
+                    href="/pricing"
+                    className="rounded-full px-3 py-2 transition hover:bg-white/5 hover:text-white"
+                  >
+                    Pricing
+                  </Link>
+                  <Link
+                    href="/renters"
+                    className="rounded-full px-3 py-2 transition hover:bg-white/5 hover:text-white"
+                  >
+                    For Renters
+                  </Link>
+                  <Link
+                    href="/landlords"
+                    className="rounded-full px-3 py-2 transition hover:bg-white/5 hover:text-white"
+                  >
+                    For Landlords
+                  </Link>
+                </>
+              )}
+              {session && (
+                <>
+                  <Link
+                    href="/dashboard"
+                    className="rounded-full px-3 py-2 transition hover:bg-white/5 hover:text-white"
+                  >
+                    Dashboard
+                  </Link>
+                  {(session.user.role === "agent" || session.user.role === "admin") && (
+                    <Link
+                      href="/agent"
+                      className="rounded-full px-3 py-2 transition hover:bg-white/5 hover:text-white"
+                    >
+                      Console
+                    </Link>
+                  )}
+                </>
+              )}
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
@@ -100,22 +106,101 @@ export default function SiteChrome({ children }) {
                 List a property
               </Link>
 
-              <Link
-                href="/login"
-                className="hidden rounded-full border border-white/15 bg-white/0 px-4 py-2 text-sm font-semibold text-slate-50 transition hover:border-white/30 hover:bg-white/5 2xl:inline-flex"
-              >
-                Login
-              </Link>
-
-              <Link
-                href="/admin"
-                className="hidden rounded-full border border-white/15 bg-white/0 px-4 py-2 text-sm font-semibold text-slate-50 transition hover:border-white/30 hover:bg-white/5 2xl:inline-flex"
-              >
-                Admin
-              </Link>
+              {session ? (
+                <div className="hidden items-center gap-2 xl:flex">
+                  <details className="relative">
+                    <summary className="list-none inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-emerald-400 transition hover:border-emerald-400/30 cursor-pointer [&::-webkit-details-marker]:hidden">
+                      <span>{session.user.name || "My Account"}</span>
+                      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" aria-hidden="true">
+                        <path d="M6 9L12 15L18 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </summary>
+                    <div className="absolute right-0 mt-2 w-56 overflow-hidden rounded-xl border border-white/10 bg-slate-950/95 p-2 shadow-2xl backdrop-blur">
+                      <div className="grid gap-1">
+                        <Link
+                          href="/dashboard"
+                          className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-200 transition hover:bg-white/5 hover:text-white"
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" aria-hidden="true">
+                            <path d="M3 12L5 10M5 10L12 3L19 10M5 10V20C5 20.5523 5.44772 21 6 21H9M19 10L21 12M19 10V20C19 20.5523 18.5523 21 18 21H15M9 21V15C9 14.4477 9.44772 14 10 14H14C14.5523 14 15 14.4477 15 15V21M9 21H15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                          My Dashboard
+                        </Link>
+                        <Link
+                          href="/user/listings"
+                          className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-200 transition hover:bg-white/5 hover:text-white"
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" aria-hidden="true">
+                            <path d="M4 6H20M4 12H20M4 18H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                          My Listings
+                        </Link>
+                        <Link
+                          href="/user/purchases"
+                          className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-200 transition hover:bg-white/5 hover:text-white"
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" aria-hidden="true">
+                            <path d="M16 11V7C16 4.79086 14.2091 3 12 3C9.79086 3 8 4.79086 8 7V11M5 9H19L20 21H4L5 9Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                          My Purchases
+                        </Link>
+                        <Link
+                          href="/user/profile"
+                          className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-200 transition hover:bg-white/5 hover:text-white"
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" aria-hidden="true">
+                            <path d="M16 7C16 9.20914 14.2091 11 12 11C9.79086 11 8 9.20914 8 7C8 4.79086 9.79086 3 12 3C14.2091 3 16 4.79086 16 7Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d="M12 14C8.13401 14 5 17.134 5 21H19C19 17.134 15.866 14 12 14Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                          My Profile
+                        </Link>
+                        {(session.user.role === "agent" || session.user.role === "admin") && (
+                          <Link
+                            href="/agent"
+                            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-emerald-400 transition hover:bg-white/5"
+                          >
+                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" aria-hidden="true">
+                              <path d="M9 12L11 14L15 10M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                            Agent Console
+                          </Link>
+                        )}
+                        {session.user.role === "admin" && (
+                          <Link
+                            href="/admin"
+                            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-emerald-400 transition hover:bg-white/5"
+                          >
+                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" aria-hidden="true">
+                              <path d="M12 15V17M12 7V13M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                            Admin Portal
+                          </Link>
+                        )}
+                        <div className="my-1 border-t border-white/10" />
+                        <button
+                          onClick={() => signOut({ callbackUrl: "/" })}
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-400 transition hover:bg-white/5 hover:text-white"
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" aria-hidden="true">
+                            <path d="M17 16L21 12M21 12L17 8M21 12H9M13 16V17C13 18.6569 11.6569 20 10 20H6C4.34315 20 3 18.6569 3 17V7C3 5.34315 4.34315 4 6 4H10C11.6569 4 13 5.34315 13 7V8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                          Logout
+                        </button>
+                      </div>
+                    </div>
+                  </details>
+                </div>
+              ) : (
+                <Link
+                  href="/login"
+                  className="hidden rounded-full border border-white/15 bg-white/0 px-4 py-2 text-sm font-semibold text-slate-50 transition hover:border-white/30 hover:bg-white/5 xl:inline-flex"
+                >
+                  Login
+                </Link>
+              )}
 
               <a
-                href="https://wa.me/263777215826"
+                href="https://wa.me/263771150713"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="hidden rounded-full bg-emerald-400 px-4 py-2 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300 md:inline-flex"
@@ -123,7 +208,7 @@ export default function SiteChrome({ children }) {
                 Chat on WhatsApp
               </a>
               <a
-                href="https://wa.me/263777215826"
+                href="https://wa.me/263771150713"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-emerald-400 text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300 md:hidden"
@@ -167,61 +252,103 @@ export default function SiteChrome({ children }) {
                 <div className="absolute right-0 mt-3 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-white/10 bg-slate-950/95 shadow-[0_24px_80px_rgba(15,23,42,0.85)] backdrop-blur">
                   <div className="grid gap-1 p-2 text-sm text-slate-200">
                     <Link
-                      href="/how-it-works"
-                      className="rounded-xl px-3 py-2 transition hover:bg-white/5 hover:text-white"
-                    >
-                      How it works
-                    </Link>
-                    <Link
                       href="/listings"
                       className="rounded-xl px-3 py-2 transition hover:bg-white/5 hover:text-white"
                     >
                       Listings
                     </Link>
-                    <Link
-                      href="/renters"
-                      className="rounded-xl px-3 py-2 transition hover:bg-white/5 hover:text-white"
-                    >
-                      For Renters
-                    </Link>
-                    <Link
-                      href="/landlords"
-                      className="rounded-xl px-3 py-2 transition hover:bg-white/5 hover:text-white"
-                    >
-                      Landlords & Agents
-                    </Link>
-                    <Link
-                      href="/pricing"
-                      className="rounded-xl px-3 py-2 transition hover:bg-white/5 hover:text-white"
-                    >
-                      Pricing
-                    </Link>
-                    <Link
-                      href="/faq"
-                      className="rounded-xl px-3 py-2 transition hover:bg-white/5 hover:text-white"
-                    >
-                      FAQ
-                    </Link>
-                    <Link
-                      href="/contact"
-                      className="rounded-xl px-3 py-2 transition hover:bg-white/5 hover:text-white"
-                    >
-                      Contact
-                    </Link>
+                    {!session && (
+                      <>
+                        <Link
+                          href="/pricing"
+                          className="rounded-xl px-3 py-2 transition hover:bg-white/5 hover:text-white"
+                        >
+                          Pricing
+                        </Link>
+                        <Link
+                          href="/renters"
+                          className="rounded-xl px-3 py-2 transition hover:bg-white/5 hover:text-white"
+                        >
+                          For Renters
+                        </Link>
+                        <Link
+                          href="/landlords"
+                          className="rounded-xl px-3 py-2 transition hover:bg-white/5 hover:text-white"
+                        >
+                          For Landlords
+                        </Link>
+                      </>
+                    )}
+                    {session && (
+                      <>
+                        <Link
+                          href="/dashboard"
+                          className="rounded-xl px-3 py-2 transition hover:bg-white/5 hover:text-white"
+                        >
+                          Dashboard
+                        </Link>
+                        {(session.user.role === "agent" || session.user.role === "admin") && (
+                          <Link
+                            href="/agent"
+                            className="rounded-xl px-3 py-2 transition hover:bg-white/5 hover:text-white"
+                          >
+                            Console
+                          </Link>
+                        )}
+                      </>
+                    )}
                   </div>
                   <div className="grid gap-2 border-t border-white/10 p-2">
-                    <Link
-                      href="/login"
-                      className="flex w-full items-center justify-center rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold text-slate-50 transition hover:border-white/30 hover:bg-white/5"
-                    >
-                      Login
-                    </Link>
-                    <Link
-                      href="/admin"
-                      className="flex w-full items-center justify-center rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold text-slate-50 transition hover:border-white/30 hover:bg-white/5"
-                    >
-                      Admin
-                    </Link>
+                    {session ? (
+                      <>
+                        <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                          My Account
+                        </div>
+                        <div className="grid gap-1">
+                          <Link
+                            href="/user/listings"
+                            className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-200 transition hover:bg-white/5 hover:text-white"
+                          >
+                            My Listings
+                          </Link>
+                          <Link
+                            href="/user/purchases"
+                            className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-200 transition hover:bg-white/5 hover:text-white"
+                          >
+                            My Purchases
+                          </Link>
+                          <Link
+                            href="/user/profile"
+                            className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-200 transition hover:bg-white/5 hover:text-white"
+                          >
+                            My Profile
+                          </Link>
+                        </div>
+                        <div className="my-1 border-t border-white/5" />
+                        <button
+                          onClick={() => signOut({ callbackUrl: "/" })}
+                          className="flex w-full items-center justify-center rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold text-slate-400 transition hover:bg-white/5"
+                        >
+                          Logout
+                        </button>
+                      </>
+                    ) : (
+                      <Link
+                        href="/login"
+                        className="flex w-full items-center justify-center rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold text-slate-50 transition hover:border-white/30 hover:bg-white/5"
+                      >
+                        Login
+                      </Link>
+                    )}
+
+                    {session?.user?.role === "admin" && (
+                      <Link
+                        href="/admin"
+                        className="flex w-full items-center justify-center rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-3 py-2 text-sm font-semibold text-emerald-400 transition hover:bg-emerald-400/10"
+                      >
+                        Admin Portal
+                      </Link>
+                    )}
                     <Link
                       href="/landlords"
                       className="flex w-full items-center justify-center rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold text-slate-50 transition hover:border-white/30 hover:bg-white/5"
@@ -229,7 +356,7 @@ export default function SiteChrome({ children }) {
                       List a property
                     </Link>
                     <a
-                      href="https://wa.me/263777215826"
+                      href="https://wa.me/263771150713"
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex w-full items-center justify-center rounded-xl bg-emerald-400 px-3 py-2 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300"
@@ -309,10 +436,10 @@ export default function SiteChrome({ children }) {
               </p>
               <div className="grid gap-2 text-slate-300">
                 <a
-                  href="https://wa.me/263777215826"
+                  href="https://wa.me/263771150713"
                   className="transition hover:text-white"
                 >
-                  WhatsApp: +263 777 215 826
+                  WhatsApp: +263 77 115 0713
                 </a>
                 <a
                   href="mailto:rolandmungure@cribmatch.org"

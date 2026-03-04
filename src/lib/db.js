@@ -46,6 +46,7 @@ const ListingSchema = new mongoose.Schema(
     title: { type: String, required: true, trim: true },
     listerPhoneNumber: { type: String, required: true, trim: true, index: true },
     shortId: { type: String, trim: true, uppercase: true },
+    city: { type: String, default: "Harare", trim: true, index: true },
     suburb: { type: String, required: true, trim: true },
     address: { type: String, default: "", trim: true },
     propertyCategory: {
@@ -69,12 +70,15 @@ const ListingSchema = new mongoose.Schema(
     genderPreference: { type: String, default: "", trim: true },
     duration: { type: String, default: "", trim: true },
     numberOfStudents: { type: Number, default: null, min: 0 },
+    marketed: { type: Boolean, default: false, index: true },
+    marketedAt: { type: Date, default: null, index: true },
     status: {
       type: String,
-      enum: ["draft", "published"],
+      enum: ["draft", "published", "archived"],
       default: "published",
       index: true,
     },
+    approved: { type: Boolean, default: false, index: true },
   },
   { timestamps: true },
 );

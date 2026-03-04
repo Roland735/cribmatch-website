@@ -121,13 +121,13 @@ function normalizeRangeNumbers(minValue, maxValue, { integer = false } = {}) {
 export async function getPublishedListings({ limit = 6 } = {}) {
   if (!process.env.MONGODB_URI) {
     return seedListings
-      .filter((listing) => listing?.status === "published")
+      .filter((listing) => listing?.status === "published" && listing?.approved !== false)
       .slice(0, limit)
       .map((l, i) => withSeedShortId(l, i));
   }
 
   await dbConnect();
-  const listings = await Listing.find({ status: "published" })
+  const listings = await Listing.find({ status: "published", approved: true })
     .sort({ createdAt: -1 })
     .limit(limit);
   await Promise.all(
@@ -162,6 +162,7 @@ export async function searchListings({
   page = 1,
   perPage = 24,
   photos = false,
+  approvedOnly = true,
 } = {}) {
   const normalizedStatus = status === "all" ? "all" : "published";
   const safeQuery = toSafeString(q).slice(0, 120);
@@ -204,6 +205,9 @@ export async function searchListings({
       if (normalizedStatus === "published" && listing.status !== "published") {
         return false;
       }
+      if (normalizedStatus === "published" && approvedOnly && listing.approved === false) {
+        return false;
+      }
       if (normalizedCategory) {
         const listingCategory = normalizeText(listing.propertyCategory);
         if (listingCategory !== normalizedCategory) return false;
@@ -216,8 +220,9 @@ export async function searchListings({
         return false;
       }
       if (normalizedCity) {
-        const listingSuburb = normalizeText(listing.suburb);
-        if (!listingSuburb.includes(normalizedCity)) return false;
+        const listingCity = normalizeText(listing.city || "");
+        const listingSuburb = normalizeText(listing.suburb || "");
+        if (!listingCity.includes(normalizedCity) && !listingSuburb.includes(normalizedCity)) return false;
       }
       if (normalizedSuburb) {
         const listingSuburb = normalizeText(listing.suburb);
@@ -302,6 +307,9 @@ export async function searchListings({
   const mongoQuery = {};
   if (normalizedStatus === "published") {
     mongoQuery.status = "published";
+    if (approvedOnly) {
+      mongoQuery.approved = true;
+    }
   }
 
   if (normalizedCategory) {
@@ -341,7 +349,7 @@ export async function searchListings({
   if (normalizedSuburb) {
     mongoQuery.suburb = { $regex: escapeRegex(suburb.trim()), $options: "i" };
   } else if (normalizedCity) {
-    mongoQuery.suburb = { $regex: escapeRegex(city.trim()), $options: "i" };
+    mongoQuery.city = { $regex: escapeRegex(city.trim()), $options: "i" };
   }
 
   if (selectedFeatures.length) {
@@ -352,6 +360,7 @@ export async function searchListings({
     const regex = { $regex: escapeRegex(safeQuery.trim()), $options: "i" };
     mongoQuery.$or = [
       { title: regex },
+      { city: regex },
       { suburb: regex },
       { description: regex },
       { features: { $elemMatch: regex } },
@@ -614,8 +623,9 @@ export async function getListingFacets() {
   }
 
   await dbConnect();
-  const [suburbsRaw, featuresRaw, propertyCategoriesRaw, propertyTypesRaw] = await Promise.all([
+  const [suburbsRaw, citiesRaw, featuresRaw, propertyCategoriesRaw, propertyTypesRaw] = await Promise.all([
     Listing.distinct("suburb", { status: "published" }),
+    Listing.distinct("city", { status: "published" }),
     Listing.distinct("features", { status: "published" }),
     Listing.distinct("propertyCategory", { status: "published" }),
     Listing.distinct("propertyType", { status: "published" }),
@@ -626,15 +636,15 @@ export async function getListingFacets() {
     .filter(Boolean)
     .sort((a, b) => a.localeCompare(b));
 
+  const citiesFromSuburbs = suburbs
+    .map((value) => {
+      const parts = value.split(",").map((p) => p.trim()).filter(Boolean);
+      return parts.length > 1 ? parts[parts.length - 1] : "";
+    })
+    .filter(Boolean);
+
   const cities = Array.from(
-    new Set(
-      suburbs
-        .map((value) => {
-          const parts = value.split(",").map((p) => p.trim()).filter(Boolean);
-          return parts.length > 1 ? parts[parts.length - 1] : "";
-        })
-        .filter(Boolean),
-    ),
+    new Set([...toStringArray(citiesRaw), ...citiesFromSuburbs].map(c => c.trim()).filter(Boolean))
   ).sort((a, b) => a.localeCompare(b));
 
   const suburbsByCity = cities.reduce((acc, city) => {
@@ -707,28 +717,37 @@ export async function getListingFacets() {
   };
 }
 
-export async function getListingById(id) {
+export async function getListingById(id, { approvedOnly = true } = {}) {
   if (!id) return null;
 
   if (!process.env.MONGODB_URI) {
     const found = seedListings.find((listing) => listing?._id === id) ?? null;
+    if (found && approvedOnly && found.approved === false) return null;
     return found ? withSeedShortId(found, 0) : null;
   }
 
   await dbConnect();
-  const listing = await Listing.findById(id);
+  const query = { _id: id };
+  if (approvedOnly) {
+    query.approved = true;
+  }
+  const listing = await Listing.findOne(query);
   if (!listing) return null;
   return normalizeListingDoc(listing);
 }
 
-export async function getListingByShortId(code) {
+export async function getListingByShortId(code, { approvedOnly = true } = {}) {
   if (!code) return null;
   const shortId = code.trim().toUpperCase();
 
   // 1. Check DB
   if (process.env.MONGODB_URI) {
     await dbConnect();
-    const listing = await Listing.findOne({ shortId });
+    const query = { shortId };
+    if (approvedOnly) {
+      query.approved = true;
+    }
+    const listing = await Listing.findOne(query);
     if (listing) return normalizeListingDoc(listing);
   }
 
@@ -736,7 +755,11 @@ export async function getListingByShortId(code) {
   // Try with index 0 (most common/default)
   const found = seedListings
     .map(l => withSeedShortId(l, 0))
-    .find(l => l.shortId === shortId);
+    .find(l => {
+      if (l.shortId !== shortId) return false;
+      if (approvedOnly && l.approved === false) return false;
+      return true;
+    });
 
   return found ? withSeedShortId(found, 0) : null;
 }

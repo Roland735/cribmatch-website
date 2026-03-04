@@ -365,7 +365,7 @@ export default function ListingsFilters({
   }
 
   return (
-    <div className="mx-auto mt-12 max-w-5xl rounded-3xl border border-white/10 bg-slate-900/40 p-6">
+    <div className="mt-12 rounded-3xl border border-white/10 bg-slate-900/40 p-6">
       <form className="grid gap-4 lg:grid-cols-12" onSubmit={handleSubmit}>
         <div className="lg:col-span-4">
           <label className="block text-sm font-medium text-slate-200" htmlFor="q">

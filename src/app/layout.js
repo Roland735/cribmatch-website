@@ -1,5 +1,6 @@
 import "./globals.css";
 import SiteChrome from "./SiteChrome";
+import Providers from "./Providers";
 
 export const metadata = {
   title: {
@@ -44,7 +45,9 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body className="antialiased bg-slate-950 text-slate-50">
-        <SiteChrome>{children}</SiteChrome>
+        <Providers>
+          <SiteChrome>{children}</SiteChrome>
+        </Providers>
       </body>
     </html>
   );

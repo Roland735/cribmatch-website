@@ -1,3 +1,4 @@
+import { dbConnect, Purchase } from "@/lib/db";
 import Image from "next/image";
 import Link from "next/link";
 import { getServerSession } from "next-auth";
@@ -67,6 +68,28 @@ export default async function ListingDetail({ params }) {
   if (!listing) notFound();
 
   const session = await getServerSession(authOptions);
+
+  // 1. Authentication & Purchase Check
+  let isPurchased = false;
+  const isLoggedIn = !!session?.user;
+
+  if (isLoggedIn && session.user.phoneNumber) {
+    await dbConnect();
+    const phone = session.user.phoneNumber.replace(/[^\d]/g, "");
+    const purchase = await Purchase.findOne({
+      phone,
+      listingId: String(listing._id)
+    }).lean();
+    isPurchased = !!purchase;
+  }
+
+  // Admin and the lister themselves should see details
+  const isAdmin = session?.user?.role === "admin";
+  const isLister = session?.user?.phoneNumber && listing.listerPhoneNumber &&
+    session.user.phoneNumber.replace(/[^\d]/g, "") === listing.listerPhoneNumber.replace(/[^\d]/g, "");
+
+  const canSeeDetails = isAdmin || isLister || isPurchased;
+
   const viewerName =
     typeof session?.user?.name === "string" ? session.user.name.trim() : "";
   const viewerPhoneNumber =
@@ -78,7 +101,7 @@ export default async function ListingDetail({ params }) {
   const hasPhone = Boolean(phoneDigits);
   const hasEmail = typeof listing.contactEmail === "string" && listing.contactEmail;
 
-  const requestHeaders = headers();
+  const requestHeaders = await headers();
   const forwardedHost = requestHeaders.get("x-forwarded-host");
   const host = forwardedHost || requestHeaders.get("host") || "";
   const proto = requestHeaders.get("x-forwarded-proto") || "https";
@@ -146,7 +169,7 @@ export default async function ListingDetail({ params }) {
             ← Back to listings
           </Link>
           <a
-            href="https://wa.me/263777215826"
+            href="https://wa.me/263771150713"
             target="_blank"
             rel="noopener noreferrer"
             className="rounded-full border border-white/20 px-4 py-2 text-sm font-semibold text-slate-50 transition hover:border-white/40 hover:bg-white/5"
@@ -228,7 +251,35 @@ export default async function ListingDetail({ params }) {
                 Contact
               </p>
 
-              {session ? (
+              {!isLoggedIn ? (
+                <div className="mt-4 space-y-4">
+                  <p className="text-sm text-emerald-100/90 leading-relaxed">
+                    Please login to unlock the contact details and viewing slots for this listing.
+                  </p>
+                  <Link
+                    href={`/login?callbackUrl=/listings/${listing._id}`}
+                    className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-400 px-3 py-2 font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300"
+                  >
+                    Login to view contact
+                  </Link>
+                </div>
+              ) : !canSeeDetails ? (
+                <div className="mt-4 space-y-4">
+                  <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4">
+                    <p className="text-sm text-amber-200 leading-relaxed">
+                      You haven&apos;t unlocked this listing yet. Get instant access to the landlord&apos;s phone, WhatsApp, and viewing schedule.
+                    </p>
+                  </div>
+                  <button
+                    className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-400 px-3 py-2 font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300"
+                  >
+                    Unlock details — $1.00
+                  </button>
+                  <p className="text-[10px] text-center text-slate-400">
+                    One-time payment for lifetime access to this listing&apos;s details.
+                  </p>
+                </div>
+              ) : (
                 <>
                   <p className="mt-3 text-sm text-emerald-100/90">
                     {listing.contactName ? listing.contactName : "Landlord / Agent"}
@@ -276,18 +327,6 @@ export default async function ListingDetail({ params }) {
                     </p>
                   </div>
                 </>
-              ) : (
-                <div className="mt-4 space-y-4">
-                  <p className="text-sm text-emerald-100/90">
-                    Please login to view contact details for this listing.
-                  </p>
-                  <Link
-                    href={`/login?callbackUrl=/listings/${listing._id}`}
-                    className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-400 px-3 py-2 font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300"
-                  >
-                    Login to view contact
-                  </Link>
-                </div>
               )}
             </div>
           </div>

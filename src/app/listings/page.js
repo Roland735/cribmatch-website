@@ -206,7 +206,7 @@ export default async function Listings({ searchParams }) {
         />
 
         {pageCount > 1 ? (
-          <div className="mx-auto mt-10 flex max-w-5xl flex-wrap items-center justify-between gap-3 rounded-3xl border border-white/10 bg-slate-900/40 p-5">
+          <div className="mt-10 flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-white/10 bg-slate-900/40 p-5">
             <p className="text-sm text-slate-300">
               Page <span className="font-semibold text-white">{pageUsed}</span> of{" "}
               <span className="font-semibold text-white">{pageCount}</span>
@@ -240,7 +240,7 @@ export default async function Listings({ searchParams }) {
           </div>
         ) : null}
 
-        <div className="mx-auto mt-12 flex max-w-2xl flex-col items-center gap-4 rounded-3xl border border-white/10 bg-slate-900/40 p-6 text-center sm:flex-row sm:justify-between sm:text-left">
+        <div className="mt-12 flex flex-col items-center gap-4 rounded-3xl border border-white/10 bg-slate-900/40 p-6 text-center sm:flex-row sm:justify-between sm:text-left">
           <div>
             <p className="text-sm font-semibold text-white">
               Want listings in your exact suburb and budget?
@@ -250,7 +250,7 @@ export default async function Listings({ searchParams }) {
             </p>
           </div>
           <a
-            href="https://wa.me/263777215826"
+            href="https://wa.me/263771150713"
             target="_blank"
             rel="noopener noreferrer"
             className="rounded-full bg-emerald-400 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300"

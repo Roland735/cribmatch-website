@@ -100,6 +100,7 @@ export async function GET(request) {
 
   const result = await searchListings({
     status: includeAll && isAdmin ? "all" : "published",
+    approvedOnly: !(includeAll && isAdmin),
     q,
     city,
     suburb,
@@ -141,12 +142,14 @@ export async function POST(request) {
 
   const listerPhoneNumber =
     typeof session?.user?.phoneNumber === "string" ? session.user.phoneNumber.trim() : "";
+  const isAdmin = session?.user?.role === "admin";
   if (!listerPhoneNumber) {
     return Response.json({ error: "Missing lister phone number" }, { status: 400 });
   }
 
   const body = await request.json();
   const title = typeof body?.title === "string" ? body.title.trim() : "";
+  const city = typeof body?.city === "string" ? body.city.trim() : "Harare";
   const suburb = typeof body?.suburb === "string" ? body.suburb.trim() : "";
   const propertyCategoryRaw =
     typeof body?.propertyCategory === "string" ? body.propertyCategory.trim() : "";
@@ -195,7 +198,8 @@ export async function POST(request) {
       : "";
   const contactEmail =
     typeof body?.contactEmail === "string" ? body.contactEmail.trim() : "";
-  const status = body?.status === "draft" ? "draft" : "published";
+  const status = body?.status === "draft" ? "draft" : body?.status === "archived" ? "archived" : "published";
+  const approved = isAdmin && typeof body?.approved === "boolean" ? body.approved : false;
 
   if (!title || !suburb || pricePerMonth === null || bedrooms === null) {
     return Response.json(
@@ -211,6 +215,7 @@ export async function POST(request) {
   const listing = await Listing.create({
     title,
     listerPhoneNumber,
+    city,
     suburb,
     propertyCategory,
     propertyType: normalizedPropertyType,
@@ -228,6 +233,7 @@ export async function POST(request) {
     contactWhatsApp: contactWhatsApp || listerPhoneNumber,
     contactEmail,
     status,
+    approved, // Admin can set this on create, users always false
     createdAt: now,
     updatedAt: now,
   });

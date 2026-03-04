@@ -21,8 +21,9 @@ function serializeListing(listing) {
 }
 
 export async function GET(_request, { params }) {
+  const { id } = await params;
   if (!process.env.MONGODB_URI) {
-    const listing = seedListings.find((item) => item?._id === params?.id);
+    const listing = seedListings.find((item) => item?._id === id);
     if (!listing) {
       return Response.json({ error: "Not found" }, { status: 404 });
     }
@@ -30,7 +31,7 @@ export async function GET(_request, { params }) {
   }
 
   await dbConnect();
-  const listing = await Listing.findById(params?.id);
+  const listing = await Listing.findById(id);
 
   if (!listing) {
     return Response.json({ error: "Not found" }, { status: 404 });
@@ -40,6 +41,7 @@ export async function GET(_request, { params }) {
 }
 
 export async function PATCH(request, { params }) {
+  const { id } = await params;
   const session = await getServerSession(authOptions);
   if (!session?.user) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
@@ -54,7 +56,7 @@ export async function PATCH(request, { params }) {
 
   const body = await request.json();
   await dbConnect();
-  const existing = await Listing.findById(params?.id);
+  const existing = await Listing.findById(id);
   if (!existing) {
     return Response.json({ error: "Not found" }, { status: 404 });
   }
@@ -68,6 +70,9 @@ export async function PATCH(request, { params }) {
   }
 
   const update = {};
+  if (isAdmin && typeof body?.approved === "boolean") {
+    update.approved = body.approved;
+  }
   const propertyCategoryRaw =
     typeof body?.propertyCategory === "string" ? body.propertyCategory.trim() : "";
   const propertyTypeRaw =
@@ -104,6 +109,7 @@ export async function PATCH(request, { params }) {
   }
 
   if (typeof body?.title === "string") update.title = body.title.trim();
+  if (typeof body?.city === "string") update.city = body.city.trim();
   if (typeof body?.suburb === "string") update.suburb = body.suburb.trim();
   if (typeof body?.pricePerMonth === "number")
     update.pricePerMonth = body.pricePerMonth;
@@ -128,13 +134,17 @@ export async function PATCH(request, { params }) {
     update.contactWhatsApp = body.contactWhatsApp.trim();
   if (typeof body?.contactEmail === "string")
     update.contactEmail = body.contactEmail.trim();
-  if (body?.status === "draft" || body?.status === "published") {
+  if (body?.status === "draft" || body?.status === "published" || body?.status === "archived") {
     update.status = body.status;
+  }
+  if (isAdmin && typeof body?.marketed === "boolean") {
+    update.marketed = body.marketed;
+    update.marketedAt = body.marketed ? new Date() : null;
   }
 
   update.updatedAt = new Date();
 
-  const listing = await Listing.findByIdAndUpdate(params?.id, update, {
+  const listing = await Listing.findByIdAndUpdate(id, update, {
     new: true,
   });
 
@@ -146,6 +156,7 @@ export async function PATCH(request, { params }) {
 }
 
 export async function DELETE(_request, { params }) {
+  const { id } = await params;
   const session = await getServerSession(authOptions);
   if (!session?.user) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
@@ -159,7 +170,7 @@ export async function DELETE(_request, { params }) {
   }
 
   await dbConnect();
-  const existing = await Listing.findById(params?.id);
+  const existing = await Listing.findById(id);
   if (!existing) return Response.json({ error: "Not found" }, { status: 404 });
 
   const actorPhoneNumber =
@@ -170,7 +181,7 @@ export async function DELETE(_request, { params }) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const result = await Listing.findByIdAndDelete(params?.id);
+  const result = await Listing.findByIdAndDelete(id);
   if (!result) return Response.json({ error: "Not found" }, { status: 404 });
   return Response.json({ ok: true });
 }

@@ -41,7 +41,7 @@ export default async function ListingsGridServer({
 
   return (
     <div
-      className={`mx-auto mt-12 grid max-w-2xl grid-cols-1 gap-6 lg:mx-0 lg:max-w-none ${compact ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}
+      className={`mx-auto mt-12 grid max-w-2xl grid-cols-1 gap-6 lg:max-w-none ${compact ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}
     >
       {listings.map((listing) => {
         const photos = [
@@ -53,7 +53,7 @@ export default async function ListingsGridServer({
         return (
           <article
             key={listing._id?.toString() || listing.title}
-            className="rounded-2xl border border-white/10 bg-slate-900/60 p-6 transition hover:border-white/20"
+            className="flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-900/60 transition hover:border-white/20"
           >
             <ListingCardSlider
               images={photos}
@@ -61,82 +61,72 @@ export default async function ListingsGridServer({
               href={`/listings/${listing._id}`}
             />
 
-            <div className="mt-6 flex flex-wrap items-center gap-2 text-xs">
-              {listing.suburb && (
-                <span className="rounded-full bg-white/5 px-3 py-1 text-slate-200 ring-1 ring-inset ring-white/10">
-                  {listing.suburb}
-                </span>
-              )}
-              {listing.propertyCategory && (
-                <span className="rounded-full bg-white/5 px-3 py-1 text-slate-200 ring-1 ring-inset ring-white/10">
-                  {formatTitle(listing.propertyCategory)}
-                </span>
-              )}
-              {listing.propertyType && (
-                <span className="rounded-full bg-white/5 px-3 py-1 text-slate-200 ring-1 ring-inset ring-white/10">
-                  {listing.propertyType}
-                </span>
-              )}
-              {typeof listing.pricePerMonth === "number" && (
-                <span className="rounded-full bg-emerald-400/10 px-3 py-1 text-emerald-200 ring-1 ring-inset ring-emerald-400/20">
-                  {formatPrice(listing.pricePerMonth)}/mo
-                </span>
-              )}
-              {typeof listing.deposit === "number" && (
-                <span className="rounded-full bg-white/5 px-3 py-1 text-slate-200 ring-1 ring-inset ring-white/10">
-                  {formatPrice(listing.deposit)} deposit
-                </span>
-              )}
-            </div>
+            <div className="flex flex-1 flex-col p-6">
+              <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-wider">
+                {listing.suburb && (
+                  <span className="rounded-full bg-white/5 px-2.5 py-1 text-slate-300 ring-1 ring-inset ring-white/10">
+                    {listing.suburb}
+                  </span>
+                )}
+                {listing.propertyCategory && (
+                  <span className="rounded-full bg-white/5 px-2.5 py-1 text-slate-300 ring-1 ring-inset ring-white/10">
+                    {formatTitle(listing.propertyCategory)}
+                  </span>
+                )}
+                {typeof listing.pricePerMonth === "number" && (
+                  <span className="rounded-full bg-emerald-400/10 px-2.5 py-1 text-emerald-300 ring-1 ring-inset ring-emerald-400/20">
+                    {formatPrice(listing.pricePerMonth)}/mo
+                  </span>
+                )}
+              </div>
 
-            <h2 className="mt-4 text-base font-semibold text-white">
-              <Link
-                href={`/listings/${listing._id}`}
-                className="hover:underline"
-                prefetch={false}
-              >
-                {formatTitle(listing.title)}
-              </Link>
-            </h2>
-
-            <p className="mt-2 text-sm leading-6 text-slate-300">
-              {listing.description || "Message us on WhatsApp for photos and viewing slots."}
-            </p>
-
-            <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-400">
-              {typeof listing.bedrooms === "number" && (
-                <span className="rounded-full bg-white/5 px-3 py-1 ring-1 ring-inset ring-white/10">
-                  {listing.bedrooms} bed
-                </span>
-              )}
-              {Array.isArray(listing.features) && listing.features.slice(0, 6).map((feature) => (
-                <span
-                  key={feature}
-                  className="rounded-full bg-white/5 px-3 py-1 ring-1 ring-inset ring-white/10"
-                >
-                  {feature}
-                </span>
-              ))}
-            </div>
-
-            <div className="mt-6">
-              {session ? (
+              <h2 className="mt-4 line-clamp-1 text-base font-semibold text-white">
                 <Link
-                  href={`/listings/${listing._id}#contact`}
-                  className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-400 px-3 py-2 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300"
+                  href={`/listings/${listing._id}`}
+                  className="hover:underline"
                   prefetch={false}
                 >
-                  View contact
+                  {formatTitle(listing.title)}
                 </Link>
-              ) : (
-                <Link
-                  href="/login"
-                  className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-400/10 px-3 py-2 text-sm font-semibold text-emerald-200 ring-1 ring-inset ring-emerald-400/30 transition hover:bg-emerald-400/20"
-                  prefetch={false}
-                >
-                  Login to view contact
-                </Link>
-              )}
+              </h2>
+
+              <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-slate-400">
+                {listing.description || "Message us on WhatsApp for photos and viewing slots."}
+              </p>
+
+              <div className="mt-4 flex flex-wrap gap-2 text-[10px] text-slate-500">
+                {typeof listing.bedrooms === "number" && (
+                  <span>{listing.bedrooms} bed</span>
+                )}
+                {Array.isArray(listing.features) && listing.features.length > 0 && (
+                  <>
+                    <span>•</span>
+                    <span className="line-clamp-1">
+                      {listing.features.slice(0, 3).join(" • ")}
+                    </span>
+                  </>
+                )}
+              </div>
+
+              <div className="mt-auto pt-6">
+                {session ? (
+                  <Link
+                    href={`/listings/${listing._id}#contact`}
+                    className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-400 px-3 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300"
+                    prefetch={false}
+                  >
+                    View details
+                  </Link>
+                ) : (
+                  <Link
+                    href="/login"
+                    className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-400/10 px-3 py-2.5 text-sm font-semibold text-emerald-200 ring-1 ring-inset ring-emerald-400/30 transition hover:bg-emerald-400/20"
+                    prefetch={false}
+                  >
+                    Login to view contact
+                  </Link>
+                )}
+              </div>
             </div>
           </article>
         );

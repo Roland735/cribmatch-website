@@ -68,7 +68,7 @@ export default function FAQ() {
             </p>
           </div>
           <a
-            href="https://wa.me/263777215826"
+            href="https://wa.me/263771150713"
             target="_blank"
             rel="noopener noreferrer"
             className="rounded-full bg-emerald-400 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300"

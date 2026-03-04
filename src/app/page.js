@@ -107,7 +107,7 @@ export default async function Home({ searchParams }) {
 
             <div className="flex flex-wrap items-center gap-4">
               <a
-                href="https://wa.me/263777215826"
+                href="https://wa.me/263771150713"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="rounded-full bg-emerald-400 px-6 py-3 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-400/25 transition hover:bg-emerald-300"

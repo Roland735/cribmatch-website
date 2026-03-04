@@ -88,12 +88,12 @@ export default function Renters() {
             </p>
           </div>
           <a
-            href="https://wa.me/263777215826"
+            href="https://wa.me/263771150713"
             target="_blank"
             rel="noopener noreferrer"
-            className="rounded-full bg-emerald-400 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300"
+            className="inline-flex rounded-full border border-emerald-400/30 bg-emerald-400/0 px-5 py-2.5 text-sm font-semibold text-emerald-200 transition hover:border-emerald-400/50 hover:bg-emerald-400/5"
           >
-            Start on WhatsApp
+            Chat on WhatsApp
           </a>
         </div>
       </div>

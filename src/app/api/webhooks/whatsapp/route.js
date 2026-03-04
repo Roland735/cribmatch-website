@@ -1933,6 +1933,7 @@ export async function POST(request) {
         duration: String(flowData.duration || "").trim(),
         numberOfStudents: extractNumber(flowData.number_of_students),
         status: "published",
+        approved: false, // New or edited listings require re-approval
       };
 
       const editingListingId = lastMeta?.editingListingId;
@@ -1964,6 +1965,7 @@ export async function POST(request) {
       const listingId = created?._id?.toString?.() ?? String(created?._id || "");
       const shortId = getShortIdFromListing(created);
       const actionText = editingListingId ? "Listing updated." : "Listing published.";
+      const approvalNote = "\n\n⏳ Your listing is now pending admin approval. It will be visible on the web and WhatsApp once approved.";
 
       const confirmText = [
         actionText,
@@ -1975,6 +1977,7 @@ export async function POST(request) {
         `📋 Category: ${propertyTypeByListingType}`,
         bedroomsId ? `🛏️ Bedrooms: ${bedroomsId}` : null,
         `💰 Price: ${pricePerMonth}`,
+        approvalNote,
       ].filter(Boolean).join("\n");
 
       await sendTextWithInstructionHeader(phone, confirmText, actionText);
@@ -2075,6 +2078,15 @@ export async function POST(request) {
       const maxPrice = (maxPriceRaw === 0) ? null : maxPriceRaw;
       const q = String(flowData.q || "").trim();
 
+      // Only show approved listings for non-admins
+      const searchOptions = {
+        q,
+        minPrice,
+        maxPrice,
+        perPage: 6,
+        approvedOnly: true
+      };
+
       if (screenUpper === "BOARDING_SEARCH") {
         const resolvedCity = resolveTitleById(flowData.city, PREDEFINED_CITIES);
         const suburbRaw = String(flowData.suburb || "").trim();
@@ -2096,15 +2108,12 @@ export async function POST(request) {
           .slice(0, 12);
 
         results = await searchPublishedListings({
-          q,
+          ...searchOptions,
           city: resolvedCity || "",
           suburb: resolvedSuburb || "",
-          minPrice,
-          maxPrice,
           propertyCategory: "boarding",
           propertyType: roomTypeTitle || "",
           features: resolvedFeatures,
-          perPage: 6,
         });
       } else if (screenUpper === "SHOP_SEARCH") {
         const resolvedCity = resolveTitleById(flowData.city, PREDEFINED_CITIES);
@@ -2127,15 +2136,12 @@ export async function POST(request) {
           .slice(0, 12);
 
         results = await searchPublishedListings({
-          q,
+          ...searchOptions,
           city: resolvedCity || "",
           suburb: resolvedSuburb || "",
-          minPrice,
-          maxPrice,
           propertyCategory: "commercial",
           propertyType: shopTypeTitle || "",
           features: resolvedFeatures,
-          perPage: 6,
         });
       } else if (screenUpper === "RENT_A_CHAIR_SEARCH") {
         const serviceTypeId = String(flowData.serviceType || flowData.service_type || "").trim();
@@ -2154,15 +2160,12 @@ export async function POST(request) {
           .slice(0, 12);
 
         results = await searchPublishedListings({
-          q,
+          ...searchOptions,
           city: "",
           suburb: "",
-          minPrice,
-          maxPrice,
           propertyCategory: "rent_a_chair",
           propertyType: serviceTypeTitle || "",
           features: resolvedFeatures,
-          perPage: 6,
         });
       } else {
         const resolvedCity = resolveTitleById(flowData.city, PREDEFINED_CITIES);
@@ -2195,16 +2198,13 @@ export async function POST(request) {
           .slice(0, 12);
 
         results = await searchPublishedListings({
-          q,
+          ...searchOptions,
           city: resolvedCity || "",
           suburb: resolvedSuburb || "",
-          minPrice,
-          maxPrice,
           propertyCategory: resolvedPropertyCategory,
           propertyType: resolvedPropertyType || "",
           minBeds: minBedsSafe,
           features: resolvedFeatures,
-          perPage: 6,
         });
       }
     } catch (e) {
@@ -2642,14 +2642,14 @@ export async function POST(request) {
     if (code && /^[A-Z0-9]{4}$/.test(code) && !["MENU", "HELP", "LIST", "OPEN", "VIEW"].includes(code)) {
       let listing = null;
       if (dbAvailable && typeof Listing?.findOne === "function") {
-        listing = await Listing.findOne({ shortId: code }).lean().exec().catch(() => null);
+        listing = await Listing.findOne({ shortId: code, approved: true }).lean().exec().catch(() => null);
       }
       if (!listing && selectionMap.has(phone)) {
         const mem = selectionMap.get(phone);
-        listing = mem?.results?.find((r) => getShortIdFromListing(r) === code) || null;
+        listing = mem?.results?.find((r) => getShortIdFromListing(r) === code && r.approved !== false) || null;
       }
       if (!listing) {
-        await sendWithMainMenuButton(phone, `❌ No listing found for CODE: ${code}`, "Tap Main menu to search.");
+        await sendWithMainMenuButton(phone, `❌ No approved listing found for CODE: ${code}`, "Tap Main menu to search.");
         return NextResponse.json({ ok: true, note: "code-not-found" });
       }
       await revealFromObject(listing, phone);
@@ -3087,15 +3087,17 @@ export async function POST(request) {
 
     let listing = null;
     if (/^[A-Z0-9]{4}$/.test(refUpper) && dbAvailable && typeof Listing?.findOne === "function") {
-      listing = await Listing.findOne({ shortId: refUpper }).lean().exec().catch(() => null);
+      listing = await Listing.findOne({ shortId: refUpper, approved: true }).lean().exec().catch(() => null);
     }
     if (!listing) {
-      try { listing = await getListingById(listingRef).catch(() => null); } catch (e) { listing = null; }
+      try { listing = await getListingById(listingRef, { approvedOnly: true }).catch(() => null); } catch (e) { listing = null; }
     }
-    if (!listing && typeof Listing?.findById === "function") listing = await Listing.findById(listingRef).lean().exec().catch(() => null);
+    if (!listing && typeof Listing?.findById === "function") {
+      listing = await Listing.findOne({ _id: listingRef, approved: true }).lean().exec().catch(() => null);
+    }
     const imgs = (listing && (listing.images || listing.photos || listing.photosUrls || [])) || [];
     if (!imgs || imgs.length === 0) {
-      await sendWithMainMenuButton(phone, "🖼️ No images found for this listing.", "Tap Main menu to continue.");
+      await sendWithMainMenuButton(phone, "🖼️ No images found for this approved listing.", "Tap Main menu to continue.");
       return NextResponse.json({ ok: true, note: "images-not-found" });
     }
     const title = listing?.title ? String(listing.title) : "Listing";
@@ -3178,20 +3180,22 @@ export async function POST(request) {
     let listing = listingFromResults;
     const listingIdUpper = String(listingId || "").trim().toUpperCase();
     if (!listing && /^[A-Z0-9]{4}$/.test(listingIdUpper) && dbAvailable && typeof Listing?.findOne === "function") {
-      listing = await Listing.findOne({ shortId: listingIdUpper }).lean().exec().catch(() => null);
+      listing = await Listing.findOne({ shortId: listingIdUpper, approved: true }).lean().exec().catch(() => null);
     }
     if (!listing && !String(listingId || "").startsWith("seed_")) {
-      try { listing = await getListingById(listingId).catch(() => null); } catch (e) { listing = null; }
+      try { listing = await getListingById(listingId, { approvedOnly: true }).catch(() => null); } catch (e) { listing = null; }
     }
-    if (!listing && dbAvailable && typeof Listing?.findById === "function") listing = await Listing.findById(listingId).lean().exec().catch(() => null);
+    if (!listing && dbAvailable && typeof Listing?.findById === "function") {
+      listing = await Listing.findOne({ _id: listingId, approved: true }).lean().exec().catch(() => null);
+    }
     if (!listing && Array.isArray(lastResults)) {
       listing =
-        lastResults.find((r) => getShortIdFromListing(r) === listingIdUpper) ||
-        lastResults.find((r) => getIdFromListing(r) === listingId || String(r._id) === listingId) ||
+        lastResults.find((r) => getShortIdFromListing(r) === listingIdUpper && r.approved !== false) ||
+        lastResults.find((r) => (getIdFromListing(r) === listingId || String(r._id) === listingId) && r.approved !== false) ||
         null;
     }
     if (!listing) {
-      await sendWithMainMenuButton(phone, "⚠️ Sorry, listing not found.", "Reply again with the number shown (e.g. 1), or tap Main menu.");
+      await sendWithMainMenuButton(phone, "⚠️ Sorry, approved listing not found.", "Reply again with the number shown (e.g. 1), or tap Main menu.");
       return NextResponse.json({ ok: true, note: "listing-not-found" });
     }
 
