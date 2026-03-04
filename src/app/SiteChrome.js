@@ -34,13 +34,13 @@ export default function SiteChrome({ children }) {
         <nav className="mx-auto max-w-screen-2xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between gap-3">
             <Link href="/" className="flex shrink-0 items-center gap-2">
-              <div className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/5 ring-1 ring-white/10">
+              <div className="relative flex h-16 w-16 sm:h-18 sm:w-18 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/5 ring-1 ring-white/10">
                 <Image
                   src="/logo_vector.svg"
                   alt="CribMatch Logo"
                   fill
                   priority
-                  className="object-contain scale-110"
+                  className="object-contain scale-125"
                 />
               </div>
               <span className="text-xl font-bold tracking-tight">CribMatch</span>
