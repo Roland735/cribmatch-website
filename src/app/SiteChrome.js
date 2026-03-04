@@ -32,15 +32,17 @@ export default function SiteChrome({ children }) {
     <>
       <header className="sticky top-0 z-50 border-b border-white/10 bg-slate-950/70 backdrop-blur">
         <nav className="mx-auto max-w-screen-2xl px-4 sm:px-6 lg:px-8">
-          <div className="flex h-16 items-center justify-between gap-3">
+          {/* Increased header height so the larger logo doesn't overlap other items */}
+          <div className="flex h-20 sm:h-24 items-center justify-between gap-3">
             <Link href="/" className="flex shrink-0 items-center gap-2">
-              <div className="relative flex h-20 w-20 sm:h-24 sm:w-24 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/5 ring-1 ring-white/10">
+              {/* Adjusted logo container sizes and removed extra scaling so the image fits nicely without extra inner padding or overlap */}
+              <div className="relative flex h-16 w-16 sm:h-20 sm:w-20 md:h-24 md:w-24 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/5 ring-1 ring-white/10">
                 <Image
                   src="/logo_vector.svg"
                   alt="CribMatch Logo"
                   fill
                   priority
-                  className="object-contain scale-125"
+                  className="object-contain"
                 />
               </div>
               <span className="text-xl font-bold tracking-tight">CribMatch</span>
