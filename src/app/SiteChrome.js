@@ -34,7 +34,7 @@ export default function SiteChrome({ children }) {
         <nav className="mx-auto max-w-screen-2xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between gap-3">
             <Link href="/" className="flex shrink-0 items-center gap-2">
-              <div className="relative flex h-16 w-16 sm:h-18 sm:w-18 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/5 ring-1 ring-white/10">
+              <div className="relative flex h-20 w-20 sm:h-24 sm:w-24 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/5 ring-1 ring-white/10">
                 <Image
                   src="/logo_vector.svg"
                   alt="CribMatch Logo"
