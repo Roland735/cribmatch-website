@@ -36,7 +36,7 @@ export default function SiteChrome({ children }) {
             <Link href="/" className="flex shrink-0 items-center gap-2">
               <div className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/5 ring-1 ring-white/10">
                 <Image
-                  src="/logo.png"
+                  src="/logo_vector.svg"
                   alt="CribMatch Logo"
                   fill
                   priority
@@ -506,4 +506,3 @@ export default function SiteChrome({ children }) {
     </>
   );
 }
-

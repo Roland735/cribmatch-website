@@ -21,7 +21,7 @@ export const metadata = {
     description: "Find your next home in Zimbabwe via web or WhatsApp.",
     images: [
       {
-        url: "/logo.png",
+        url: "/logo_vector.svg",
         width: 8000,
         height: 6000,
         alt: "CribMatch Zimbabwe",
@@ -32,12 +32,12 @@ export const metadata = {
     card: "summary_large_image",
     title: "CribMatch Zimbabwe — Web + WhatsApp Rental Assistant",
     description: "Find your next home in Zimbabwe via web or WhatsApp.",
-    images: ["/logo.png"],
+    images: ["/logo_vector.svg"],
   },
   icons: {
-    icon: "/logo.png",
-    shortcut: "/logo.png",
-    apple: "/logo.png",
+    icon: "/logo_vector.svg",
+    shortcut: "/logo_vector.svg",
+    apple: "/logo_vector.svg",
   },
 };
 
