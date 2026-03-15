@@ -2249,7 +2249,7 @@ export async function POST(request) {
         // No header to keep it clean
       );
     } else {
-      // Fallback for long messages: separate text + buttons
+      // Fallback for long messages: separate text + button
       if (msgText.length > 3900) msgText = `${msgText.slice(0, 3880).trim()}\n…`;
       await sendText(phone, msgText);
 
