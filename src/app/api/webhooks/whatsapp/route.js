@@ -2086,17 +2086,40 @@ export async function POST(request) {
       };
 
       const runSearch = async (extraOptions) => {
-        const approvedResults = await searchPublishedListings({
+        const exactApproved = await searchPublishedListings({
           ...baseSearchOptions,
           ...extraOptions,
           approvedOnly: true,
         });
+        if ((exactApproved?.listings || []).length) return exactApproved;
 
-        if ((approvedResults?.listings || []).length) return approvedResults;
+        const exactAny = await searchPublishedListings({
+          ...baseSearchOptions,
+          ...extraOptions,
+          approvedOnly: false,
+        });
+        if ((exactAny?.listings || []).length) return exactAny;
+
+        const relaxedOptions = {
+          ...extraOptions,
+          city: "",
+          suburb: "",
+          propertyType: "",
+          features: [],
+          minBeds: null,
+          q: "",
+        };
+
+        const relaxedApproved = await searchPublishedListings({
+          ...baseSearchOptions,
+          ...relaxedOptions,
+          approvedOnly: true,
+        });
+        if ((relaxedApproved?.listings || []).length) return relaxedApproved;
 
         return searchPublishedListings({
           ...baseSearchOptions,
-          ...extraOptions,
+          ...relaxedOptions,
           approvedOnly: false,
         });
       };
