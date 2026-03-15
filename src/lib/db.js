@@ -41,6 +41,14 @@ async function findUniqueShortId(Model, attemptsLeft = 20) {
   return findUniqueShortId(Model, attemptsLeft - 1);
 }
 
+function inferCityFromSuburb(suburb) {
+  const raw = typeof suburb === "string" ? suburb.trim() : "";
+  if (!raw.includes(",")) return "";
+  const parts = raw.split(",").map((part) => part.trim()).filter(Boolean);
+  if (parts.length < 2) return "";
+  return parts[parts.length - 1];
+}
+
 const ListingSchema = new mongoose.Schema(
   {
     title: { type: String, required: true, trim: true },
@@ -84,6 +92,20 @@ const ListingSchema = new mongoose.Schema(
 );
 
 ListingSchema.index({ shortId: 1 }, { unique: true, sparse: true });
+ListingSchema.index({ status: 1, approved: 1, city: 1, createdAt: -1 });
+ListingSchema.index({ status: 1, approved: 1, propertyCategory: 1, propertyType: 1, createdAt: -1 });
+ListingSchema.index({ status: 1, approved: 1, pricePerMonth: 1, createdAt: -1 });
+
+ListingSchema.pre("validate", function normalizeLocationFields() {
+  const inferred = inferCityFromSuburb(this.suburb);
+  if (inferred) {
+    const current = typeof this.city === "string" ? this.city.trim().toLowerCase() : "";
+    const next = inferred.toLowerCase();
+    if (!current || (current === "harare" && next !== "harare")) {
+      this.city = inferred;
+    }
+  }
+});
 
 ListingSchema.pre("validate", async function ensureShortId() {
   try {

@@ -4,6 +4,8 @@ import { dbConnect, Listing } from "./db";
 function normalizeListingDoc(listing) {
   const obj =
     typeof listing?.toObject === "function" ? listing.toObject() : listing;
+  const inferredCity = inferCityFromSuburb(obj?.suburb);
+  const cityValue = toSafeString(obj?.city).trim() || inferredCity;
   const propertyCategory =
     typeof obj?.propertyCategory === "string" ? obj.propertyCategory : "";
   const propertyType = typeof obj?.propertyType === "string" ? obj.propertyType : "";
@@ -14,6 +16,7 @@ function normalizeListingDoc(listing) {
   return {
     ...obj,
     propertyType: normalizedPropertyType,
+    city: cityValue,
     shortId: typeof obj?.shortId === "string" ? obj.shortId : "",
     _id: obj?._id?.toString?.() ?? obj?._id,
     createdAt: obj?.createdAt?.toISOString?.() ?? obj?.createdAt,
@@ -69,6 +72,81 @@ function toStringArray(value) {
 
 function escapeRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function inferCityFromSuburb(suburb) {
+  const raw = toSafeString(suburb).trim();
+  if (!raw.includes(",")) return "";
+  const parts = raw.split(",").map((part) => part.trim()).filter(Boolean);
+  if (parts.length < 2) return "";
+  return parts[parts.length - 1];
+}
+
+function tokenizeQueryTerms(value) {
+  return Array.from(
+    new Set(
+      normalizeText(value)
+        .split(/\s+/)
+        .map((term) => term.trim())
+        .filter((term) => term.length >= 2)
+        .slice(0, 8),
+    ),
+  );
+}
+
+let searchFieldsSyncPromise = null;
+
+async function synchronizeListingSearchFields() {
+  if (!process.env.MONGODB_URI) return;
+  if (searchFieldsSyncPromise) return searchFieldsSyncPromise;
+  searchFieldsSyncPromise = (async () => {
+    await dbConnect();
+    const docs = await Listing.find(
+      {
+        $or: [
+          { approved: { $exists: false } },
+          { city: { $exists: false } },
+          { city: null },
+          { city: "" },
+          { city: "Harare" },
+        ],
+      },
+      { _id: 1, approved: 1, status: 1, city: 1, suburb: 1 },
+    )
+      .lean()
+      .limit(4000);
+
+    const updates = [];
+    for (const doc of docs) {
+      if (!doc || typeof doc !== "object") continue;
+      const update = {};
+      if (doc.status === "published" && typeof doc.approved !== "boolean") {
+        update.approved = true;
+      }
+      const inferredCity = inferCityFromSuburb(doc.suburb);
+      if (inferredCity) {
+        const currentCity = normalizeText(doc.city);
+        const nextCity = normalizeText(inferredCity);
+        const shouldUpdateCity =
+          !currentCity || (currentCity === "harare" && nextCity !== "harare");
+        if (shouldUpdateCity) {
+          update.city = inferredCity;
+        }
+      }
+      if (Object.keys(update).length) {
+        updates.push({
+          updateOne: {
+            filter: { _id: doc._id },
+            update: { $set: update },
+          },
+        });
+      }
+    }
+    if (updates.length) {
+      await Listing.bulkWrite(updates, { ordered: false });
+    }
+  })().catch(() => null);
+  return searchFieldsSyncPromise;
 }
 
 const ALLOWED_SORTS = new Set(["newest", "price_asc", "price_desc", "beds_asc", "beds_desc"]);
@@ -127,7 +205,8 @@ export async function getPublishedListings({ limit = 6 } = {}) {
   }
 
   await dbConnect();
-  const listings = await Listing.find({ status: "published", approved: true })
+  await synchronizeListingSearchFields();
+  const listings = await Listing.find({ status: "published", approved: { $ne: false } })
     .sort({ createdAt: -1 })
     .limit(limit);
   await Promise.all(
@@ -180,6 +259,7 @@ export async function searchListings({
   const selectedFeaturesNormalized = selectedFeatures.map((f) =>
     normalizeText(f),
   );
+  const queryTerms = tokenizeQueryTerms(safeQuery);
 
   const pageNumber = Math.max(1, Math.floor(toSafeNumber(page) ?? 1));
   const perPageNumberRaw = Math.floor(toSafeNumber(perPage) ?? 24);
@@ -270,6 +350,7 @@ export async function searchListings({
       if (normalizedQuery) {
         const haystack = [
           listing.title,
+          listing.city,
           listing.suburb,
           listing.description,
           ...toStringArray(listing.features),
@@ -277,7 +358,10 @@ export async function searchListings({
           .map((value) => normalizeText(value))
           .filter(Boolean)
           .join(" ");
-        if (!haystack.includes(normalizedQuery)) return false;
+        const matchesQuery = queryTerms.length
+          ? queryTerms.every((term) => haystack.includes(term))
+          : haystack.includes(normalizedQuery);
+        if (!matchesQuery) return false;
       }
       return true;
     });
@@ -310,12 +394,14 @@ export async function searchListings({
   }
 
   await dbConnect();
+  await synchronizeListingSearchFields();
 
   const mongoQuery = {};
+  const andConditions = [];
   if (normalizedStatus === "published") {
     mongoQuery.status = "published";
     if (approvedOnly) {
-      mongoQuery.approved = true;
+      mongoQuery.approved = { $ne: false };
     }
   }
 
@@ -353,33 +439,43 @@ export async function searchListings({
     if (maxBedsNumber !== null) mongoQuery.bedrooms.$lte = maxBedsNumber;
   }
 
+  if (normalizedCity) {
+    const cityRegex = { $regex: escapeRegex(city.trim()), $options: "i" };
+    andConditions.push({
+      $or: [
+        { city: cityRegex },
+        { suburb: cityRegex },
+      ],
+    });
+  }
   if (normalizedSuburb) {
-    mongoQuery.suburb = { $regex: escapeRegex(suburb.trim()), $options: "i" };
-  } else if (normalizedCity) {
-    mongoQuery.city = { $regex: escapeRegex(city.trim()), $options: "i" };
+    andConditions.push({
+      suburb: { $regex: escapeRegex(suburb.trim()), $options: "i" },
+    });
   }
 
   if (selectedFeatures.length) {
-    // Looser feature matching for Mongo too
-    // Instead of { $all: selectedFeatures }, we construct a regex query
-    // This is complex for $all.
-    // Let's just do $in (OR logic) if it's too strict, but user wants AND?
-    // Let's stick to $all but normalize the inputs better.
-    // Actually, the seed logic above I implemented fuzzy matching.
-    // Mongo's $all is strict exact match on array elements.
-    // We should probably just use $in to be safe and find MORE results.
     mongoQuery.features = { $in: selectedFeatures.map(f => new RegExp(escapeRegex(f.split(" ")[0]), "i")) };
   }
 
   if (normalizedQuery) {
-    const regex = { $regex: escapeRegex(safeQuery.trim()), $options: "i" };
-    mongoQuery.$or = [
-      { title: regex },
-      { city: regex },
-      { suburb: regex },
-      { description: regex },
-      { features: { $elemMatch: regex } },
-    ];
+    const terms = queryTerms.length ? queryTerms : [normalizedQuery];
+    for (const term of terms) {
+      const regex = { $regex: escapeRegex(term), $options: "i" };
+      andConditions.push({
+        $or: [
+          { title: regex },
+          { city: regex },
+          { suburb: regex },
+          { description: regex },
+          { features: { $elemMatch: regex } },
+        ],
+      });
+    }
+  }
+
+  if (andConditions.length) {
+    mongoQuery.$and = andConditions;
   }
 
   let sortSpec = { createdAt: -1 };
@@ -638,6 +734,7 @@ export async function getListingFacets() {
   }
 
   await dbConnect();
+  await synchronizeListingSearchFields();
   const [suburbsRaw, citiesRaw, featuresRaw, propertyCategoriesRaw, propertyTypesRaw] = await Promise.all([
     Listing.distinct("suburb", { status: "published" }),
     Listing.distinct("city", { status: "published" }),

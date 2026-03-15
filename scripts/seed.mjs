@@ -83,6 +83,14 @@ function normalizeIdPart(value) {
     .slice(0, 80);
 }
 
+function inferCityFromSuburb(suburb) {
+  const raw = String(suburb || "").trim();
+  if (!raw.includes(",")) return "";
+  const parts = raw.split(",").map((part) => part.trim()).filter(Boolean);
+  if (parts.length < 2) return "";
+  return parts[parts.length - 1];
+}
+
 function generatePhotoSet(index) {
   const sets = [
     [
@@ -130,6 +138,7 @@ function generateListingForSuburb({ suburb, index, lister }) {
     _id: `seed-${normalizeIdPart(suburb)}`,
     title: `${suburb.split(",")[0]}: ${bedrooms}-bed ${propertyType.toLowerCase()} (photos)`,
     listerPhoneNumber: lister.phoneNumber,
+    city: inferCityFromSuburb(suburb) || "Harare",
     suburb,
     propertyCategory: "residential",
     propertyType,
@@ -151,6 +160,7 @@ function generateListingForSuburb({ suburb, index, lister }) {
     contactPhone: lister.phoneNumber,
     contactEmail: lister.email,
     status: "published",
+    approved: true,
     createdAt: new Date(Date.UTC(2026, 0, 1 + (index % 28), 10, 0, 0)).toISOString(),
     updatedAt: new Date(Date.UTC(2026, 0, 1 + (index % 28), 10, 0, 0)).toISOString(),
   };
@@ -404,6 +414,8 @@ async function main() {
       return {
         _id: listing._id,
         ...rest,
+        city: listing?.city || inferCityFromSuburb(listing?.suburb) || "Harare",
+        approved: typeof listing?.approved === "boolean" ? listing.approved : true,
         createdAt: createdAtString ? new Date(createdAtString) : new Date(),
         updatedAt: updatedAtString ? new Date(updatedAtString) : new Date(),
       };
