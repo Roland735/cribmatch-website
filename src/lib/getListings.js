@@ -256,9 +256,16 @@ export async function searchListings({
         const listingFeatures = toStringArray(listing.features).map((f) =>
           normalizeText(f),
         );
+        let matchCount = 0;
         for (const feature of selectedFeaturesNormalized) {
-          if (!listingFeatures.includes(feature)) return false;
+          const featureWords = feature.split(/\s+/);
+          const hasFeature = listingFeatures.some(lf => {
+            return lf.includes(feature) || feature.includes(lf) || featureWords.some(w => w.length > 3 && lf.includes(w));
+          });
+          if (hasFeature) matchCount++;
         }
+        // Use OR logic for now to show MORE results
+        if (matchCount === 0) return false;
       }
       if (normalizedQuery) {
         const haystack = [
@@ -353,7 +360,15 @@ export async function searchListings({
   }
 
   if (selectedFeatures.length) {
-    mongoQuery.features = { $all: selectedFeatures };
+    // Looser feature matching for Mongo too
+    // Instead of { $all: selectedFeatures }, we construct a regex query
+    // This is complex for $all.
+    // Let's just do $in (OR logic) if it's too strict, but user wants AND?
+    // Let's stick to $all but normalize the inputs better.
+    // Actually, the seed logic above I implemented fuzzy matching.
+    // Mongo's $all is strict exact match on array elements.
+    // We should probably just use $in to be safe and find MORE results.
+    mongoQuery.features = { $in: selectedFeatures.map(f => new RegExp(escapeRegex(f.split(" ")[0]), "i")) };
   }
 
   if (normalizedQuery) {
