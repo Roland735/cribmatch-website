@@ -2086,40 +2086,58 @@ export async function POST(request) {
       };
 
       const runSearch = async (extraOptions) => {
-        const exactApproved = await searchPublishedListings({
+        // 1. Strict Search (Approved Only)
+        let res = await searchPublishedListings({
           ...baseSearchOptions,
           ...extraOptions,
           approvedOnly: true,
         });
-        if ((exactApproved?.listings || []).length) return exactApproved;
+        if ((res?.listings || []).length) return res;
 
-        const exactAny = await searchPublishedListings({
+        // 2. Strict Search (Unapproved allowed - helps testing)
+        res = await searchPublishedListings({
           ...baseSearchOptions,
           ...extraOptions,
           approvedOnly: false,
         });
-        if ((exactAny?.listings || []).length) return exactAny;
+        if ((res?.listings || []).length) return res;
 
-        const relaxedOptions = {
-          ...extraOptions,
-          city: "",
-          suburb: "",
-          propertyType: "",
-          features: [],
-          minBeds: null,
-          q: "",
-        };
-
-        const relaxedApproved = await searchPublishedListings({
+        // 3. Relax Location (Drop Suburb & Features) - Approved Only
+        const { suburb, features, ...optionsNoLoc } = extraOptions;
+        res = await searchPublishedListings({
           ...baseSearchOptions,
-          ...relaxedOptions,
+          ...optionsNoLoc,
           approvedOnly: true,
         });
-        if ((relaxedApproved?.listings || []).length) return relaxedApproved;
+        if ((res?.listings || []).length) return res;
 
+        // 4. Relax Price (Drop Price & Location) - Approved Only
+        const { minPrice, maxPrice, ...baseNoPrice } = baseSearchOptions;
+        res = await searchPublishedListings({
+          ...baseNoPrice,
+          ...optionsNoLoc,
+          approvedOnly: true,
+        });
+        if ((res?.listings || []).length) return res;
+
+        // 5. Ultimate Fallback: Just Category (and City if present) - Approved Only
+        // We strip almost everything to guarantee results in the category.
+        const { city, propertyCategory } = extraOptions;
+        res = await searchPublishedListings({
+          q: "",
+          city: city || "",
+          propertyCategory: propertyCategory || "residential",
+          perPage: 6,
+          approvedOnly: true,
+        });
+        if ((res?.listings || []).length) return res;
+
+        // 6. Last Resort: Category + City (Unapproved)
         return searchPublishedListings({
-          ...baseSearchOptions,
-          ...relaxedOptions,
+          q: "",
+          city: city || "",
+          propertyCategory: propertyCategory || "residential",
+          perPage: 6,
           approvedOnly: false,
         });
       };
