@@ -21,9 +21,9 @@ export const metadata = {
     description: "Find your next home in Zimbabwe via web or WhatsApp.",
     images: [
       {
-        url: "/logo_vector.svg",
-        width: 8000,
-        height: 6000,
+        url: "/1.png",
+        width: 24000,
+        height: 18000,
         alt: "CribMatch Zimbabwe",
       },
     ],
@@ -35,9 +35,9 @@ export const metadata = {
     images: ["/logo_vector.svg"],
   },
   icons: {
-    icon: "/logo_vector.svg",
-    shortcut: "/logo_vector.svg",
-    apple: "/logo_vector.svg",
+    icon: "/1.png",
+    shortcut: "/1.png",
+    apple: "/1.png",
   },
 };
 

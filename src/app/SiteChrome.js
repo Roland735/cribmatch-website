@@ -36,13 +36,13 @@ export default function SiteChrome({ children }) {
           <div className="flex h-20 sm:h-24 items-center justify-between gap-3">
             <Link href="/" className="flex shrink-0 items-center gap-2">
               {/* Adjusted logo container sizes and removed extra scaling so the image fits nicely without extra inner padding or overlap */}
-              <div className="relative flex h-16 w-16 sm:h-20 sm:w-20 md:h-24 md:w-24 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/5 ring-1 ring-white/10">
+              <div className="relative flex h-8 w-8 sm:h-20 sm:w-20 md:h-12 md:w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/5 ring-1 ring-white/10">
                 <Image
                   src="/logo_vector.svg"
                   alt="CribMatch Logo"
                   fill
                   priority
-                  className="object-contain"
+                  className="obcject contain scale-300"
                 />
               </div>
               <span className="text-xl font-bold tracking-tight">CribMatch</span>

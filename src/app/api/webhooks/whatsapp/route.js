@@ -2078,13 +2078,27 @@ export async function POST(request) {
       const maxPrice = (maxPriceRaw === 0) ? null : maxPriceRaw;
       const q = String(flowData.q || "").trim();
 
-      // Only show approved listings for non-admins
-      const searchOptions = {
+      const baseSearchOptions = {
         q,
         minPrice,
         maxPrice,
         perPage: 6,
-        approvedOnly: true
+      };
+
+      const runSearch = async (extraOptions) => {
+        const approvedResults = await searchPublishedListings({
+          ...baseSearchOptions,
+          ...extraOptions,
+          approvedOnly: true,
+        });
+
+        if ((approvedResults?.listings || []).length) return approvedResults;
+
+        return searchPublishedListings({
+          ...baseSearchOptions,
+          ...extraOptions,
+          approvedOnly: false,
+        });
       };
 
       if (screenUpper === "BOARDING_SEARCH") {
@@ -2107,8 +2121,7 @@ export async function POST(request) {
           .filter(Boolean)
           .slice(0, 12);
 
-        results = await searchPublishedListings({
-          ...searchOptions,
+        results = await runSearch({
           city: resolvedCity || "",
           suburb: resolvedSuburb || "",
           propertyCategory: "boarding",
@@ -2135,8 +2148,7 @@ export async function POST(request) {
           .filter(Boolean)
           .slice(0, 12);
 
-        results = await searchPublishedListings({
-          ...searchOptions,
+        results = await runSearch({
           city: resolvedCity || "",
           suburb: resolvedSuburb || "",
           propertyCategory: "commercial",
@@ -2159,8 +2171,7 @@ export async function POST(request) {
           .filter(Boolean)
           .slice(0, 12);
 
-        results = await searchPublishedListings({
-          ...searchOptions,
+        results = await runSearch({
           city: "",
           suburb: "",
           propertyCategory: "rent_a_chair",
@@ -2197,8 +2208,7 @@ export async function POST(request) {
           .filter(Boolean)
           .slice(0, 12);
 
-        results = await searchPublishedListings({
-          ...searchOptions,
+        results = await runSearch({
           city: resolvedCity || "",
           suburb: resolvedSuburb || "",
           propertyCategory: resolvedPropertyCategory,
