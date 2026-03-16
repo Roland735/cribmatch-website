@@ -38,6 +38,14 @@ function _safeGet(obj, path) { try { return path.reduce((o, k) => (o && o[k] != 
 function _now() { return Date.now(); }
 function _hash(s) { try { return crypto.createHash("md5").update(String(s)).digest("hex"); } catch (e) { return String(s).slice(0, 128); } }
 function _normalizeForHash(s) { return String(s || "").replace(/\s+/g, " ").trim(); }
+function isMenuCommandText(v) { return /^menu$|^menu_main$|^main menu$/i.test(String(v || "").trim()); }
+function logDecision(event, payload = {}) {
+  try {
+    console.log(`[webhook-decision] ${event}`, JSON.stringify(payload));
+  } catch (e) {
+    console.log(`[webhook-decision] ${event}`, payload);
+  }
+}
 
 /* -------------------------
    Dedupe TTLs (smaller in dev)
@@ -321,7 +329,8 @@ async function sendInteractiveList(phoneNumber, bodyText, rows = [], opts = {}) 
     },
   };
 
-  const hash = _hash(`interactive_list:${_normalizeForHash(fallbackText)}`);
+  const dedupeSalt = opts?.dedupeSalt ? String(opts.dedupeSalt) : "";
+  const hash = _hash(`interactive_list:${_normalizeForHash(fallbackText)}:${dedupeSalt}`);
   if (!_shouldSend(phone, hash, TTL_INTERACTIVE_MS)) {
     console.log("[sendInteractiveList] suppressed duplicate interactive list to", phone);
     return { suppressed: true };
@@ -1515,7 +1524,7 @@ function getCanonicalMessage(payload) {
 /* -------------------------
    Helper: send main menu (single composed instruction)
 ------------------------- */
-async function sendMainMenu(phone) {
+async function sendMainMenu(phone, opts = {}) {
   const rows = [
     { id: "menu_search", title: "🔍 Search properties", description: "Find a place to rent/buy" },
     { id: "menu_list", title: "📝 List a property", description: "Add a new listing" },
@@ -1525,11 +1534,14 @@ async function sendMainMenu(phone) {
     { id: "menu_report", title: "⚠️ Report listing", description: "Report an issue" }
   ];
 
-  await sendInteractiveList(phone, "👋 Welcome to CribMatch — please choose an option:", rows, {
+  const sent = await sendInteractiveList(phone, "👋 Welcome to CribMatch — please choose an option:", rows, {
     headerText: "🏠 Main Menu",
     buttonText: "Menu",
-    sectionTitle: "Options"
+    sectionTitle: "Options",
+    dedupeSalt: opts?.dedupeSalt || "",
   });
+  logDecision("main-menu-send-result", { phone: digitsOnly(phone), suppressed: !!sent?.suppressed, hasError: !!sent?.error, dedupeSalt: String(opts?.dedupeSalt || "") });
+  return sent;
 }
 
 /* -------------------------
@@ -1557,11 +1569,22 @@ export async function POST(request) {
     }
   } catch (e) { console.warn("[webhook] signature check error", e); }
 
-  // DB connect best-effort
-  let dbAvailable = true;
-  try { await dbConnect(); } catch (e) { dbAvailable = false; console.error("[webhook] DB connect failed", e); }
+  // canonicalize incoming
+  const { msg, id: msgId, from: phoneRaw, text: parsedText } = getCanonicalMessage(payload);
+  const phone = digitsOnly(phoneRaw || "");
+  console.log("[webhook] incoming:", { msgId, phone, parsedText: parsedText.slice(0, 200) });
+  const isMenuRequest = isMenuCommandText(parsedText);
 
-  // persist raw event best-effort
+  if (!msgId && !phone) return NextResponse.json({ ok: true, note: "no-id-or-phone" });
+
+  let dbAvailable = true;
+  if (isMenuRequest) {
+    dbAvailable = false;
+    logDecision("db-connect-skipped-fast-menu", { msgId, phone });
+  } else {
+    try { await dbConnect(); } catch (e) { dbAvailable = false; console.error("[webhook] DB connect failed", e); }
+  }
+
   try {
     if (dbAvailable && typeof WebhookEvent?.create === "function") {
       const headersObj = Object.fromEntries(request.headers.entries());
@@ -1569,41 +1592,42 @@ export async function POST(request) {
     }
   } catch (e) { /* ignore */ }
 
-  // canonicalize incoming
-  const { msg, id: msgId, from: phoneRaw, text: parsedText } = getCanonicalMessage(payload);
-  const phone = digitsOnly(phoneRaw || "");
-  console.log("[webhook] incoming:", { msgId, phone, parsedText: parsedText.slice(0, 200) });
-
-  if (!msgId && !phone) return NextResponse.json({ ok: true, note: "no-id-or-phone" });
-
-  // dedupe incoming
+  let duplicateBypassForMenu = false;
   try {
-    // 1. Fast memory check
     if (isSeenInMemory(msgId)) {
-      console.log("[webhook] Duplicate (Memory):", msgId);
-      return NextResponse.json({ ok: true, note: "duplicate-event-mem" });
+      if (isMenuRequest) {
+        duplicateBypassForMenu = true;
+        logDecision("dedupe-memory-bypass", { msgId, phone, parsedText });
+      } else {
+        logDecision("dedupe-memory-suppressed", { msgId, phone, parsedText });
+        return NextResponse.json({ ok: true, note: "duplicate-event-mem" });
+      }
     }
 
-    // 2. Atomic DB check-and-set
     if (dbAvailable && msgId) {
-      // Attempt to set handled=true.
-      // If document exists, we get the OLD version (new: false).
-      // If it didn't exist, we create it with handled=true.
       const prev = await Message.findOneAndUpdate(
         { wa_message_id: msgId },
         { $set: { "meta.handled": true, lastSeenAt: new Date() } },
         { upsert: true, new: false, setDefaultsOnInsert: true }
       ).select("meta.handled").lean().exec().catch(() => null);
 
-      // If previous version existed AND was already handled, it's a duplicate.
       if (prev && prev.meta?.handled) {
-        console.log("[webhook] Duplicate (DB):", msgId);
-        markSeenInMemory(msgId);
-        return NextResponse.json({ ok: true, note: "duplicate-event-db" });
+        if (isMenuRequest) {
+          duplicateBypassForMenu = true;
+          markSeenInMemory(msgId);
+          logDecision("dedupe-db-bypass", { msgId, phone, parsedText });
+        } else {
+          markSeenInMemory(msgId);
+          logDecision("dedupe-db-suppressed", { msgId, phone, parsedText });
+          return NextResponse.json({ ok: true, note: "duplicate-event-db" });
+        }
       }
     }
     markSeenInMemory(msgId);
-  } catch (e) { console.warn("[webhook] dedupe error", e); }
+    logDecision("dedupe-accepted", { msgId, phone, parsedText, duplicateBypassForMenu });
+  } catch (e) {
+    logDecision("dedupe-error-allowing", { msgId, phone, parsedText, error: String(e?.message || e) });
+  }
 
   // persist incoming message as Message (best-effort)
   let savedMsg = null;
@@ -1624,8 +1648,11 @@ export async function POST(request) {
         { $set: doc },
         { upsert: true, new: true, setDefaultsOnInsert: true }
       ).exec();
+      logDecision("message-persisted", { msgId, phone, duplicateBypassForMenu, saved: !!savedMsg?._id });
     }
-  } catch (e) { console.warn("[webhook] save message error", e); }
+  } catch (e) {
+    logDecision("message-persist-failed", { msgId, phone, error: String(e?.message || e) });
+  }
 
   // get lastMeta (DB) or memory fallback
   let lastMeta = null;
@@ -2519,7 +2546,18 @@ export async function POST(request) {
 
   // menu
   if (/^menu$|^menu_main$|^main menu$/i.test(userRaw)) {
-    await sendMainMenu(phone);
+    const menuStart = Date.now();
+    const dedupeSalt = duplicateBypassForMenu && msgId ? `replay:${msgId}:${Date.now()}` : "";
+    const menuRes = await sendMainMenu(phone, { dedupeSalt });
+    logDecision("menu-command-processed", {
+      msgId,
+      phone,
+      duplicateBypassForMenu,
+      dedupeSalt,
+      durationMs: Date.now() - menuStart,
+      suppressed: !!menuRes?.suppressed,
+      hasError: !!menuRes?.error,
+    });
     return NextResponse.json({ ok: true, note: "menu-sent" });
   }
 
@@ -3552,13 +3590,9 @@ async function startListingPaymentFlow({ phone, listing, dbAvailable, savedMsg, 
       return false;
     }
 
-    const paidBefore = dbAvailable && typeof Purchase?.findOne === "function"
-      ? await Purchase.findOne({ phone: digitsOnly(phone), listingId }).lean().exec().catch(() => null)
-      : null;
-
     const successfulPayment = await getLatestSuccessfulPayment(phone, listingId).catch(() => null);
 
-    if (paidBefore || successfulPayment) {
+    if (successfulPayment) {
       await revealFromObject(listing, phone);
       await recordPurchase(phone, listing, dbAvailable);
       if (dbAvailable && savedMsg && savedMsg._id) {
@@ -3566,10 +3600,11 @@ async function startListingPaymentFlow({ phone, listing, dbAvailable, savedMsg, 
           $set: {
             "meta.state": "CONTACT_REVEALED",
             "meta.listingIdSelected": listingId,
-            "meta.paymentBypassReason": paidBefore ? "existing_purchase" : "existing_successful_payment",
+            "meta.paymentBypassReason": "existing_successful_payment",
           },
         }).catch(() => null);
       }
+      logDecision("payment-bypass-existing-successful-payment", { phone: digitsOnly(phone), listingId, source });
       return true;
     }
 
@@ -3594,6 +3629,7 @@ async function startListingPaymentFlow({ phone, listing, dbAvailable, savedMsg, 
       [{ id: "menu_main", title: "🏠 Main menu" }],
       { headerText: "PayNow EcoCash" }
     );
+    logDecision("payment-flow-started", { phone: digitsOnly(phone), listingId, source });
     return true;
   } catch (error) {
     console.error("[startListingPaymentFlow] error:", error);
