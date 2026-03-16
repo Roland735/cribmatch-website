@@ -7,6 +7,7 @@ import { notFound } from "next/navigation";
 import { getListingById } from "@/lib/getListings";
 import { authOptions } from "@/lib/auth";
 import ListingImageSlider from "../ListingImageSlider";
+import ListingUnlockPaymentClient from "./ListingUnlockPaymentClient";
 
 function formatPrice(pricePerMonth) {
   if (typeof pricePerMonth !== "number") return "";
@@ -259,21 +260,7 @@ export default async function ListingDetail({ params }) {
                   </Link>
                 </div>
               ) : !canSeeDetails ? (
-                <div className="mt-4 space-y-4">
-                  <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4">
-                    <p className="text-sm text-amber-200 leading-relaxed">
-                      You haven&apos;t unlocked this listing yet. Get instant access to the landlord&apos;s phone, WhatsApp, and viewing schedule.
-                    </p>
-                  </div>
-                  <button
-                    className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-400 px-3 py-2 font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300"
-                  >
-                    Unlock details — $1.00
-                  </button>
-                  <p className="text-[10px] text-center text-slate-400">
-                    One-time payment for lifetime access to this listing&apos;s details.
-                  </p>
-                </div>
+                <ListingUnlockPaymentClient listingId={String(listing._id)} />
               ) : (
                 <>
                   <p className="mt-3 text-lg font-semibold text-emerald-50">
