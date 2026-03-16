@@ -101,6 +101,13 @@ export default async function ListingDetail({ params }) {
   const hasWhatsApp = Boolean(whatsappDigits);
   const hasPhone = Boolean(phoneDigits);
   const hasEmail = typeof listing.contactEmail === "string" && listing.contactEmail;
+  const listingCity = typeof listing.city === "string" ? listing.city.trim() : "";
+  const listingSuburb = typeof listing.suburb === "string" ? listing.suburb.trim() : "";
+  const suburbWithCity = listingSuburb
+    ? listingCity && !listingSuburb.toLowerCase().includes(listingCity.toLowerCase())
+      ? `${listingSuburb}, ${listingCity}`
+      : listingSuburb
+    : "N/A";
 
   const requestHeaders = await headers();
   const forwardedHost = requestHeaders.get("x-forwarded-host");
@@ -116,7 +123,7 @@ export default async function ListingDetail({ params }) {
       : "";
 
   const viewingMessage = `Hi ${contactGreeting},\n\nI'm interested in ${listing.title} (${listing.suburb}). Is it still available? I'd like to book a viewing.\n\nLink: ${listingUrl}${viewerFooter}`;
-  const whatsappMessage = `Hi ${contactGreeting},\n\nI found your listing on CribMatch and I want more details.\n\nListing: ${listing.title}\nCode: ${listing.shortId || "N/A"}\nID: ${listing._id}\nSuburb: ${listing.suburb || "N/A"}${listing.city ? `, ${listing.city}` : ""}\nPrice: ${typeof listing.pricePerMonth === "number" ? formatPrice(listing.pricePerMonth) : "N/A"}${typeof listing.deposit === "number" ? `\nDeposit: ${formatPrice(listing.deposit)}` : ""}\nBedrooms: ${typeof listing.bedrooms === "number" ? `${listing.bedrooms} bed(s)` : "N/A"}\n\nCan we arrange a viewing?${viewerFooter}`;
+  const whatsappMessage = `Hi ${contactGreeting},\n\nI found your listing on CribMatch and I want more details.\n\nListing: ${listing.title}\nCode: ${listing.shortId || "N/A"}\nSuburb: ${suburbWithCity}\nPrice: ${typeof listing.pricePerMonth === "number" ? formatPrice(listing.pricePerMonth) : "N/A"}${typeof listing.deposit === "number" ? `\nDeposit: ${formatPrice(listing.deposit)}` : ""}\nBedrooms: ${typeof listing.bedrooms === "number" ? `${listing.bedrooms} bed(s)` : "N/A"}\n\nCan we arrange a viewing?${viewerFooter}`;
 
   const whatsappViewingHref = hasWhatsApp
     ? `https://wa.me/${whatsappDigits}?text=${encodeURIComponent(viewingMessage)}`
@@ -247,6 +254,23 @@ export default async function ListingDetail({ params }) {
                 Contact
               </p>
 
+              <div className="mt-4 rounded-2xl border border-emerald-400/20 bg-slate-950/40 p-4">
+                <div className="space-y-2 text-sm text-emerald-50/95">
+                  <p>🏷️ CODE: {listing.shortId || "N/A"}</p>
+                  <p>📍 Suburb: {suburbWithCity}</p>
+                  <p>
+                    🛏️ Bedrooms:{" "}
+                    {typeof listing.bedrooms === "number" ? `${listing.bedrooms} bed(s)` : "N/A"}
+                  </p>
+                  <p>
+                    💰 Price:{" "}
+                    {typeof listing.pricePerMonth === "number"
+                      ? `${formatPrice(listing.pricePerMonth)}${typeof listing.deposit === "number" ? ` (${formatPrice(listing.deposit)} deposit)` : ""}`
+                      : "N/A"}
+                  </p>
+                </div>
+              </div>
+
               {!isLoggedIn ? (
                 <div className="mt-4 space-y-4">
                   <p className="text-sm text-emerald-100/90 leading-relaxed">
@@ -270,10 +294,8 @@ export default async function ListingDetail({ params }) {
                   <div className="mt-4 rounded-2xl border border-emerald-400/20 bg-slate-950/40 p-4">
                     <div className="space-y-2 text-sm text-emerald-50/95">
                       <p>🏷️ CODE: {listing.shortId || "N/A"}</p>
-                      <p>🆔 Listing ID: {String(listing._id || "")}</p>
                       <p>
-                        📍 Suburb: {listing.suburb || "N/A"}
-                        {listing.city ? `, ${listing.city}` : ""}
+                        📍 Suburb: {suburbWithCity}
                       </p>
                       <p>
                         🛏️ Bedrooms:{" "}

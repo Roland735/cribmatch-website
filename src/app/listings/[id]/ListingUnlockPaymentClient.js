@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 export default function ListingUnlockPaymentClient({ listingId }) {
@@ -39,7 +39,7 @@ export default function ListingUnlockPaymentClient({ listingId }) {
       setTransactionId(String(payload?.transactionId || ""));
       setNotice(
         payload?.instructions ||
-        "USSD push sent. Approve on EcoCash, then tap check payment to unlock contact details.",
+        "USSD push sent. Approve on EcoCash. We will auto-detect payment and unlock contact details.",
       );
     } catch {
       setError("Could not start payment right now.");
@@ -48,9 +48,11 @@ export default function ListingUnlockPaymentClient({ listingId }) {
     }
   }
 
-  async function verifyPayment() {
+  const verifyPayment = useCallback(async ({ silent = false } = {}) => {
     if (!transactionId) return;
-    setError("");
+    if (!silent) {
+      setError("");
+    }
     setLoadingVerify(true);
     try {
       const response = await fetch("/api/purchases/unlock", {
@@ -64,7 +66,9 @@ export default function ListingUnlockPaymentClient({ listingId }) {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        setError(payload?.error || "Could not verify payment.");
+        if (!silent) {
+          setError(payload?.error || "Could not verify payment.");
+        }
         return;
       }
       if (payload?.paid) {
@@ -75,15 +79,36 @@ export default function ListingUnlockPaymentClient({ listingId }) {
       const status = String(payload?.status || "pending_confirmation");
       if (/failed|cancel/i.test(status)) {
         setError(`Payment ${status}. Enter number and retry.`);
+        setNotice("");
+        setTransactionId("");
         return;
       }
-      setNotice("Payment still pending. Complete EcoCash prompt, then check again.");
+      setNotice("Payment still pending. Complete EcoCash USSD prompt. We are checking automatically.");
     } catch {
-      setError("Could not verify payment right now.");
+      if (!silent) {
+        setError("Could not verify payment right now.");
+      }
     } finally {
       setLoadingVerify(false);
     }
-  }
+  }, [listingId, router, transactionId]);
+
+  useEffect(() => {
+    if (!transactionId) return undefined;
+    let active = true;
+
+    const run = async () => {
+      if (!active) return;
+      await verifyPayment({ silent: true });
+    };
+
+    run();
+    const intervalId = setInterval(run, 3500);
+    return () => {
+      active = false;
+      clearInterval(intervalId);
+    };
+  }, [transactionId, verifyPayment]);
 
   return (
     <div className="mt-4 space-y-4">
@@ -116,14 +141,11 @@ export default function ListingUnlockPaymentClient({ listingId }) {
       </button>
 
       {transactionId ? (
-        <button
-          type="button"
-          onClick={verifyPayment}
-          disabled={loadingVerify}
-          className="inline-flex w-full items-center justify-center rounded-xl border border-emerald-400/30 px-3 py-2 font-semibold text-emerald-100 transition hover:bg-emerald-400/10 disabled:cursor-not-allowed disabled:opacity-70"
-        >
-          {loadingVerify ? "Checking payment..." : "I approved on EcoCash — unlock now"}
-        </button>
+        <p className="text-xs text-emerald-100/90">
+          {loadingVerify
+            ? "Checking payment status..."
+            : "Waiting for payment confirmation... this updates automatically."}
+        </p>
       ) : null}
 
       {notice ? <p className="text-xs text-emerald-100/90">{notice}</p> : null}
