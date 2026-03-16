@@ -1,3 +1,4 @@
+// /lib/paynowEcocash.js
 import crypto from "crypto";
 import { dbConnect, PaymentTransaction } from "@/lib/db";
 
@@ -46,12 +47,132 @@ function isPaynowTestSuccessNumber(local, international) {
 }
 
 async function getPaynowClient() {
-  const moduleRef = await import("paynow");
-  const PaynowCtor = moduleRef?.default || moduleRef?.Paynow || moduleRef;
-  const paynow = new PaynowCtor(PAYNOW_INTEGRATION_ID, PAYNOW_INTEGRATION_KEY);
-  paynow.resultUrl = `${BASE_URL.replace(/\/+$/, "")}/api/webhooks/paynow/result`;
-  paynow.returnUrl = `${BASE_URL.replace(/\/+$/, "")}/api/webhooks/paynow/return`;
-  return paynow;
+  // Robust dynamic import / require fallback and constructor detection.
+  // This should avoid "is not a constructor" issues across SDK versions.
+  let moduleRef = null;
+  let PaynowCtorOrInstance = null;
+
+  try {
+    // preferred: ESM dynamic import
+    // NOTE: in some runtimes this returns { default: [Function] } or the function directly.
+    // We inspect returned shape and handle common shapes.
+    // eslint-disable-next-line node/no-unsupported-features/es-syntax
+    moduleRef = await import("paynow");
+  } catch (importErr) {
+    try {
+      // fallback to require (CommonJS)
+      // eslint-disable-next-line global-require, import/no-extraneous-dependencies
+      // (Only works if runtime allows require)
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      moduleRef = require("paynow");
+    } catch (requireErr) {
+      const msg = `Failed to load 'paynow' SDK via import or require. import error: ${importErr?.message || ""}; require error: ${requireErr?.message || ""}`;
+      // throw a clear error to help debugging
+      throw new Error(msg);
+    }
+  }
+
+  // moduleRef might be:
+  // - the constructor function itself
+  // - { default: constructor }
+  // - { Paynow: constructor }
+  // - an already-instantiated client (object with createPayment/sendMobile)
+  // - other shapes (we will throw helpful error)
+  // inspect:
+  try {
+    // Helpful debug info — the logs will appear in your server console when this runs
+    // (Comment out in production if noisy)
+    // eslint-disable-next-line no-console
+    console.log("paynow module keys:", Object.keys(moduleRef || {}));
+    // eslint-disable-next-line no-console
+    console.log("paynow moduleRef default exists?", !!(moduleRef && moduleRef.default));
+  } catch (e) {
+    // ignore logging issues
+  }
+
+  // Resolve candidate ctor or instance:
+  if (!moduleRef) {
+    throw new Error("paynow module import returned falsy value");
+  }
+
+  // If moduleRef looks like an instance (has createPayment & sendMobile) use it directly
+  if (typeof moduleRef.createPayment === "function" && typeof moduleRef.sendMobile === "function") {
+    PaynowCtorOrInstance = moduleRef;
+  } else if (moduleRef.default && typeof moduleRef.default === "function") {
+    // default export is constructor
+    PaynowCtorOrInstance = moduleRef.default;
+  } else if (moduleRef.Paynow && typeof moduleRef.Paynow === "function") {
+    PaynowCtorOrInstance = moduleRef.Paynow;
+  } else if (typeof moduleRef === "function") {
+    PaynowCtorOrInstance = moduleRef;
+  } else if (moduleRef.default && typeof moduleRef.default === "object" && typeof moduleRef.default.createPayment === "function") {
+    PaynowCtorOrInstance = moduleRef.default;
+  } else {
+    // not recognized
+    // eslint-disable-next-line no-console
+    console.error("Unexpected paynow module shape:", moduleRef);
+    throw new Error("Unexpected 'paynow' SDK export shape. Inspect server logs.");
+  }
+
+  // If we resolved an instance (object with createPayment), return it directly.
+  if (typeof PaynowCtorOrInstance === "object" && PaynowCtorOrInstance !== null) {
+    // But ensure resultUrl/returnUrl are present on the instance if SDK expects them
+    try {
+      const resultUrl = `${BASE_URL.replace(/\/+$/, "")}/api/webhooks/paynow/result`;
+      const returnUrl = `${BASE_URL.replace(/\/+$/, "")}/api/webhooks/paynow/return`;
+      // attach if properties exist or set anyway (harmless)
+      PaynowCtorOrInstance.resultUrl = PaynowCtorOrInstance.resultUrl || resultUrl;
+      PaynowCtorOrInstance.returnUrl = PaynowCtorOrInstance.returnUrl || returnUrl;
+    } catch (e) {
+      // ignore
+    }
+    return PaynowCtorOrInstance;
+  }
+
+  // Otherwise we have a constructor function — try to instantiate.
+  const PaynowCtor = PaynowCtorOrInstance;
+  if (typeof PaynowCtor !== "function") {
+    throw new Error("Resolved Paynow value is not a function or object instance");
+  }
+
+  // Try common constructor signatures:
+  // 1) new Paynow(integrationId, integrationKey, resultUrl, returnUrl)
+  // 2) new Paynow(integrationId, integrationKey) and then set .resultUrl/.returnUrl
+  const resultUrl = `${BASE_URL.replace(/\/+$/, "")}/api/webhooks/paynow/result`;
+  const returnUrl = `${BASE_URL.replace(/\/+$/, "")}/api/webhooks/paynow/return`;
+
+  let instance = null;
+  try {
+    instance = new PaynowCtor(PAYNOW_INTEGRATION_ID, PAYNOW_INTEGRATION_KEY, resultUrl, returnUrl);
+  } catch (e1) {
+    try {
+      instance = new PaynowCtor(PAYNOW_INTEGRATION_ID, PAYNOW_INTEGRATION_KEY);
+      // attach urls if SDK expects them as properties
+      instance.resultUrl = instance.resultUrl || resultUrl;
+      instance.returnUrl = instance.returnUrl || returnUrl;
+    } catch (e2) {
+      // last-ditch: call as function (some rare SDKs return factory)
+      try {
+        // eslint-disable-next-line new-cap
+        instance = PaynowCtor(PAYNOW_INTEGRATION_ID, PAYNOW_INTEGRATION_KEY, resultUrl, returnUrl);
+      } catch (e3) {
+        // give maximum context in error
+        const combined = `Could not construct Paynow client. errors: ${String(e1?.message || "")} | ${String(e2?.message || "")} | ${String(e3?.message || "")}`;
+        // eslint-disable-next-line no-console
+        console.error(combined);
+        throw new Error("Failed to instantiate Paynow client. See server logs for details.");
+      }
+    }
+  }
+
+  // final sanity checks
+  if (!instance || typeof instance.createPayment !== "function" || typeof instance.sendMobile !== "function") {
+    // eslint-disable-next-line no-console
+    console.error("Constructed paynow instance missing expected methods:", instance);
+    throw new Error("Paynow client missing expected methods (createPayment/sendMobile).");
+  }
+
+  return instance;
 }
 
 async function addAttemptLog(transactionId, payload) {
@@ -134,23 +255,32 @@ export async function initiatePaynowEcocashPayment({ phone, payerMobile, listing
   for (let attempt = 0; attempt <= maxPushRetries; attempt += 1) {
     try {
       const paynow = await getPaynowClient();
+
+      // create payment and attach item
       const payment = paynow.createPayment(reference, payerEmail);
       payment.add(`${PAYNOW_PAYMENT_LINK_LABEL} - ${listingTitle}`, amount);
+
+      // sendMobile may return different shapes depending on SDK; capture it
       const response = await paynow.sendMobile(payment, normalizedPayer.local, "ecocash");
-      const success = Boolean(response?.success);
+
+      // Normalize response success detection
+      const success = Boolean(response?.success) || Boolean(response?.Success) || (response && !response.error && (response.pollUrl || response.reference));
 
       await addAttemptLog(tx._id, {
         stage: "ussd_push",
         success,
-        message: success ? "USSD push initiated" : String(response?.error || response?.message || "Push failed"),
+        message: success ? "USSD push initiated" : String(response?.error || response?.message || response?.Message || "Push failed"),
         code: success ? "PUSH_INITIATED" : "PUSH_FAILED",
         raw: response || null,
       });
-      if (!success) lastPushErrorMessage = String(response?.error || response?.message || "Push failed");
+
+      if (!success) {
+        lastPushErrorMessage = String(response?.error || response?.message || response?.Message || "Push failed");
+      }
 
       if (success) {
-        const pollUrl = String(response?.pollUrl || "");
-        const paynowReference = String(response?.reference || response?.paynowreference || "");
+        const pollUrl = String(response?.pollUrl || response?.PollUrl || "");
+        const paynowReference = String(response?.reference || response?.paynowreference || response?.reference_id || response?.paynowReference || "");
         await PaymentTransaction.updateOne(
           { _id: tx._id },
           {
@@ -169,7 +299,7 @@ export async function initiatePaynowEcocashPayment({ phone, payerMobile, listing
           reference,
           pollUrl,
           retriesUsed: attempt,
-          instructions: String(response?.instructions || "Approve the EcoCash USSD prompt on your phone to complete payment."),
+          instructions: String(response?.instructions || response?.message || response?.Message || "Approve the EcoCash USSD prompt on your phone to complete payment."),
         };
       }
     } catch (error) {
@@ -181,6 +311,8 @@ export async function initiatePaynowEcocashPayment({ phone, payerMobile, listing
         code: "PUSH_ERROR",
         raw: { name: error?.name || "", stack: error?.stack || "" },
       });
+      // small delay could help transient issues (optional)
+      // await new Promise(res => setTimeout(res, 300)); // uncomment if desired
     }
   }
 
@@ -234,8 +366,20 @@ export async function verifyPaynowPayment(transactionId) {
 
   try {
     const paynow = await getPaynowClient();
-    const pollResponse = await paynow.pollTransaction(tx.pollUrl);
-    const status = String(pollResponse?.status || pollResponse?.Status || "unknown");
+    // different SDKs expose different poll functions — most use pollTransaction(pollUrl)
+    // We'll try pollTransaction, and fallback to poll or checkTransaction if available.
+    let pollResponse = null;
+    if (typeof paynow.pollTransaction === "function") {
+      pollResponse = await paynow.pollTransaction(tx.pollUrl);
+    } else if (typeof paynow.poll === "function") {
+      pollResponse = await paynow.poll(tx.pollUrl);
+    } else if (typeof paynow.checkTransaction === "function") {
+      pollResponse = await paynow.checkTransaction(tx.pollUrl);
+    } else {
+      throw new Error("Paynow client missing pollTransaction/poll/checkTransaction method");
+    }
+
+    const status = String(pollResponse?.status || pollResponse?.Status || pollResponse?.statusDescription || "unknown");
     const statusLower = status.toLowerCase();
     const paid = Boolean(pollResponse?.paid) || statusLower === "paid" || statusLower === "awaiting delivery" || statusLower === "delivered";
     const cancelled = statusLower.includes("cancel");
