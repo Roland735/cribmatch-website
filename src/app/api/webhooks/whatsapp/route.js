@@ -1591,12 +1591,7 @@ export async function POST(request) {
   }
 
   let dbAvailable = true;
-  if (isMenuRequest) {
-    dbAvailable = false;
-    logDecision("db-connect-skipped-fast-menu", { msgId, phone });
-  } else {
-    try { await dbConnect(); } catch (e) { dbAvailable = false; console.error("[webhook] DB connect failed", e); }
-  }
+  try { await dbConnect(); } catch (e) { dbAvailable = false; console.error("[webhook] DB connect failed", e); }
 
   try {
     if (dbAvailable && typeof WebhookEvent?.create === "function") {

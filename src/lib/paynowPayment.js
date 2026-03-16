@@ -9,6 +9,7 @@ const PAYNOW_PAYMENT_LINK_LABEL = process.env.PAYNOW_PAYMENT_LINK_LABEL || "Rent
 const CONTACT_UNLOCK_AMOUNT = Number(process.env.PAYNOW_CONTACT_UNLOCK_AMOUNT || 1);
 const BASE_URL = process.env.APP_BASE_URL || process.env.NEXTAUTH_URL || "https://cribmatch.app";
 const PAYNOW_TEST_MODE = String(process.env.PAYNOW_TEST_MODE || "").toLowerCase() === "true";
+const PAYNOW_TEST_NUMBER_BYPASS = String(process.env.PAYNOW_TEST_NUMBER_BYPASS || "true").toLowerCase() === "true";
 const PAYNOW_TEST_SUCCESS_NUMBERS = (process.env.PAYNOW_TEST_SUCCESS_NUMBERS || "0771111111,263771111111")
   .split(",")
   .map((v) => String(v || "").replace(/\D/g, ""))
@@ -40,7 +41,7 @@ function buildReference(listingCode = "") {
 }
 
 function isPaynowTestSuccessNumber(local, international) {
-  if (!PAYNOW_TEST_MODE) return false;
+  if (!PAYNOW_TEST_MODE && !PAYNOW_TEST_NUMBER_BYPASS) return false;
   const localDigits = digitsOnly(local);
   const intlDigits = digitsOnly(international);
   return PAYNOW_TEST_SUCCESS_NUMBERS.includes(localDigits) || PAYNOW_TEST_SUCCESS_NUMBERS.includes(intlDigits);
@@ -56,14 +57,11 @@ async function getPaynowClient() {
     // preferred: ESM dynamic import
     // NOTE: in some runtimes this returns { default: [Function] } or the function directly.
     // We inspect returned shape and handle common shapes.
-    // eslint-disable-next-line node/no-unsupported-features/es-syntax
     moduleRef = await import("paynow");
   } catch (importErr) {
     try {
       // fallback to require (CommonJS)
-      // eslint-disable-next-line global-require, import/no-extraneous-dependencies
       // (Only works if runtime allows require)
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       moduleRef = require("paynow");
     } catch (requireErr) {
       const msg = `Failed to load 'paynow' SDK via import or require. import error: ${importErr?.message || ""}; require error: ${requireErr?.message || ""}`;
@@ -82,9 +80,7 @@ async function getPaynowClient() {
   try {
     // Helpful debug info — the logs will appear in your server console when this runs
     // (Comment out in production if noisy)
-    // eslint-disable-next-line no-console
     console.log("paynow module keys:", Object.keys(moduleRef || {}));
-    // eslint-disable-next-line no-console
     console.log("paynow moduleRef default exists?", !!(moduleRef && moduleRef.default));
   } catch (e) {
     // ignore logging issues
@@ -109,7 +105,6 @@ async function getPaynowClient() {
     PaynowCtorOrInstance = moduleRef.default;
   } else {
     // not recognized
-    // eslint-disable-next-line no-console
     console.error("Unexpected paynow module shape:", moduleRef);
     throw new Error("Unexpected 'paynow' SDK export shape. Inspect server logs.");
   }
@@ -153,12 +148,10 @@ async function getPaynowClient() {
     } catch (e2) {
       // last-ditch: call as function (some rare SDKs return factory)
       try {
-        // eslint-disable-next-line new-cap
         instance = PaynowCtor(PAYNOW_INTEGRATION_ID, PAYNOW_INTEGRATION_KEY, resultUrl, returnUrl);
       } catch (e3) {
         // give maximum context in error
         const combined = `Could not construct Paynow client. errors: ${String(e1?.message || "")} | ${String(e2?.message || "")} | ${String(e3?.message || "")}`;
-        // eslint-disable-next-line no-console
         console.error(combined);
         throw new Error("Failed to instantiate Paynow client. See server logs for details.");
       }
@@ -167,7 +160,6 @@ async function getPaynowClient() {
 
   // final sanity checks
   if (!instance || typeof instance.createPayment !== "function" || typeof instance.sendMobile !== "function") {
-    // eslint-disable-next-line no-console
     console.error("Constructed paynow instance missing expected methods:", instance);
     throw new Error("Paynow client missing expected methods (createPayment/sendMobile).");
   }
@@ -249,8 +241,9 @@ export async function initiatePaynowEcocashPayment({ phone, payerMobile, listing
     };
   }
 
-  const payerEmail = `mungureroland@gmail.com`;
+  const payerEmail = `${normalizedPhone || normalizedPayer.local}@cribmatch.co.zw`;
   let lastPushErrorMessage = "Push failed";
+  let fatalInitializationError = false;
 
   for (let attempt = 0; attempt <= maxPushRetries; attempt += 1) {
     try {
@@ -311,6 +304,10 @@ export async function initiatePaynowEcocashPayment({ phone, payerMobile, listing
         code: "PUSH_ERROR",
         raw: { name: error?.name || "", stack: error?.stack || "" },
       });
+      if (/not a constructor|Failed to instantiate Paynow client|missing expected methods/i.test(lastPushErrorMessage)) {
+        fatalInitializationError = true;
+        break;
+      }
       // small delay could help transient issues (optional)
       // await new Promise(res => setTimeout(res, 300)); // uncomment if desired
     }
@@ -326,7 +323,9 @@ export async function initiatePaynowEcocashPayment({ phone, payerMobile, listing
     transactionId: String(tx._id),
     reference,
     error: "ussd-push-failed",
-    userMessage: `We could not send the EcoCash USSD prompt right now. ${lastPushErrorMessage}`.slice(0, 240),
+    userMessage: fatalInitializationError
+      ? "Payment gateway initialization failed. Sandbox number bypass is enabled for test numbers; use 0771111111 or contact support."
+      : `We could not send the EcoCash USSD prompt right now. ${lastPushErrorMessage}`.slice(0, 240),
   };
 }
 
