@@ -1746,7 +1746,7 @@ export async function POST(request) {
       await sendInteractiveButtons(
         phone,
         `❌ Payment status: ${autoVerification.status}.\nReply: retry to send a new USSD push.`,
-        [{ id: "menu_main", title: "🏠 Main menu" }],
+        [{ id: "retry", title: "🔁 Retry payment" }, { id: "menu_main", title: "🏠 Main menu" }],
         { headerText: "EcoCash Payment" }
       );
       return NextResponse.json({ ok: true, note: "payment-auto-verification-failed" });
@@ -1788,7 +1788,7 @@ export async function POST(request) {
         await sendInteractiveButtons(
           phone,
           `❌ ${paymentStart.userMessage || "Retry failed."}\nReply: retry`,
-          [{ id: "menu_main", title: "🏠 Main menu" }],
+          [{ id: "retry", title: "🔁 Retry payment" }, { id: "menu_main", title: "🏠 Main menu" }],
           { headerText: "EcoCash Payment" }
         );
         return NextResponse.json({ ok: true, note: "payment-retry-failed" });
@@ -1818,7 +1818,7 @@ export async function POST(request) {
         await sendInteractiveButtons(
           phone,
           `❌ Payment status: ${autoVerification.status}.\nReply: retry to send a new USSD push.`,
-          [{ id: "menu_main", title: "🏠 Main menu" }],
+          [{ id: "retry", title: "🔁 Retry payment" }, { id: "menu_main", title: "🏠 Main menu" }],
           { headerText: "EcoCash Payment" }
         );
         return NextResponse.json({ ok: true, note: "payment-retry-auto-verification-failed" });
@@ -1844,7 +1844,7 @@ export async function POST(request) {
       await sendInteractiveButtons(
         phone,
         `⚠️ ${verification.userMessage || "Could not verify payment yet."}\nReply: retry to send a new USSD push.`,
-        [{ id: "menu_main", title: "🏠 Main menu" }],
+        [{ id: "retry", title: "🔁 Retry payment" }, { id: "menu_main", title: "🏠 Main menu" }],
         { headerText: "Payment Check" }
       );
       return NextResponse.json({ ok: true, note: "payment-check-error" });
@@ -1859,7 +1859,7 @@ export async function POST(request) {
       await sendInteractiveButtons(
         phone,
         `❌ Payment status: ${verification.status}.\nReply: retry to send a new USSD push.`,
-        [{ id: "menu_main", title: "🏠 Main menu" }],
+        [{ id: "retry", title: "🔁 Retry payment" }, { id: "menu_main", title: "🏠 Main menu" }],
         { headerText: "Payment Failed" }
       );
       return NextResponse.json({ ok: true, note: "payment-failed-or-cancelled" });
@@ -3661,6 +3661,12 @@ async function completePaidContactReveal({ phone, lastMeta, savedMsg, dbAvailabl
     return { ok: false, note: "payment-paid-listing-missing" };
   }
 
+  await sendInteractiveButtons(
+    phone,
+    "✅ Payment successful. Here are the contact details:",
+    [{ id: "menu_main", title: "🏠 Main menu" }],
+    { headerText: "Payment Successful" }
+  );
   await revealFromObject(listing, phone);
   await recordPurchase(phone, listing, dbAvailable);
   if (savedMsg && savedMsg._id) {
