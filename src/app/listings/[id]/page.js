@@ -115,18 +115,13 @@ export default async function ListingDetail({ params }) {
       : "";
 
   const viewingMessage = `Hi ${contactGreeting},\n\nI'm interested in ${listing.title} (${listing.suburb}). Is it still available? I'd like to book a viewing.\n\nLink: ${listingUrl}${viewerFooter}`;
-  const offerPriceLine =
-    typeof listing.pricePerMonth === "number" ? `${formatPrice(listing.pricePerMonth)}/month` : "";
-  const offerDepositLine =
-    typeof listing.deposit === "number" ? `${formatPrice(listing.deposit)} deposit` : "";
-  const offerTerms = [offerPriceLine, offerDepositLine].filter(Boolean).join(", ");
-  const offerMessage = `Hi ${contactGreeting},\n\nI'd like to proceed with ${listing.title} (${listing.suburb}). ${offerTerms ? `I can do ${offerTerms}.` : "Please share your terms."}\n\nLink: ${listingUrl}${viewerFooter}`;
+  const whatsappMessage = `Hi ${contactGreeting},\n\nI found your listing on CribMatch and I want more details.\n\nListing: ${listing.title}\nCode: ${listing.shortId || "N/A"}\nID: ${listing._id}\nSuburb: ${listing.suburb || "N/A"}${listing.city ? `, ${listing.city}` : ""}\nPrice: ${typeof listing.pricePerMonth === "number" ? formatPrice(listing.pricePerMonth) : "N/A"}${typeof listing.deposit === "number" ? `\nDeposit: ${formatPrice(listing.deposit)}` : ""}\nBedrooms: ${typeof listing.bedrooms === "number" ? `${listing.bedrooms} bed(s)` : "N/A"}\n\nCan we arrange a viewing?${viewerFooter}`;
 
   const whatsappViewingHref = hasWhatsApp
     ? `https://wa.me/${whatsappDigits}?text=${encodeURIComponent(viewingMessage)}`
     : "";
-  const whatsappOfferHref = hasWhatsApp
-    ? `https://wa.me/${whatsappDigits}?text=${encodeURIComponent(offerMessage)}`
+  const whatsappMessageHref = hasWhatsApp
+    ? `https://wa.me/${whatsappDigits}?text=${encodeURIComponent(whatsappMessage)}`
     : "";
   const emailSubject = `CribMatch: ${listing.title}`;
 
@@ -281,30 +276,86 @@ export default async function ListingDetail({ params }) {
                 </div>
               ) : (
                 <>
-                  <p className="mt-3 text-sm text-emerald-100/90">
-                    {listing.contactName ? listing.contactName : "Landlord / Agent"}
+                  <p className="mt-3 text-lg font-semibold text-emerald-50">
+                    Contact for: {listing.title}
                   </p>
+
+                  <div className="mt-4 rounded-2xl border border-emerald-400/20 bg-slate-950/40 p-4">
+                    <div className="space-y-2 text-sm text-emerald-50/95">
+                      <p>🏷️ CODE: {listing.shortId || "N/A"}</p>
+                      <p>🆔 Listing ID: {String(listing._id || "")}</p>
+                      <p>
+                        📍 Suburb: {listing.suburb || "N/A"}
+                        {listing.city ? `, ${listing.city}` : ""}
+                      </p>
+                      <p>
+                        🛏️ Bedrooms:{" "}
+                        {typeof listing.bedrooms === "number" ? `${listing.bedrooms} bed(s)` : "N/A"}
+                      </p>
+                      <p>
+                        💰 Price:{" "}
+                        {typeof listing.pricePerMonth === "number"
+                          ? `${formatPrice(listing.pricePerMonth)}${typeof listing.deposit === "number" ? ` (${formatPrice(listing.deposit)} deposit)` : ""}`
+                          : "N/A"}
+                      </p>
+                      <p>👤 Contact: {listing.contactName || "Landlord / Agent"}</p>
+                      {hasPhone ? <p>📞 Phone: {listing.contactPhone}</p> : null}
+                      {hasWhatsApp ? <p>📱 WhatsApp: {listing.contactWhatsApp}</p> : null}
+                      {hasEmail ? <p>📧 Email: {listing.contactEmail}</p> : null}
+                    </div>
+
+                    {listing.description ? (
+                      <div className="mt-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-emerald-200/90">
+                          📝 Description
+                        </p>
+                        <p className="mt-2 text-sm leading-relaxed text-slate-200">
+                          {listing.description}
+                        </p>
+                      </div>
+                    ) : null}
+
+                    {Array.isArray(listing.features) && listing.features.length ? (
+                      <div className="mt-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-emerald-200/90">
+                          ✨ Features
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {listing.features.slice(0, 12).map((feature) => (
+                            <span
+                              key={`contact-feature-${feature}`}
+                              className="rounded-full bg-emerald-400/10 px-3 py-1 text-xs text-emerald-100 ring-1 ring-inset ring-emerald-400/25"
+                            >
+                              {feature}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
 
                   <div className="mt-4 grid gap-3 text-sm">
                     {hasWhatsApp ? (
                       <>
                         <a
-                          href={whatsappViewingHref}
+                          href={whatsappMessageHref}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-400 px-3 py-2 font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300"
                         >
-                          Request viewing
-                        </a>
-                        <a
-                          href={whatsappOfferHref}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex w-full items-center justify-center rounded-xl border border-emerald-400/30 px-3 py-2 font-semibold text-emerald-100 transition hover:bg-emerald-400/10"
-                        >
-                          Make an offer
+                          Send message on WhatsApp
                         </a>
                       </>
+                    ) : null}
+                    {hasWhatsApp ? (
+                      <a
+                        href={whatsappViewingHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex w-full items-center justify-center rounded-xl border border-emerald-400/30 px-3 py-2 font-semibold text-emerald-100 transition hover:bg-emerald-400/10"
+                      >
+                        Request viewing on WhatsApp
+                      </a>
                     ) : null}
                     {hasPhone ? (
                       <a
