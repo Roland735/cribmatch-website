@@ -14,6 +14,7 @@ import { dbConnect, WebhookEvent, Listing, Purchase } from "@/lib/db";
 import Message from "@/lib/Message";
 import { getListingById, searchPublishedListings, getListingFacets, getListingByShortId } from "@/lib/getListings";
 import { supabaseAdmin } from "@/lib/supabase";
+import { getLatestSuccessfulPayment, initiatePaynowEcocashPayment, normalizeZimbabweMobile, verifyPaynowPayment } from "@/lib/paynowPayment";
 
 export const runtime = "nodejs";
 
@@ -1643,6 +1644,196 @@ export async function POST(request) {
   const userRaw = String(parsedText || "").trim();
   const cmd = userRaw.toLowerCase();
 
+  if (lastMeta?.state === "AWAITING_PAYMENT_MOBILE") {
+    if (cmd === "menu" || cmd === "main menu" || cmd === "menu_main" || cmd === "cancel") {
+      if (savedMsg && savedMsg._id) {
+        await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.state": "IDLE" } }).catch(() => null);
+      }
+      await sendMainMenu(phone);
+      return NextResponse.json({ ok: true, note: "payment-cancelled-by-user" });
+    }
+
+    const parsedMobile = normalizeZimbabweMobile(userRaw);
+    if (!parsedMobile.valid) {
+      await sendInteractiveButtons(
+        phone,
+        "⚠️ Invalid Zimbabwe mobile number.\nUse one of: 0771234567 or 263771234567.",
+        [{ id: "menu_main", title: "🏠 Main menu" }],
+        { headerText: "Payment Number" }
+      );
+      return NextResponse.json({ ok: true, note: "payment-mobile-invalid" });
+    }
+
+    const listingId = String(lastMeta.paymentListingId || "");
+    let listing = null;
+    if (listingId && dbAvailable && typeof Listing?.findById === "function" && /^[0-9a-fA-F]{24}$/.test(listingId)) {
+      listing = await Listing.findById(listingId).lean().exec().catch(() => null);
+    }
+    if (!listing && Array.isArray(lastMeta.resultObjects)) {
+      listing = lastMeta.resultObjects.find((r) => getIdFromListing(r) === listingId) || null;
+    }
+    if (!listing && lastMeta.paymentListingSnapshot) {
+      listing = lastMeta.paymentListingSnapshot;
+    }
+    if (!listing) {
+      await sendWithMainMenuButton(phone, "⚠️ Could not find the listing for payment.", "Please search again and select a listing.");
+      return NextResponse.json({ ok: true, note: "payment-listing-missing" });
+    }
+
+    const paymentStart = await initiatePaynowEcocashPayment({
+      phone,
+      payerMobile: parsedMobile.local,
+      listing,
+      maxPushRetries: 2,
+    });
+
+    if (!paymentStart.ok) {
+      await sendInteractiveButtons(
+        phone,
+        `❌ ${paymentStart.userMessage || "Could not start payment."}\nReply with your number again to retry.`,
+        [{ id: "menu_main", title: "🏠 Main menu" }],
+        { headerText: "EcoCash Payment" }
+      );
+      return NextResponse.json({ ok: true, note: "payment-init-failed" });
+    }
+
+    if (savedMsg && savedMsg._id) {
+      await Message.findByIdAndUpdate(savedMsg._id, {
+        $set: {
+          "meta.state": "PAYMENT_PENDING_CONFIRMATION",
+          "meta.paymentTransactionId": paymentStart.transactionId,
+          "meta.paymentListingId": getIdFromListing(listing),
+          "meta.paymentPayerMobile": parsedMobile.local,
+          "meta.paymentReference": paymentStart.reference,
+          "meta.paymentRetriesUsed": paymentStart.retriesUsed,
+          "meta.paymentListingSnapshot": makePaymentListingSnapshot(listing),
+        },
+      }).catch(() => null);
+    }
+
+    await sendInteractiveButtons(
+      phone,
+      `✅ USSD push sent to ${parsedMobile.local}.\n${paymentStart.instructions}\n\nAfter approving, reply: paid\nIf the prompt failed, reply: retry`,
+      [{ id: "menu_main", title: "🏠 Main menu" }],
+      { headerText: "EcoCash Payment" }
+    );
+    return NextResponse.json({ ok: true, note: "payment-push-sent" });
+  }
+
+  if (lastMeta?.state === "PAYMENT_PENDING_CONFIRMATION") {
+    if (cmd === "menu" || cmd === "main menu" || cmd === "menu_main" || cmd === "cancel") {
+      if (savedMsg && savedMsg._id) {
+        await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.state": "IDLE" } }).catch(() => null);
+      }
+      await sendMainMenu(phone);
+      return NextResponse.json({ ok: true, note: "payment-cancelled-pending" });
+    }
+
+    if (cmd === "retry") {
+      const payerMobile = String(lastMeta.paymentPayerMobile || "");
+      const listingSnapshot = lastMeta.paymentListingSnapshot || null;
+      if (!payerMobile || !listingSnapshot) {
+        await sendWithMainMenuButton(phone, "⚠️ Missing retry context for payment.", "Please search again and select a listing.");
+        return NextResponse.json({ ok: true, note: "payment-retry-missing-context" });
+      }
+      const paymentStart = await initiatePaynowEcocashPayment({
+        phone,
+        payerMobile,
+        listing: listingSnapshot,
+        maxPushRetries: 2,
+      });
+
+      if (!paymentStart.ok) {
+        await sendInteractiveButtons(
+          phone,
+          `❌ ${paymentStart.userMessage || "Retry failed."}\nReply: retry`,
+          [{ id: "menu_main", title: "🏠 Main menu" }],
+          { headerText: "EcoCash Payment" }
+        );
+        return NextResponse.json({ ok: true, note: "payment-retry-failed" });
+      }
+
+      if (savedMsg && savedMsg._id) {
+        await Message.findByIdAndUpdate(savedMsg._id, {
+          $set: {
+            "meta.paymentTransactionId": paymentStart.transactionId,
+            "meta.paymentReference": paymentStart.reference,
+            "meta.paymentRetriesUsed": paymentStart.retriesUsed,
+          },
+        }).catch(() => null);
+      }
+
+      await sendInteractiveButtons(
+        phone,
+        `✅ New USSD push sent to ${payerMobile}.\n${paymentStart.instructions}\n\nReply: paid once complete.`,
+        [{ id: "menu_main", title: "🏠 Main menu" }],
+        { headerText: "EcoCash Payment" }
+      );
+      return NextResponse.json({ ok: true, note: "payment-retry-sent" });
+    }
+
+    if (cmd === "paid" || cmd === "i have paid" || cmd === "done" || cmd.startsWith("payment_check_")) {
+      const txId = String(lastMeta.paymentTransactionId || "");
+      if (!txId) {
+        await sendWithMainMenuButton(phone, "⚠️ Payment reference missing.", "Please type retry to request a new USSD push.");
+        return NextResponse.json({ ok: true, note: "payment-check-missing-tx" });
+      }
+
+      const verification = await verifyPaynowPayment(txId);
+      if (!verification.ok) {
+        await sendInteractiveButtons(
+          phone,
+          `⚠️ ${verification.userMessage || "Could not verify payment yet."}\nReply: paid to check again.`,
+          [{ id: "menu_main", title: "🏠 Main menu" }],
+          { headerText: "Payment Check" }
+        );
+        return NextResponse.json({ ok: true, note: "payment-check-error" });
+      }
+
+      if (verification.paid) {
+        let listing = null;
+        const listingId = String(lastMeta.paymentListingId || "");
+        if (listingId && dbAvailable && typeof Listing?.findById === "function" && /^[0-9a-fA-F]{24}$/.test(listingId)) {
+          listing = await Listing.findById(listingId).lean().exec().catch(() => null);
+        }
+        if (!listing && lastMeta.paymentListingSnapshot) listing = lastMeta.paymentListingSnapshot;
+        if (!listing) {
+          await sendWithMainMenuButton(phone, "✅ Payment confirmed, but listing is unavailable.", "Please contact support.");
+          return NextResponse.json({ ok: true, note: "payment-paid-listing-missing" });
+        }
+
+        await revealFromObject(listing, phone);
+        await recordPurchase(phone, listing, dbAvailable);
+        if (savedMsg && savedMsg._id) {
+          await Message.findByIdAndUpdate(savedMsg._id, {
+            $set: {
+              "meta.state": "CONTACT_REVEALED",
+              "meta.listingIdSelected": getIdFromListing(listing),
+            },
+          }).catch(() => null);
+        }
+        return NextResponse.json({ ok: true, note: "payment-confirmed-contact-sent" });
+      }
+
+      const statusLabel = String(verification.status || "pending");
+      await sendInteractiveButtons(
+        phone,
+        `⏳ Payment status: ${statusLabel}.\nIf you have not approved the USSD prompt, do that first.\nReply: paid to check again, or retry for a new USSD push.`,
+        [{ id: "menu_main", title: "🏠 Main menu" }],
+        { headerText: "Payment Pending" }
+      );
+      return NextResponse.json({ ok: true, note: "payment-still-pending" });
+    }
+
+    await sendInteractiveButtons(
+      phone,
+      "⏳ Payment in progress.\nReply: paid after approving the USSD prompt.\nReply: retry if no prompt arrived.",
+      [{ id: "menu_main", title: "🏠 Main menu" }],
+      { headerText: "EcoCash Payment" }
+    );
+    return NextResponse.json({ ok: true, note: "payment-awaiting-user-action" });
+  }
+
 
   /* -------------------------
      Handle Image Uploads (AWAITING_PHOTOS_EDIT)
@@ -1753,10 +1944,14 @@ export async function POST(request) {
       return NextResponse.json({ ok: true, note: "code-not-found" });
     }
 
-    // Found! Show details
-    await revealFromObject(listing, phone);
-    await recordPurchase(phone, listing, dbAvailable);
-    return NextResponse.json({ ok: true, note: "code-found-revealed" });
+    const started = await startListingPaymentFlow({
+      phone,
+      listing,
+      dbAvailable,
+      savedMsg,
+      source: "search_code",
+    });
+    return NextResponse.json({ ok: true, note: started ? "code-found-payment-started" : "code-found-payment-error" });
   }
 
   /* -------------------------
@@ -2703,9 +2898,14 @@ export async function POST(request) {
         await sendWithMainMenuButton(phone, `❌ No approved listing found for CODE: ${code}`, "Tap Main menu to search.");
         return NextResponse.json({ ok: true, note: "code-not-found" });
       }
-      await revealFromObject(listing, phone);
-      await recordPurchase(phone, listing, dbAvailable);
-      return NextResponse.json({ ok: true, note: "code-found" });
+      const started = await startListingPaymentFlow({
+        phone,
+        listing,
+        dbAvailable,
+        savedMsg,
+        source: "direct_code",
+      });
+      return NextResponse.json({ ok: true, note: started ? "code-found-payment-started" : "code-found-payment-error" });
     }
   }
 
@@ -3250,14 +3450,13 @@ export async function POST(request) {
       return NextResponse.json({ ok: true, note: "listing-not-found" });
     }
 
-    // reveal contact
-    await revealFromObject(listing, phone);
-    await recordPurchase(phone, listing, dbAvailable);
-
-    // save that user viewed this contact
-    if (dbAvailable && savedMsg && savedMsg._id) {
-      await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.listingIdSelected": getIdFromListing(listing) } }).catch(() => null);
-    }
+    const started = await startListingPaymentFlow({
+      phone,
+      listing,
+      dbAvailable,
+      savedMsg,
+      source: "selection",
+    });
 
     // update selectionMap
     try {
@@ -3278,7 +3477,7 @@ export async function POST(request) {
       selectionMap.set(phone, mem);
     } catch (e) { /* ignore */ }
 
-    return NextResponse.json({ ok: true, note: "contact-sent" });
+    return NextResponse.json({ ok: true, note: started ? "payment-flow-started" : "payment-flow-failed" });
   }
 
   /* -------------------------
@@ -3320,6 +3519,95 @@ export async function GET(request) {
 /* -------------------------
    Helpers for reveal/save/post-selection buttons
 ------------------------- */
+function makePaymentListingSnapshot(listing) {
+  return {
+    _id: getIdFromListing(listing),
+    shortId: getShortIdFromListing(listing),
+    title: listing?.title || "Listing",
+    suburb: listing?.suburb || "",
+    pricePerMonth: listing?.pricePerMonth || listing?.price || 0,
+    contactName: listing?.contactName || listing?.ownerName || "",
+    contactPhone: listing?.contactPhone || listing?.listerPhoneNumber || "",
+    contactWhatsApp: listing?.contactWhatsApp || "",
+    contactEmail: listing?.contactEmail || "",
+    images: Array.isArray(listing?.images) ? listing.images.slice(0, 6) : [],
+    features: Array.isArray(listing?.features) ? listing.features.slice(0, 12) : [],
+    description: listing?.description || "",
+    address: listing?.address || "",
+    bedrooms: listing?.bedrooms,
+    approved: listing?.approved,
+  };
+}
+
+async function startListingPaymentFlow({ phone, listing, dbAvailable, savedMsg, source = "" }) {
+  try {
+    if (!listing) {
+      await sendWithMainMenuButton(phone, "⚠️ Listing not found for payment.", "Please search again.");
+      return false;
+    }
+
+    const listingId = getIdFromListing(listing);
+    if (!listingId) {
+      await sendWithMainMenuButton(phone, "⚠️ Listing ID missing.", "Please search again.");
+      return false;
+    }
+
+    const paidBefore = dbAvailable && typeof Purchase?.findOne === "function"
+      ? await Purchase.findOne({ phone: digitsOnly(phone), listingId }).lean().exec().catch(() => null)
+      : null;
+
+    const successfulPayment = await getLatestSuccessfulPayment(phone, listingId).catch(() => null);
+
+    if (paidBefore || successfulPayment) {
+      await revealFromObject(listing, phone);
+      await recordPurchase(phone, listing, dbAvailable);
+      if (dbAvailable && savedMsg && savedMsg._id) {
+        await Message.findByIdAndUpdate(savedMsg._id, {
+          $set: {
+            "meta.state": "CONTACT_REVEALED",
+            "meta.listingIdSelected": listingId,
+            "meta.paymentBypassReason": paidBefore ? "existing_purchase" : "existing_successful_payment",
+          },
+        }).catch(() => null);
+      }
+      return true;
+    }
+
+    if (dbAvailable && savedMsg && savedMsg._id) {
+      await Message.findByIdAndUpdate(savedMsg._id, {
+        $set: {
+          "meta.state": "AWAITING_PAYMENT_MOBILE",
+          "meta.paymentListingId": listingId,
+          "meta.paymentListingCode": getShortIdFromListing(listing),
+          "meta.paymentSource": source,
+          "meta.paymentListingSnapshot": makePaymentListingSnapshot(listing),
+          "meta.resultObjects": Array.isArray(lastSelectionResultsForPhone(phone)) ? lastSelectionResultsForPhone(phone) : [],
+        },
+      }).catch(() => null);
+    }
+
+    const listingCode = getShortIdFromListing(listing);
+    const listingLabel = listingCode ? `${listing.title || "Listing"} (${listingCode})` : (listing.title || "Listing");
+    await sendInteractiveButtons(
+      phone,
+      `🔒 To unlock contact details for ${listingLabel}, pay USD 1 via PayNow EcoCash.\n\nReply with your EcoCash number (e.g. 0771234567).`,
+      [{ id: "menu_main", title: "🏠 Main menu" }],
+      { headerText: "PayNow EcoCash" }
+    );
+    return true;
+  } catch (error) {
+    console.error("[startListingPaymentFlow] error:", error);
+    await sendWithMainMenuButton(phone, "⚠️ Could not start payment flow.", "Please try again from search.");
+    return false;
+  }
+}
+
+function lastSelectionResultsForPhone(phone) {
+  const mem = selectionMap.get(phone);
+  if (!mem || !Array.isArray(mem.results)) return [];
+  return mem.results.slice(0, 10);
+}
+
 async function tryRevealByIdOrCached(listingId, phone, idsFromMeta = [], resultsFromMeta = [], dbAvailable = true) {
   try {
     if (!listingId) return false;

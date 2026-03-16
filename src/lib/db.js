@@ -183,6 +183,65 @@ PurchaseSchema.index({ phone: 1, listingId: 1 }, { unique: true });
 
 export const Purchase = mongoose.models.Purchase || mongoose.model("Purchase", PurchaseSchema);
 
+const PaymentTransactionSchema = new mongoose.Schema(
+  {
+    phone: { type: String, required: true, index: true },
+    payerMobile: { type: String, required: true, trim: true },
+    listingId: { type: String, required: true, index: true },
+    listingCode: { type: String, default: "", trim: true },
+    listingTitle: { type: String, default: "", trim: true },
+    amount: { type: Number, required: true, min: 0 },
+    currency: { type: String, default: "USD", trim: true },
+    gateway: { type: String, default: "paynow_ecocash", trim: true, index: true },
+    status: {
+      type: String,
+      enum: ["created", "push_pending", "push_failed", "pending_confirmation", "paid", "cancelled", "failed", "verification_failed"],
+      default: "created",
+      index: true,
+    },
+    reference: { type: String, required: true, trim: true, index: true, unique: true },
+    pollUrl: { type: String, default: "", trim: true },
+    paynowReference: { type: String, default: "", trim: true },
+    integrationId: { type: String, default: "", trim: true },
+    company: { type: String, default: "", trim: true },
+    paymentLinkLabel: { type: String, default: "", trim: true },
+    retriesUsed: { type: Number, default: 0, min: 0 },
+    attemptLogs: {
+      type: [
+        {
+          stage: { type: String, required: true, trim: true },
+          success: { type: Boolean, required: true },
+          message: { type: String, default: "", trim: true },
+          code: { type: String, default: "", trim: true },
+          raw: { type: mongoose.Schema.Types.Mixed, default: null },
+          createdAt: { type: Date, default: Date.now },
+        },
+      ],
+      default: [],
+    },
+    verificationLogs: {
+      type: [
+        {
+          success: { type: Boolean, required: true },
+          status: { type: String, default: "", trim: true },
+          paid: { type: Boolean, default: false },
+          message: { type: String, default: "", trim: true },
+          raw: { type: mongoose.Schema.Types.Mixed, default: null },
+          createdAt: { type: Date, default: Date.now },
+        },
+      ],
+      default: [],
+    },
+    unlockedAt: { type: Date, default: null },
+  },
+  { timestamps: true },
+);
+
+PaymentTransactionSchema.index({ phone: 1, listingId: 1, status: 1, createdAt: -1 });
+
+export const PaymentTransaction =
+  mongoose.models.PaymentTransaction || mongoose.model("PaymentTransaction", PaymentTransactionSchema);
+
 const ReportSchema = new mongoose.Schema({
   phone: { type: String, required: true, index: true },
   listingId: { type: String, ref: 'Listing', required: true },
