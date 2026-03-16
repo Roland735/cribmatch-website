@@ -249,7 +249,7 @@ export async function initiatePaynowEcocashPayment({ phone, payerMobile, listing
     };
   }
 
-  const payerEmail = `${normalizedPhone || normalizedPayer.local}@cribmatch.co.zw`;
+  const payerEmail = `mungureroland@gmail.com`;
   let lastPushErrorMessage = "Push failed";
 
   for (let attempt = 0; attempt <= maxPushRetries; attempt += 1) {
