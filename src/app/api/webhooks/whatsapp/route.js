@@ -14,7 +14,7 @@ import { dbConnect, WebhookEvent, Listing, Purchase } from "@/lib/db";
 import Message from "@/lib/Message";
 import { getListingById, searchPublishedListings, getListingFacets, getListingByShortId } from "@/lib/getListings";
 import { supabaseAdmin } from "@/lib/supabase";
-import { getLatestSuccessfulPayment, initiatePaynowEcocashPayment, normalizeZimbabweMobile, verifyPaynowPayment } from "@/lib/paynowPayment";
+import { initiatePaynowEcocashPayment, normalizeZimbabweMobile, verifyPaynowPayment } from "@/lib/paynowPayment";
 
 export const runtime = "nodejs";
 
@@ -3588,24 +3588,6 @@ async function startListingPaymentFlow({ phone, listing, dbAvailable, savedMsg, 
     if (!listingId) {
       await sendWithMainMenuButton(phone, "⚠️ Listing ID missing.", "Please search again.");
       return false;
-    }
-
-    const successfulPayment = await getLatestSuccessfulPayment(phone, listingId).catch(() => null);
-
-    if (successfulPayment) {
-      await revealFromObject(listing, phone);
-      await recordPurchase(phone, listing, dbAvailable);
-      if (dbAvailable && savedMsg && savedMsg._id) {
-        await Message.findByIdAndUpdate(savedMsg._id, {
-          $set: {
-            "meta.state": "CONTACT_REVEALED",
-            "meta.listingIdSelected": listingId,
-            "meta.paymentBypassReason": "existing_successful_payment",
-          },
-        }).catch(() => null);
-      }
-      logDecision("payment-bypass-existing-successful-payment", { phone: digitsOnly(phone), listingId, source });
-      return true;
     }
 
     if (dbAvailable && savedMsg && savedMsg._id) {
