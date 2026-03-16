@@ -324,9 +324,7 @@ export default function ListingsFilters({
     });
   }
 
-  function handleSubmit(event) {
-    event.preventDefault();
-
+  function handleSubmit() {
     const { min: minPriceNormalized, max: maxPriceNormalized } = normalizeRangeStrings(
       minPrice,
       maxPrice,
@@ -357,7 +355,15 @@ export default function ListingsFilters({
       sort: ALLOWED_SORTS.has(sort) ? sort : "newest",
       photos,
     });
-    router.push(query ? `${pathname}?${query}` : pathname);
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }
+
+  function handleKeyDown(event) {
+    if (event.key !== "Enter") return;
+    const tagName = event.target?.tagName;
+    if (tagName !== "INPUT" && tagName !== "SELECT") return;
+    event.preventDefault();
+    handleSubmit();
   }
 
   function handleReset() {
@@ -366,7 +372,7 @@ export default function ListingsFilters({
 
   return (
     <div className="mt-12 rounded-3xl border border-white/10 bg-slate-900/40 p-6">
-      <form className="grid gap-4 lg:grid-cols-12" onSubmit={handleSubmit}>
+      <div className="grid gap-4 lg:grid-cols-12" onKeyDown={handleKeyDown}>
         <div className="lg:col-span-4">
           <label className="block text-sm font-medium text-slate-200" htmlFor="q">
             Search
@@ -434,7 +440,8 @@ export default function ListingsFilters({
 
         <div className="flex items-end justify-end gap-3 lg:col-span-12">
           <button
-            type="submit"
+            type="button"
+            onClick={handleSubmit}
             className="w-full rounded-xl bg-emerald-400 px-4 py-2 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300 sm:w-auto"
           >
             Apply
@@ -664,7 +671,7 @@ export default function ListingsFilters({
             ) : null}
           </div>
         </div>
-      </form>
+      </div>
     </div>
   );
 }
