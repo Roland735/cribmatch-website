@@ -14,6 +14,13 @@ const PAYNOW_TEST_SUCCESS_NUMBERS = (process.env.PAYNOW_TEST_SUCCESS_NUMBERS || 
   .split(",")
   .map((v) => String(v || "").replace(/\D/g, ""))
   .filter(Boolean);
+const PAYNOW_TEST_NUMBER_SCENARIOS = String(
+  process.env.PAYNOW_TEST_NUMBER_SCENARIOS ||
+  "0771111111:success,0772222222:delayed:2,0773333333:failed,0774444444:cancelled"
+)
+  .split(",")
+  .map((v) => String(v || "").trim())
+  .filter(Boolean);
 
 function digitsOnly(value) {
   return String(value || "").replace(/\D/g, "");
@@ -45,6 +52,26 @@ function isPaynowTestSuccessNumber(local, international) {
   const localDigits = digitsOnly(local);
   const intlDigits = digitsOnly(international);
   return PAYNOW_TEST_SUCCESS_NUMBERS.includes(localDigits) || PAYNOW_TEST_SUCCESS_NUMBERS.includes(intlDigits);
+}
+
+function resolveTestScenario(local, international) {
+  const localDigits = digitsOnly(local);
+  const intlDigits = digitsOnly(international);
+  for (const entry of PAYNOW_TEST_NUMBER_SCENARIOS) {
+    const parts = entry.split(":").map((p) => String(p || "").trim()).filter(Boolean);
+    if (parts.length < 2) continue;
+    const number = digitsOnly(parts[0]);
+    if (!number) continue;
+    if (number !== localDigits && number !== intlDigits) continue;
+    if (parts[1].toLowerCase() === "delayed") {
+      const checks = Number(parts[2] || 2);
+      const safeChecks = Number.isFinite(checks) ? Math.max(1, Math.floor(checks)) : 2;
+      return `delayed:${safeChecks}`;
+    }
+    return parts[1].toLowerCase();
+  }
+  if (isPaynowTestSuccessNumber(local, international)) return "success";
+  return "";
 }
 
 async function getPaynowClient() {
@@ -212,20 +239,21 @@ export async function initiatePaynowEcocashPayment({ phone, payerMobile, listing
     paymentLinkLabel: PAYNOW_PAYMENT_LINK_LABEL,
   });
 
-  if (isPaynowTestSuccessNumber(normalizedPayer.local, normalizedPayer.international)) {
+  const testScenario = resolveTestScenario(normalizedPayer.local, normalizedPayer.international);
+  if (testScenario) {
     await addAttemptLog(tx._id, {
       stage: "ussd_push",
       success: true,
-      message: "PAYNOW_TEST_MODE simulated USSD success",
+      message: `PAYNOW_TEST_MODE simulated USSD: ${testScenario}`,
       code: "TEST_MODE_PUSH_INITIATED",
-      raw: { mode: "test", payerMobile: normalizedPayer.local },
+      raw: { mode: "test", payerMobile: normalizedPayer.local, scenario: testScenario },
     });
     await PaymentTransaction.updateOne(
       { _id: tx._id },
       {
         $set: {
           status: "pending_confirmation",
-          pollUrl: "test://paynow/success",
+          pollUrl: `test://paynow/${testScenario}/${reference}`,
           paynowReference: `TEST-${reference}`,
           retriesUsed: 0,
         },
@@ -235,9 +263,11 @@ export async function initiatePaynowEcocashPayment({ phone, payerMobile, listing
       ok: true,
       transactionId: String(tx._id),
       reference,
-      pollUrl: "test://paynow/success",
+      pollUrl: `test://paynow/${testScenario}/${reference}`,
       retriesUsed: 0,
-      instructions: "Test mode success number detected. Reply 'paid' to confirm and unlock contact details.",
+      instructions: testScenario.startsWith("delayed")
+        ? "Test mode delayed scenario: wait for auto confirmation."
+        : `Test mode scenario: ${testScenario}.`,
     };
   }
 
@@ -348,13 +378,67 @@ export async function verifyPaynowPayment(transactionId) {
     return { ok: false, error: "missing-poll-url", userMessage: "Payment is pending setup. Please retry." };
   }
 
-  if (String(tx.pollUrl || "").startsWith("test://paynow/success")) {
+  if (String(tx.pollUrl || "").startsWith("test://paynow/")) {
+    const parts = String(tx.pollUrl || "").replace("test://paynow/", "").split("/").filter(Boolean);
+    const scenario = String(parts[0] || "success").toLowerCase();
+    const testPollCount = Array.isArray(tx.verificationLogs)
+      ? tx.verificationLogs.filter((l) => l?.raw?.mode === "test").length
+      : 0;
+    if (scenario.startsWith("delayed")) {
+      const checksRaw = scenario.split(":")[1];
+      const checksRequired = Number.isFinite(Number(checksRaw)) ? Math.max(1, Number(checksRaw)) : 2;
+      if (testPollCount < checksRequired) {
+        await addVerificationLog(tx._id, {
+          success: true,
+          status: "pending",
+          paid: false,
+          message: `PAYNOW_TEST_MODE delayed pending (${testPollCount + 1}/${checksRequired})`,
+          raw: { mode: "test", pollUrl: tx.pollUrl, scenario },
+        });
+        await PaymentTransaction.updateOne({ _id: tx._id }, { $set: { status: "pending_confirmation" } }).exec();
+        return { ok: true, paid: false, status: "pending", transaction: tx };
+      }
+      await addVerificationLog(tx._id, {
+        success: true,
+        status: "paid",
+        paid: true,
+        message: "PAYNOW_TEST_MODE delayed now paid",
+        raw: { mode: "test", pollUrl: tx.pollUrl, scenario },
+      });
+      await PaymentTransaction.updateOne(
+        { _id: tx._id },
+        { $set: { status: "paid", unlockedAt: new Date() } },
+      ).exec();
+      return { ok: true, paid: true, status: "paid", transaction: tx };
+    }
+    if (scenario === "failed") {
+      await addVerificationLog(tx._id, {
+        success: true,
+        status: "failed",
+        paid: false,
+        message: "PAYNOW_TEST_MODE failed scenario",
+        raw: { mode: "test", pollUrl: tx.pollUrl, scenario },
+      });
+      await PaymentTransaction.updateOne({ _id: tx._id }, { $set: { status: "failed" } }).exec();
+      return { ok: true, paid: false, status: "failed", transaction: tx };
+    }
+    if (scenario === "cancelled") {
+      await addVerificationLog(tx._id, {
+        success: true,
+        status: "cancelled",
+        paid: false,
+        message: "PAYNOW_TEST_MODE cancelled scenario",
+        raw: { mode: "test", pollUrl: tx.pollUrl, scenario },
+      });
+      await PaymentTransaction.updateOne({ _id: tx._id }, { $set: { status: "cancelled" } }).exec();
+      return { ok: true, paid: false, status: "cancelled", transaction: tx };
+    }
     await addVerificationLog(tx._id, {
       success: true,
       status: "paid",
       paid: true,
       message: "PAYNOW_TEST_MODE simulated paid result",
-      raw: { mode: "test", pollUrl: tx.pollUrl },
+      raw: { mode: "test", pollUrl: tx.pollUrl, scenario },
     });
     await PaymentTransaction.updateOne(
       { _id: tx._id },

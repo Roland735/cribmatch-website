@@ -46,6 +46,7 @@ function logDecision(event, payload = {}) {
     console.log(`[webhook-decision] ${event}`, payload);
   }
 }
+async function sleepMs(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
 /* -------------------------
    Dedupe TTLs (smaller in dev)
@@ -1699,17 +1700,7 @@ export async function POST(request) {
       return NextResponse.json({ ok: true, note: "payment-mobile-invalid" });
     }
 
-    const listingId = String(lastMeta.paymentListingId || "");
-    let listing = null;
-    if (listingId && dbAvailable && typeof Listing?.findById === "function" && /^[0-9a-fA-F]{24}$/.test(listingId)) {
-      listing = await Listing.findById(listingId).lean().exec().catch(() => null);
-    }
-    if (!listing && Array.isArray(lastMeta.resultObjects)) {
-      listing = lastMeta.resultObjects.find((r) => getIdFromListing(r) === listingId) || null;
-    }
-    if (!listing && lastMeta.paymentListingSnapshot) {
-      listing = lastMeta.paymentListingSnapshot;
-    }
+    const listing = await getListingFromPaymentMeta(lastMeta, dbAvailable);
     if (!listing) {
       await sendWithMainMenuButton(phone, "⚠️ Could not find the listing for payment.", "Please search again and select a listing.");
       return NextResponse.json({ ok: true, note: "payment-listing-missing" });
@@ -1746,9 +1737,24 @@ export async function POST(request) {
       }).catch(() => null);
     }
 
+    const autoVerification = await autoVerifyPaymentUntilSettled(paymentStart.transactionId, { maxChecks: 3, delayMs: 1200 });
+    if (autoVerification?.ok && autoVerification?.paid) {
+      const completed = await completePaidContactReveal({ phone, lastMeta: { ...lastMeta, paymentListingSnapshot: makePaymentListingSnapshot(listing), paymentListingId: getIdFromListing(listing) }, savedMsg, dbAvailable });
+      return NextResponse.json({ ok: true, note: completed?.note || "payment-confirmed-contact-sent" });
+    }
+    if (autoVerification?.ok && /failed|cancel/i.test(String(autoVerification?.status || ""))) {
+      await sendInteractiveButtons(
+        phone,
+        `❌ Payment status: ${autoVerification.status}.\nReply: retry to send a new USSD push.`,
+        [{ id: "menu_main", title: "🏠 Main menu" }],
+        { headerText: "EcoCash Payment" }
+      );
+      return NextResponse.json({ ok: true, note: "payment-auto-verification-failed" });
+    }
+
     await sendInteractiveButtons(
       phone,
-      `✅ USSD push sent to ${parsedMobile.local}.\n${paymentStart.instructions}\n\nAfter approving, reply: paid\nIf the prompt failed, reply: retry`,
+      `✅ USSD push sent to ${parsedMobile.local}.\n${paymentStart.instructions}\n\nWe'll unlock contacts automatically once payment confirms.\nIf the prompt failed, reply: retry`,
       [{ id: "menu_main", title: "🏠 Main menu" }],
       { headerText: "EcoCash Payment" }
     );
@@ -1798,71 +1804,70 @@ export async function POST(request) {
         }).catch(() => null);
       }
 
+      const autoVerification = await autoVerifyPaymentUntilSettled(paymentStart.transactionId, { maxChecks: 3, delayMs: 1200 });
+      if (autoVerification?.ok && autoVerification?.paid) {
+        const completed = await completePaidContactReveal({
+          phone,
+          lastMeta: { ...lastMeta, paymentListingSnapshot: listingSnapshot, paymentListingId: getIdFromListing(listingSnapshot) },
+          savedMsg,
+          dbAvailable,
+        });
+        return NextResponse.json({ ok: true, note: completed?.note || "payment-confirmed-contact-sent" });
+      }
+      if (autoVerification?.ok && /failed|cancel/i.test(String(autoVerification?.status || ""))) {
+        await sendInteractiveButtons(
+          phone,
+          `❌ Payment status: ${autoVerification.status}.\nReply: retry to send a new USSD push.`,
+          [{ id: "menu_main", title: "🏠 Main menu" }],
+          { headerText: "EcoCash Payment" }
+        );
+        return NextResponse.json({ ok: true, note: "payment-retry-auto-verification-failed" });
+      }
+
       await sendInteractiveButtons(
         phone,
-        `✅ New USSD push sent to ${payerMobile}.\n${paymentStart.instructions}\n\nReply: paid once complete.`,
+        `✅ New USSD push sent to ${payerMobile}.\n${paymentStart.instructions}\n\nWe'll unlock contacts automatically once payment confirms.`,
         [{ id: "menu_main", title: "🏠 Main menu" }],
         { headerText: "EcoCash Payment" }
       );
       return NextResponse.json({ ok: true, note: "payment-retry-sent" });
     }
 
-    if (cmd === "paid" || cmd === "i have paid" || cmd === "done" || cmd.startsWith("payment_check_")) {
-      const txId = String(lastMeta.paymentTransactionId || "");
-      if (!txId) {
-        await sendWithMainMenuButton(phone, "⚠️ Payment reference missing.", "Please type retry to request a new USSD push.");
-        return NextResponse.json({ ok: true, note: "payment-check-missing-tx" });
-      }
+    const txId = String(lastMeta.paymentTransactionId || "");
+    if (!txId) {
+      await sendWithMainMenuButton(phone, "⚠️ Payment reference missing.", "Please type retry to request a new USSD push.");
+      return NextResponse.json({ ok: true, note: "payment-check-missing-tx" });
+    }
 
-      const verification = await verifyPaynowPayment(txId);
-      if (!verification.ok) {
-        await sendInteractiveButtons(
-          phone,
-          `⚠️ ${verification.userMessage || "Could not verify payment yet."}\nReply: paid to check again.`,
-          [{ id: "menu_main", title: "🏠 Main menu" }],
-          { headerText: "Payment Check" }
-        );
-        return NextResponse.json({ ok: true, note: "payment-check-error" });
-      }
-
-      if (verification.paid) {
-        let listing = null;
-        const listingId = String(lastMeta.paymentListingId || "");
-        if (listingId && dbAvailable && typeof Listing?.findById === "function" && /^[0-9a-fA-F]{24}$/.test(listingId)) {
-          listing = await Listing.findById(listingId).lean().exec().catch(() => null);
-        }
-        if (!listing && lastMeta.paymentListingSnapshot) listing = lastMeta.paymentListingSnapshot;
-        if (!listing) {
-          await sendWithMainMenuButton(phone, "✅ Payment confirmed, but listing is unavailable.", "Please contact support.");
-          return NextResponse.json({ ok: true, note: "payment-paid-listing-missing" });
-        }
-
-        await revealFromObject(listing, phone);
-        await recordPurchase(phone, listing, dbAvailable);
-        if (savedMsg && savedMsg._id) {
-          await Message.findByIdAndUpdate(savedMsg._id, {
-            $set: {
-              "meta.state": "CONTACT_REVEALED",
-              "meta.listingIdSelected": getIdFromListing(listing),
-            },
-          }).catch(() => null);
-        }
-        return NextResponse.json({ ok: true, note: "payment-confirmed-contact-sent" });
-      }
-
-      const statusLabel = String(verification.status || "pending");
+    const verification = await verifyPaynowPayment(txId);
+    if (!verification.ok) {
       await sendInteractiveButtons(
         phone,
-        `⏳ Payment status: ${statusLabel}.\nIf you have not approved the USSD prompt, do that first.\nReply: paid to check again, or retry for a new USSD push.`,
+        `⚠️ ${verification.userMessage || "Could not verify payment yet."}\nReply: retry to send a new USSD push.`,
         [{ id: "menu_main", title: "🏠 Main menu" }],
-        { headerText: "Payment Pending" }
+        { headerText: "Payment Check" }
       );
-      return NextResponse.json({ ok: true, note: "payment-still-pending" });
+      return NextResponse.json({ ok: true, note: "payment-check-error" });
+    }
+
+    if (verification.paid) {
+      const completed = await completePaidContactReveal({ phone, lastMeta, savedMsg, dbAvailable });
+      return NextResponse.json({ ok: true, note: completed?.note || "payment-confirmed-contact-sent" });
+    }
+
+    if (/failed|cancel/i.test(String(verification?.status || ""))) {
+      await sendInteractiveButtons(
+        phone,
+        `❌ Payment status: ${verification.status}.\nReply: retry to send a new USSD push.`,
+        [{ id: "menu_main", title: "🏠 Main menu" }],
+        { headerText: "Payment Failed" }
+      );
+      return NextResponse.json({ ok: true, note: "payment-failed-or-cancelled" });
     }
 
     await sendInteractiveButtons(
       phone,
-      "⏳ Payment in progress.\nReply: paid after approving the USSD prompt.\nReply: retry if no prompt arrived.",
+      "⏳ Payment is still pending.\nWe'll unlock contacts automatically as soon as payment succeeds.\nReply: retry if no prompt arrived.",
       [{ id: "menu_main", title: "🏠 Main menu" }],
       { headerText: "EcoCash Payment" }
     );
@@ -3632,6 +3637,59 @@ function lastSelectionResultsForPhone(phone) {
   const mem = selectionMap.get(phone);
   if (!mem || !Array.isArray(mem.results)) return [];
   return mem.results.slice(0, 10);
+}
+
+async function getListingFromPaymentMeta(lastMeta, dbAvailable = true) {
+  let listing = null;
+  const listingId = String(lastMeta?.paymentListingId || "");
+  if (listingId && dbAvailable && typeof Listing?.findById === "function" && /^[0-9a-fA-F]{24}$/.test(listingId)) {
+    listing = await Listing.findById(listingId).lean().exec().catch(() => null);
+  }
+  if (!listing && Array.isArray(lastMeta?.resultObjects)) {
+    listing = lastMeta.resultObjects.find((r) => getIdFromListing(r) === listingId) || null;
+  }
+  if (!listing && lastMeta?.paymentListingSnapshot) {
+    listing = lastMeta.paymentListingSnapshot;
+  }
+  return listing;
+}
+
+async function completePaidContactReveal({ phone, lastMeta, savedMsg, dbAvailable }) {
+  const listing = await getListingFromPaymentMeta(lastMeta, dbAvailable);
+  if (!listing) {
+    await sendWithMainMenuButton(phone, "✅ Payment confirmed, but listing is unavailable.", "Please contact support.");
+    return { ok: false, note: "payment-paid-listing-missing" };
+  }
+
+  await revealFromObject(listing, phone);
+  await recordPurchase(phone, listing, dbAvailable);
+  if (savedMsg && savedMsg._id) {
+    await Message.findByIdAndUpdate(savedMsg._id, {
+      $set: {
+        "meta.state": "CONTACT_REVEALED",
+        "meta.listingIdSelected": getIdFromListing(listing),
+      },
+    }).catch(() => null);
+  }
+  return { ok: true, note: "payment-confirmed-contact-sent" };
+}
+
+async function autoVerifyPaymentUntilSettled(transactionId, opts = {}) {
+  const maxChecks = Number.isFinite(Number(opts.maxChecks)) ? Math.max(1, Number(opts.maxChecks)) : 3;
+  const delayMs = Number.isFinite(Number(opts.delayMs)) ? Math.max(0, Number(opts.delayMs)) : 1200;
+  let lastVerification = null;
+  for (let i = 0; i < maxChecks; i += 1) {
+    lastVerification = await verifyPaynowPayment(transactionId);
+    if (!lastVerification?.ok) return lastVerification;
+    const statusLower = String(lastVerification?.status || "").toLowerCase();
+    if (lastVerification.paid || statusLower.includes("failed") || statusLower.includes("cancel")) {
+      return lastVerification;
+    }
+    if (i < maxChecks - 1 && delayMs > 0) {
+      await sleepMs(delayMs);
+    }
+  }
+  return lastVerification || { ok: true, paid: false, status: "pending" };
 }
 
 async function tryRevealByIdOrCached(listingId, phone, idsFromMeta = [], resultsFromMeta = [], dbAvailable = true) {
