@@ -7,6 +7,11 @@ const PAYNOW_COMPANY = process.env.PAYNOW_COMPANY || "Omnirol";
 const PAYNOW_PAYMENT_LINK_LABEL = process.env.PAYNOW_PAYMENT_LINK_LABEL || "Rentals App";
 const CONTACT_UNLOCK_AMOUNT = Number(process.env.PAYNOW_CONTACT_UNLOCK_AMOUNT || 1);
 const BASE_URL = process.env.APP_BASE_URL || process.env.NEXTAUTH_URL || "https://cribmatch.app";
+const PAYNOW_TEST_MODE = String(process.env.PAYNOW_TEST_MODE || "").toLowerCase() === "true";
+const PAYNOW_TEST_SUCCESS_NUMBERS = (process.env.PAYNOW_TEST_SUCCESS_NUMBERS || "0771111111,263771111111")
+  .split(",")
+  .map((v) => String(v || "").replace(/\D/g, ""))
+  .filter(Boolean);
 
 function digitsOnly(value) {
   return String(value || "").replace(/\D/g, "");
@@ -31,6 +36,13 @@ function buildReference(listingCode = "") {
   const nonce = crypto.randomBytes(2).toString("hex").toUpperCase();
   const ts = Date.now().toString(36).toUpperCase();
   return `CM-${code}-${ts}-${nonce}`;
+}
+
+function isPaynowTestSuccessNumber(local, international) {
+  if (!PAYNOW_TEST_MODE) return false;
+  const localDigits = digitsOnly(local);
+  const intlDigits = digitsOnly(international);
+  return PAYNOW_TEST_SUCCESS_NUMBERS.includes(localDigits) || PAYNOW_TEST_SUCCESS_NUMBERS.includes(intlDigits);
 }
 
 async function getPaynowClient() {
@@ -87,7 +99,37 @@ export async function initiatePaynowEcocashPayment({ phone, payerMobile, listing
     paymentLinkLabel: PAYNOW_PAYMENT_LINK_LABEL,
   });
 
+  if (isPaynowTestSuccessNumber(normalizedPayer.local, normalizedPayer.international)) {
+    await addAttemptLog(tx._id, {
+      stage: "ussd_push",
+      success: true,
+      message: "PAYNOW_TEST_MODE simulated USSD success",
+      code: "TEST_MODE_PUSH_INITIATED",
+      raw: { mode: "test", payerMobile: normalizedPayer.local },
+    });
+    await PaymentTransaction.updateOne(
+      { _id: tx._id },
+      {
+        $set: {
+          status: "pending_confirmation",
+          pollUrl: "test://paynow/success",
+          paynowReference: `TEST-${reference}`,
+          retriesUsed: 0,
+        },
+      },
+    ).exec();
+    return {
+      ok: true,
+      transactionId: String(tx._id),
+      reference,
+      pollUrl: "test://paynow/success",
+      retriesUsed: 0,
+      instructions: "Test mode success number detected. Reply 'paid' to confirm and unlock contact details.",
+    };
+  }
+
   const payerEmail = `${normalizedPhone || normalizedPayer.local}@cribmatch.co.zw`;
+  let lastPushErrorMessage = "Push failed";
 
   for (let attempt = 0; attempt <= maxPushRetries; attempt += 1) {
     try {
@@ -104,6 +146,7 @@ export async function initiatePaynowEcocashPayment({ phone, payerMobile, listing
         code: success ? "PUSH_INITIATED" : "PUSH_FAILED",
         raw: response || null,
       });
+      if (!success) lastPushErrorMessage = String(response?.error || response?.message || "Push failed");
 
       if (success) {
         const pollUrl = String(response?.pollUrl || "");
@@ -130,6 +173,7 @@ export async function initiatePaynowEcocashPayment({ phone, payerMobile, listing
         };
       }
     } catch (error) {
+      lastPushErrorMessage = String(error?.message || "USSD push error");
       await addAttemptLog(tx._id, {
         stage: "ussd_push",
         success: false,
@@ -150,7 +194,7 @@ export async function initiatePaynowEcocashPayment({ phone, payerMobile, listing
     transactionId: String(tx._id),
     reference,
     error: "ussd-push-failed",
-    userMessage: "We could not send the EcoCash USSD prompt right now. Please retry in a moment.",
+    userMessage: `We could not send the EcoCash USSD prompt right now. ${lastPushErrorMessage}`.slice(0, 240),
   };
 }
 
@@ -171,6 +215,21 @@ export async function verifyPaynowPayment(transactionId) {
     });
     await PaymentTransaction.updateOne({ _id: tx._id }, { $set: { status: "verification_failed" } }).exec();
     return { ok: false, error: "missing-poll-url", userMessage: "Payment is pending setup. Please retry." };
+  }
+
+  if (String(tx.pollUrl || "").startsWith("test://paynow/success")) {
+    await addVerificationLog(tx._id, {
+      success: true,
+      status: "paid",
+      paid: true,
+      message: "PAYNOW_TEST_MODE simulated paid result",
+      raw: { mode: "test", pollUrl: tx.pollUrl },
+    });
+    await PaymentTransaction.updateOne(
+      { _id: tx._id },
+      { $set: { status: "paid", unlockedAt: new Date() } },
+    ).exec();
+    return { ok: true, paid: true, status: "paid", transaction: tx };
   }
 
   try {
@@ -234,4 +293,3 @@ export async function getLatestSuccessfulPayment(phone, listingId) {
     .lean()
     .exec();
 }
-

@@ -1574,8 +1574,21 @@ export async function POST(request) {
   const phone = digitsOnly(phoneRaw || "");
   console.log("[webhook] incoming:", { msgId, phone, parsedText: parsedText.slice(0, 200) });
   const isMenuRequest = isMenuCommandText(parsedText);
+  const hasInboundMessage = Boolean(
+    _safeGet(payload, ["entry", 0, "changes", 0, "value", "messages", 0]) ||
+    payload?.messages?.[0] ||
+    payload?.message
+  );
+  const hasStatuses = Boolean(
+    _safeGet(payload, ["entry", 0, "changes", 0, "value", "statuses", 0]) ||
+    payload?.statuses?.[0]
+  );
 
   if (!msgId && !phone) return NextResponse.json({ ok: true, note: "no-id-or-phone" });
+  if (!hasInboundMessage) {
+    logDecision("non-message-event-ignored", { msgId, hasStatuses, phone, parsedText });
+    return NextResponse.json({ ok: true, note: hasStatuses ? "status-event-ignored" : "non-message-event-ignored" });
+  }
 
   let dbAvailable = true;
   if (isMenuRequest) {
