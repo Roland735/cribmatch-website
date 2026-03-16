@@ -350,6 +350,7 @@ export async function searchListings({
       if (normalizedQuery) {
         const haystack = [
           listing.title,
+          listing.shortId,
           listing.city,
           listing.suburb,
           listing.description,
@@ -465,6 +466,7 @@ export async function searchListings({
       andConditions.push({
         $or: [
           { title: regex },
+          { shortId: regex },
           { city: regex },
           { suburb: regex },
           { description: regex },

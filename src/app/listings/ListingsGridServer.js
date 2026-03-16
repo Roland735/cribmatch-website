@@ -21,6 +21,15 @@ function formatTitle(value) {
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }
 
+function formatSuburbWithCity(suburb, city) {
+  const safeSuburb = typeof suburb === "string" ? suburb.trim() : "";
+  const safeCity = typeof city === "string" ? city.trim() : "";
+  if (!safeSuburb) return "N/A";
+  if (!safeCity) return safeSuburb;
+  if (safeSuburb.toLowerCase().includes(safeCity.toLowerCase())) return safeSuburb;
+  return `${safeSuburb}, ${safeCity}`;
+}
+
 export default async function ListingsGridServer({
   listings = [],
   compact = false,
@@ -49,6 +58,17 @@ export default async function ListingsGridServer({
           ...(Array.isArray(listing.photos) ? listing.photos : []),
           ...(Array.isArray(listing.photosUrls) ? listing.photosUrls : []),
         ].filter((url) => typeof url === "string" && url.trim() !== "");
+        const summarySuburb = formatSuburbWithCity(listing.suburb, listing.city);
+        const summaryBeds =
+          typeof listing.bedrooms === "number" ? `${listing.bedrooms} bed(s)` : "N/A";
+        const summaryPrice =
+          typeof listing.pricePerMonth === "number"
+            ? `${formatPrice(listing.pricePerMonth)}${typeof listing.deposit === "number" ? ` (${formatPrice(listing.deposit)} deposit)` : ""}`
+            : "N/A";
+        const summaryCode =
+          typeof listing.shortId === "string" && listing.shortId.trim()
+            ? listing.shortId.trim().toUpperCase()
+            : "N/A";
 
         return (
           <article
@@ -93,6 +113,13 @@ export default async function ListingsGridServer({
               <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-slate-400">
                 {listing.description || "Message us on WhatsApp for photos and viewing slots."}
               </p>
+
+              <div className="mt-4 rounded-xl border border-emerald-400/20 bg-slate-950/50 p-3 text-xs text-emerald-100/95">
+                <p>🏷️ CODE: {summaryCode}</p>
+                <p className="mt-1">📍 Suburb: {summarySuburb}</p>
+                <p className="mt-1">🛏️ Bedrooms: {summaryBeds}</p>
+                <p className="mt-1">💰 Price: {summaryPrice}</p>
+              </div>
 
               <div className="mt-4 flex flex-wrap gap-2 text-[10px] text-slate-500">
                 {typeof listing.bedrooms === "number" && (

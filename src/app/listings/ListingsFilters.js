@@ -381,7 +381,7 @@ export default function ListingsFilters({
             id="q"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Suburb, title, feature (e.g. borehole)…"
+            placeholder="Suburb, title, code, feature (e.g. RJXH or borehole)…"
             className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
           />
         </div>
@@ -660,7 +660,7 @@ export default function ListingsFilters({
                 ))
               ) : (
                 <span className="text-xs text-slate-400">
-                  Tip: search “borehole”, “solar”, or your suburb.
+                  Tip: search code (e.g. RJXH), “borehole”, “solar”, or your suburb.
                 </span>
               )}
             </div>
