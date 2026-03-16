@@ -7,6 +7,7 @@ const PAYNOW_INTEGRATION_KEY = process.env.PAYNOW_INTEGRATION_KEY || "290c9058-5
 const PAYNOW_COMPANY = process.env.PAYNOW_COMPANY || "Omnirol";
 const PAYNOW_PAYMENT_LINK_LABEL = process.env.PAYNOW_PAYMENT_LINK_LABEL || "Rentals App";
 const CONTACT_UNLOCK_AMOUNT = Number(process.env.PAYNOW_CONTACT_UNLOCK_AMOUNT || 1);
+const PAYNOW_CURRENCY = String(process.env.PAYNOW_CURRENCY || "USD").toUpperCase();
 const BASE_URL = process.env.APP_BASE_URL || process.env.NEXTAUTH_URL || "https://cribmatch.app";
 const PAYNOW_TEST_MODE = String(process.env.PAYNOW_TEST_MODE || "").toLowerCase() === "true";
 const PAYNOW_TEST_NUMBER_BYPASS = String(process.env.PAYNOW_TEST_NUMBER_BYPASS || "true").toLowerCase() === "true";
@@ -75,54 +76,34 @@ function resolveTestScenario(local, international) {
 }
 
 async function getPaynowClient() {
-  // Robust dynamic import / require fallback and constructor detection.
-  // This should avoid "is not a constructor" issues across SDK versions.
   let moduleRef = null;
   let PaynowCtorOrInstance = null;
 
   try {
-    // preferred: ESM dynamic import
-    // NOTE: in some runtimes this returns { default: [Function] } or the function directly.
-    // We inspect returned shape and handle common shapes.
     moduleRef = await import("paynow");
   } catch (importErr) {
     try {
-      // fallback to require (CommonJS)
-      // (Only works if runtime allows require)
       moduleRef = require("paynow");
     } catch (requireErr) {
       const msg = `Failed to load 'paynow' SDK via import or require. import error: ${importErr?.message || ""}; require error: ${requireErr?.message || ""}`;
-      // throw a clear error to help debugging
       throw new Error(msg);
     }
   }
 
-  // moduleRef might be:
-  // - the constructor function itself
-  // - { default: constructor }
-  // - { Paynow: constructor }
-  // - an already-instantiated client (object with createPayment/sendMobile)
-  // - other shapes (we will throw helpful error)
-  // inspect:
   try {
-    // Helpful debug info — the logs will appear in your server console when this runs
-    // (Comment out in production if noisy)
     console.log("paynow module keys:", Object.keys(moduleRef || {}));
     console.log("paynow moduleRef default exists?", !!(moduleRef && moduleRef.default));
   } catch (e) {
     // ignore logging issues
   }
 
-  // Resolve candidate ctor or instance:
   if (!moduleRef) {
     throw new Error("paynow module import returned falsy value");
   }
 
-  // If moduleRef looks like an instance (has createPayment & sendMobile) use it directly
   if (typeof moduleRef.createPayment === "function" && typeof moduleRef.sendMobile === "function") {
     PaynowCtorOrInstance = moduleRef;
   } else if (moduleRef.default && typeof moduleRef.default === "function") {
-    // default export is constructor
     PaynowCtorOrInstance = moduleRef.default;
   } else if (moduleRef.Paynow && typeof moduleRef.Paynow === "function") {
     PaynowCtorOrInstance = moduleRef.Paynow;
@@ -131,18 +112,14 @@ async function getPaynowClient() {
   } else if (moduleRef.default && typeof moduleRef.default === "object" && typeof moduleRef.default.createPayment === "function") {
     PaynowCtorOrInstance = moduleRef.default;
   } else {
-    // not recognized
     console.error("Unexpected paynow module shape:", moduleRef);
     throw new Error("Unexpected 'paynow' SDK export shape. Inspect server logs.");
   }
 
-  // If we resolved an instance (object with createPayment), return it directly.
   if (typeof PaynowCtorOrInstance === "object" && PaynowCtorOrInstance !== null) {
-    // But ensure resultUrl/returnUrl are present on the instance if SDK expects them
     try {
       const resultUrl = `${BASE_URL.replace(/\/+$/, "")}/api/webhooks/paynow/result`;
       const returnUrl = `${BASE_URL.replace(/\/+$/, "")}/api/webhooks/paynow/return`;
-      // attach if properties exist or set anyway (harmless)
       PaynowCtorOrInstance.resultUrl = PaynowCtorOrInstance.resultUrl || resultUrl;
       PaynowCtorOrInstance.returnUrl = PaynowCtorOrInstance.returnUrl || returnUrl;
     } catch (e) {
@@ -151,15 +128,11 @@ async function getPaynowClient() {
     return PaynowCtorOrInstance;
   }
 
-  // Otherwise we have a constructor function — try to instantiate.
   const PaynowCtor = PaynowCtorOrInstance;
   if (typeof PaynowCtor !== "function") {
     throw new Error("Resolved Paynow value is not a function or object instance");
   }
 
-  // Try common constructor signatures:
-  // 1) new Paynow(integrationId, integrationKey, resultUrl, returnUrl)
-  // 2) new Paynow(integrationId, integrationKey) and then set .resultUrl/.returnUrl
   const resultUrl = `${BASE_URL.replace(/\/+$/, "")}/api/webhooks/paynow/result`;
   const returnUrl = `${BASE_URL.replace(/\/+$/, "")}/api/webhooks/paynow/return`;
 
@@ -169,15 +142,12 @@ async function getPaynowClient() {
   } catch (e1) {
     try {
       instance = new PaynowCtor(PAYNOW_INTEGRATION_ID, PAYNOW_INTEGRATION_KEY);
-      // attach urls if SDK expects them as properties
       instance.resultUrl = instance.resultUrl || resultUrl;
       instance.returnUrl = instance.returnUrl || returnUrl;
     } catch (e2) {
-      // last-ditch: call as function (some rare SDKs return factory)
       try {
         instance = PaynowCtor(PAYNOW_INTEGRATION_ID, PAYNOW_INTEGRATION_KEY, resultUrl, returnUrl);
       } catch (e3) {
-        // give maximum context in error
         const combined = `Could not construct Paynow client. errors: ${String(e1?.message || "")} | ${String(e2?.message || "")} | ${String(e3?.message || "")}`;
         console.error(combined);
         throw new Error("Failed to instantiate Paynow client. See server logs for details.");
@@ -185,7 +155,6 @@ async function getPaynowClient() {
     }
   }
 
-  // final sanity checks
   if (!instance || typeof instance.createPayment !== "function" || typeof instance.sendMobile !== "function") {
     console.error("Constructed paynow instance missing expected methods:", instance);
     throw new Error("Paynow client missing expected methods (createPayment/sendMobile).");
@@ -230,7 +199,7 @@ export async function initiatePaynowEcocashPayment({ phone, payerMobile, listing
     listingCode,
     listingTitle,
     amount,
-    currency: "USD",
+    currency: PAYNOW_CURRENCY,
     gateway: "paynow_ecocash",
     status: "created",
     reference,
@@ -279,9 +248,45 @@ export async function initiatePaynowEcocashPayment({ phone, payerMobile, listing
     try {
       const paynow = await getPaynowClient();
 
-      // create payment and attach item
+      // create payment: try to force currency to PAYNOW_CURRENCY in a backwards-compatible way,
+      // then add the item. Different SDK versions expose different APIs:
+      // - payment.setCurrency("USD")
+      // - payment.currency = "USD"
+      // - payment.add(description, amount, "USD")
+      // We attempt these in order and fall back to including the currency in the item description if none work.
       const payment = paynow.createPayment(reference, payerEmail);
-      payment.add(`${PAYNOW_PAYMENT_LINK_LABEL} - ${listingTitle}`, amount);
+
+      try {
+        // preferred API
+        if (typeof payment.setCurrency === "function") {
+          payment.setCurrency(PAYNOW_CURRENCY);
+        } else if ("currency" in payment) {
+          payment.currency = PAYNOW_CURRENCY;
+        } else if (typeof paynow.setCurrency === "function") {
+          paynow.setCurrency(PAYNOW_CURRENCY);
+        }
+      } catch (e) {
+        // non-fatal; continue to other options
+        console.warn("Could not set currency via setCurrency/currency property:", e?.message || e);
+      }
+
+      // Add item — try signature with explicit currency if SDK supports it, otherwise fallback to simple add
+      let added = false;
+      try {
+        // some SDKs support add(description, amount, currency)
+        payment.add(`${PAYNOW_PAYMENT_LINK_LABEL} - ${listingTitle}`, amount, PAYNOW_CURRENCY);
+        added = true;
+      } catch (e) {
+        // try the two-arg add (description, amount)
+        try {
+          payment.add(`${PAYNOW_PAYMENT_LINK_LABEL} - ${listingTitle}`, amount);
+          added = true;
+        } catch (e2) {
+          // final fallback: include currency in description
+          payment.add(`${PAYNOW_PAYMENT_LINK_LABEL} - ${listingTitle} (${PAYNOW_CURRENCY})`, amount);
+          added = true;
+        }
+      }
 
       // sendMobile may return different shapes depending on SDK; capture it
       const response = await paynow.sendMobile(payment, normalizedPayer.local, "ecocash");
@@ -322,7 +327,7 @@ export async function initiatePaynowEcocashPayment({ phone, payerMobile, listing
           reference,
           pollUrl,
           retriesUsed: attempt,
-          instructions: String(response?.instructions || response?.message || response?.Message || "Approve the EcoCash USSD prompt on your phone to complete payment."),
+          instructions: String(response?.instructions || response?.message || response?.Message || `Approve the ${PAYNOW_CURRENCY} EcoCash USSD prompt on your phone to complete payment.`),
         };
       }
     } catch (error) {
@@ -449,8 +454,6 @@ export async function verifyPaynowPayment(transactionId) {
 
   try {
     const paynow = await getPaynowClient();
-    // different SDKs expose different poll functions — most use pollTransaction(pollUrl)
-    // We'll try pollTransaction, and fallback to poll or checkTransaction if available.
     let pollResponse = null;
     if (typeof paynow.pollTransaction === "function") {
       pollResponse = await paynow.pollTransaction(tx.pollUrl);
