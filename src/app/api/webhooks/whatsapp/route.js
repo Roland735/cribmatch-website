@@ -442,6 +442,22 @@ async function saveSearchContext(phone, listingIds, resultObjects, dbAvailable) 
   }
 }
 
+async function getPurchasedListingIdSet(phone, listingIds = [], dbAvailable = true) {
+  try {
+    if (!dbAvailable || typeof Purchase?.find !== "function") return new Set();
+    const ids = Array.isArray(listingIds) ? listingIds.filter(Boolean).map((id) => String(id)) : [];
+    if (!ids.length) return new Set();
+    const rows = await Purchase.find({ phone: digitsOnly(phone), listingId: { $in: ids } })
+      .select("listingId")
+      .lean()
+      .exec()
+      .catch(() => []);
+    return new Set((rows || []).map((r) => String(r?.listingId || "")).filter(Boolean));
+  } catch (e) {
+    return new Set();
+  }
+}
+
 /* -------------------------
    Flow helpers (search & results)
 ------------------------- */
@@ -1354,7 +1370,7 @@ function ensureListingHasId(listing, indexHint = 0) {
   return { listing: patched, id: pseudoId };
 }
 
-function formatListingResultText(listing, indexHint = 0) {
+function formatListingResultText(listing, indexHint = 0, purchasedIds = new Set()) {
   const { listing: ensured, id } = ensureListingHasId(listing, indexHint);
   if (!ensured) return "";
 
@@ -1376,6 +1392,7 @@ function formatListingResultText(listing, indexHint = 0) {
     `${indexHint + 1}) 🏠 ${title} — 📍 ${suburb} — 💰 $${price}`,
     shortId ? `🏷️ CODE: ${shortId}` : null,
     `🆔 ID: ${id}`,
+    purchasedIds.has(String(id)) ? "✅ Already purchased — contact is unlocked" : null,
   ].filter(Boolean);
 
   // Picture available status
@@ -2506,7 +2523,8 @@ export async function POST(request) {
     const ensured = items.map((item, i) => ensureListingHasId(item, i));
     const ensuredItems = ensured.map((e) => e.listing).filter(Boolean);
     const ids = ensured.map((e) => e.id).filter(Boolean);
-    const numbered = ensuredItems.map((l, i) => formatListingResultText(l, i)).filter(Boolean).join("\n\n");
+    const purchasedIds = await getPurchasedListingIdSet(phone, ids, dbAvailable);
+    const numbered = ensuredItems.map((l, i) => formatListingResultText(l, i, purchasedIds)).filter(Boolean).join("\n\n");
 
     await saveSearchContext(phone, ids, ensuredItems, dbAvailable);
     let msgText = `👇 Reply with the number (e.g. 1) to get contact details, or type a listing CODE (e.g. H4WH).\n\n${numbered}`.trim();
@@ -3601,6 +3619,34 @@ async function startListingPaymentFlow({ phone, listing, dbAvailable, savedMsg, 
     if (!listingId) {
       await sendWithMainMenuButton(phone, "⚠️ Listing ID missing.", "Please search again.");
       return false;
+    }
+
+    if (dbAvailable && typeof Purchase?.findOne === "function") {
+      const existingPurchase = await Purchase.findOne({ phone: digitsOnly(phone), listingId: String(listingId) })
+        .select("_id")
+        .lean()
+        .exec()
+        .catch(() => null);
+      if (existingPurchase) {
+        await sendInteractiveButtons(
+          phone,
+          "✅ You already purchased this listing. Opening your unlocked contact details.",
+          [{ id: "menu_main", title: "🏠 Main menu" }],
+          { headerText: "Already Purchased" }
+        );
+        await revealFromObject(listing, phone);
+        if (savedMsg && savedMsg._id) {
+          await Message.findByIdAndUpdate(savedMsg._id, {
+            $set: {
+              "meta.state": "CONTACT_REVEALED",
+              "meta.listingIdSelected": String(listingId),
+              "meta.purchaseBypass": true,
+            },
+          }).catch(() => null);
+        }
+        logDecision("payment-flow-skipped-existing-purchase", { phone: digitsOnly(phone), listingId, source });
+        return true;
+      }
     }
 
     if (dbAvailable && savedMsg && savedMsg._id) {
