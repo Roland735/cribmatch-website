@@ -25,6 +25,14 @@ export default async function UserPurchasesPage() {
       <p className="mt-2 text-sm text-slate-300">
         View the property details you&apos;ve unlocked.
       </p>
+      <div className="mt-4">
+        <Link
+          href="/user/listings?create=true"
+          className="inline-flex items-center justify-center rounded-full bg-emerald-400 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300"
+        >
+          List a property
+        </Link>
+      </div>
 
       <div className="mt-8">
         <PurchasesClient />

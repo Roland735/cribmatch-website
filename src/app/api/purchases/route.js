@@ -4,6 +4,10 @@ import { dbConnect, Purchase, Listing } from "@/lib/db";
 
 export const runtime = "nodejs";
 
+function digitsOnly(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
 export async function GET(request) {
   const session = await getServerSession(authOptions);
   if (!session?.user) {
@@ -14,12 +18,18 @@ export async function GET(request) {
   if (!phoneNumber) {
     return Response.json({ error: "Missing phone number" }, { status: 400 });
   }
+  const phoneDigits = digitsOnly(phoneNumber);
 
   try {
     await dbConnect();
     
     // Find purchases and populate listing data
-    const purchases = await Purchase.find({ phone: phoneNumber })
+    const purchases = await Purchase.find({
+      $or: [
+        { phone: phoneNumber },
+        { phone: phoneDigits },
+      ],
+    })
       .sort({ createdAt: -1 })
       .lean();
 
@@ -42,7 +52,14 @@ export async function GET(request) {
           pricePerMonth: listing.pricePerMonth,
           images: listing.images,
           shortId: listing.shortId
-        } : (purchase.listingSnapshot || null)
+        } : (purchase.listingSnapshot ? {
+          _id: purchase.listingId,
+          title: purchase.listingSnapshot.title,
+          suburb: purchase.listingSnapshot.suburb,
+          pricePerMonth: purchase.listingSnapshot.price ?? purchase.listingSnapshot.pricePerMonth ?? null,
+          images: purchase.listingSnapshot.images || [],
+          shortId: purchase.listingSnapshot.shortId || "",
+        } : null)
       };
     }));
 
