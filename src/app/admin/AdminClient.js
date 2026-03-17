@@ -90,10 +90,20 @@ function getNeighborhoodLabel(value) {
   return raw.split(",")[0]?.trim() || raw;
 }
 
+function statusToUi(status) {
+  return status === "published" ? "active" : "deactivated";
+}
+
+function uiToStatus(value) {
+  return value === "active" ? "published" : "draft";
+}
+
 export default function AdminClient({ scope = "all", showSignOut = true } = {}) {
   const searchParams = useSearchParams();
   const canManagePricing = scope === "all";
   const canManageMarketing = scope === "all";
+  const canManageReports = scope === "all";
+  const canManageApproval = scope === "all";
   const [activeTab, setActiveTab] = useState("listings");
   const [stats, setStats] = useState(null);
   const [reports, setReports] = useState([]);
@@ -149,7 +159,7 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
   const [selectedFeatures, setSelectedFeatures] = useState([]);
   const [customFeature, setCustomFeature] = useState("");
   const [imageUploads, setImageUploads] = useState([]);
-  const [status, setStatus] = useState("published");
+  const [status, setStatus] = useState("active");
   const [approved, setApproved] = useState(false);
   const [editingListingId, setEditingListingId] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -392,15 +402,47 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
   const loadStats = useCallback(async () => {
     try {
       setLoadingStats(true);
-      const response = await fetch("/api/admin/stats");
-      const data = await response.json();
-      if (response.ok) setStats(data);
+      const endpoint = scope === "mine" ? "/api/user/stats" : "/api/admin/stats";
+      const response = await fetch(endpoint);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) return;
+
+      if (data?.stats && data?.recent) {
+        setStats({
+          totalListings: Number(data?.stats?.listings?.total || 0),
+          pendingApproval: Number(data?.stats?.listings?.pending || 0),
+          totalReports: Number(data?.stats?.reports?.total || 0),
+          totalViews: Number(data?.stats?.purchases?.total || 0),
+          totalPurchases: Number(data?.stats?.purchases?.total || 0),
+          activeListings: 0,
+          deactivatedListings: 0,
+          recentPurchases: Array.isArray(data?.recent?.purchases)
+            ? data.recent.purchases.map((purchase) => ({
+              listingTitle: purchase?.listing?.title || "Listing",
+              createdAt: purchase?.createdAt,
+              amount: 0,
+            }))
+            : [],
+        });
+        return;
+      }
+
+      setStats({
+        totalListings: Number(data?.totalListings || 0),
+        pendingApproval: Number(data?.pendingApproval || 0),
+        totalReports: Number(data?.totalReports || 0),
+        totalViews: Number(data?.totalViews || 0),
+        totalPurchases: Number(data?.totalPurchases || 0),
+        activeListings: Number(data?.activeListings || 0),
+        deactivatedListings: Number(data?.deactivatedListings || 0),
+        recentPurchases: Array.isArray(data?.recentPurchases) ? data.recentPurchases : [],
+      });
     } catch (err) {
       console.error("Load stats error:", err);
     } finally {
       setLoadingStats(false);
     }
-  }, []);
+  }, [scope]);
 
   const loadReports = useCallback(async () => {
     try {
@@ -443,9 +485,9 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
   useEffect(() => {
     if (activeTab === "listings" || (activeTab === "marketing" && canManageMarketing)) loadListings();
     if (activeTab === "stats") loadStats();
-    if (activeTab === "reports") loadReports();
+    if (activeTab === "reports" && canManageReports) loadReports();
     if (activeTab === "pricing" && canManagePricing) loadPricing();
-  }, [activeTab, canManageMarketing, canManagePricing, loadListings, loadStats, loadReports, loadPricing]);
+  }, [activeTab, canManageMarketing, canManagePricing, canManageReports, loadListings, loadStats, loadReports, loadPricing]);
 
   const loadLocationFacets = useCallback(async () => {
     try {
@@ -527,7 +569,7 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
           description: description.trim(),
           features: cleanedFeatures,
           images: cleanedImages,
-          status,
+          status: uiToStatus(status),
           approved,
         }),
       });
@@ -570,7 +612,7 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
     setBedrooms(listing.bedrooms?.toString() || "");
     setDescription(listing.description || "");
     setSelectedFeatures(listing.features || []);
-    setStatus(listing.status || "published");
+    setStatus(statusToUi(listing.status));
     setApproved(listing.approved || false);
     setImageUploads(
       (listing.images || []).map((url) => ({
@@ -603,7 +645,7 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
     setSelectedFeatures([]);
     setCustomFeature("");
     clearUploads();
-    setStatus("published");
+    setStatus("active");
     setApproved(false);
     setSaveError("");
   }
@@ -1028,15 +1070,17 @@ Interested? Contact us today!
           >
             Stats
           </button>
-          <button
-            onClick={() => setActiveTab("reports")}
-            className={`rounded-full px-6 py-2 text-sm font-semibold transition ${activeTab === "reports"
-              ? "bg-emerald-400 text-slate-950 shadow-lg shadow-emerald-400/20"
-              : "text-slate-400 hover:text-white"
-              }`}
-          >
-            Reports
-          </button>
+          {canManageReports ? (
+            <button
+              onClick={() => setActiveTab("reports")}
+              className={`rounded-full px-6 py-2 text-sm font-semibold transition ${activeTab === "reports"
+                ? "bg-emerald-400 text-slate-950 shadow-lg shadow-emerald-400/20"
+                : "text-slate-400 hover:text-white"
+                }`}
+            >
+              Reports
+            </button>
+          ) : null}
           {canManagePricing ? (
             <button
               onClick={() => setActiveTab("pricing")}
@@ -1353,24 +1397,25 @@ Interested? Contact us today!
                     onChange={(e) => setStatus(e.target.value)}
                     className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
                   >
-                    <option value="published">Published</option>
-                    <option value="draft">Draft</option>
-                    <option value="archived">Archived</option>
+                    <option value="active">Active</option>
+                    <option value="deactivated">Deactivated</option>
                   </select>
                 </div>
 
-                <div className="flex items-center gap-2 py-4">
-                  <input
-                    id="approved"
-                    type="checkbox"
-                    checked={approved}
-                    onChange={(e) => setApproved(e.target.checked)}
-                    className="h-4 w-4 rounded border-white/10 bg-slate-950/60 text-emerald-400 outline-none focus:ring-2 focus:ring-emerald-400/30"
-                  />
-                  <label htmlFor="approved" className="text-sm font-medium text-slate-200">
-                    Approved by admin
-                  </label>
-                </div>
+                {canManageApproval ? (
+                  <div className="flex items-center gap-2 py-4">
+                    <input
+                      id="approved"
+                      type="checkbox"
+                      checked={approved}
+                      onChange={(e) => setApproved(e.target.checked)}
+                      className="h-4 w-4 rounded border-white/10 bg-slate-950/60 text-emerald-400 outline-none focus:ring-2 focus:ring-emerald-400/30"
+                    />
+                    <label htmlFor="approved" className="text-sm font-medium text-slate-200">
+                      Approved by admin
+                    </label>
+                  </div>
+                ) : null}
 
                 <div className="sm:col-span-2">
                   <p className="block text-sm font-medium text-slate-200">Features</p>
@@ -1610,7 +1655,7 @@ Interested? Contact us today!
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                {selectedListingIds.size > 0 && (
+                {canManageApproval && selectedListingIds.size > 0 && (
                   <div className="mr-2 flex items-center gap-2 rounded-full border border-white/10 bg-slate-950/40 p-1">
                     <button
                       onClick={() => handleBulkAction("approve")}
@@ -1631,7 +1676,14 @@ Interested? Contact us today!
                       disabled={bulkActionLoading}
                       className="rounded-full px-3 py-1 text-[10px] font-bold text-slate-400 hover:bg-white/10 disabled:opacity-50"
                     >
-                      Draft
+                      Deactivate
+                    </button>
+                    <button
+                      onClick={() => handleBulkAction("publish")}
+                      disabled={bulkActionLoading}
+                      className="rounded-full px-3 py-1 text-[10px] font-bold text-blue-400 hover:bg-blue-400/10 disabled:opacity-50"
+                    >
+                      Activate
                     </button>
                     <button
                       onClick={() => handleBulkAction("delete")}
@@ -1654,8 +1706,8 @@ Interested? Contact us today!
                   >
                     <option value="newest">Newest first</option>
                     <option value="oldest">Oldest first</option>
-                    <option value="approved">Approved</option>
-                    <option value="unapproved">Unapproved</option>
+                    {canManageApproval ? <option value="approved">Approved</option> : null}
+                    {canManageApproval ? <option value="unapproved">Unapproved</option> : null}
                   </select>
                 </div>
               </div>
@@ -1685,7 +1737,7 @@ Interested? Contact us today!
                       <div className="flex items-center gap-3">
                         <p className="text-sm font-semibold text-white">{listing.title}</p>
                         <div className="flex gap-1.5">
-                          {listing.approved ? (
+                          {canManageApproval ? (listing.approved ? (
                             <span className="rounded-full bg-emerald-400/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400 ring-1 ring-inset ring-emerald-400/20">
                               Approved
                             </span>
@@ -1693,12 +1745,12 @@ Interested? Contact us today!
                             <span className="rounded-full bg-amber-400/10 px-2 py-0.5 text-[10px] font-bold text-amber-400 ring-1 ring-inset ring-amber-400/20">
                               Pending
                             </span>
-                          )}
+                          )) : null}
                           <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset ${listing.status === "published"
                             ? "bg-blue-400/10 text-blue-400 ring-blue-400/20"
                             : "bg-white/10 text-white/40 ring-white/20"
                             }`}>
-                            {listing.status.toUpperCase()}
+                            {listing.status === "published" ? "ACTIVE" : "DEACTIVATED"}
                           </span>
                         </div>
                       </div>
@@ -1708,16 +1760,18 @@ Interested? Contact us today!
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2 sm:col-span-6 sm:justify-end">
-                    <button
-                      type="button"
-                      onClick={() => handleToggleApproval(listing)}
-                      className={`rounded-full border px-4 py-2 text-xs font-semibold transition ${listing.approved
-                        ? "border-amber-400/30 text-amber-400 hover:bg-amber-400/5"
-                        : "border-emerald-400/30 text-emerald-400 hover:bg-emerald-400/5"
-                        }`}
-                    >
-                      {listing.approved ? "Unapprove" : "Approve"}
-                    </button>
+                    {canManageApproval ? (
+                      <button
+                        type="button"
+                        onClick={() => handleToggleApproval(listing)}
+                        className={`rounded-full border px-4 py-2 text-xs font-semibold transition ${listing.approved
+                          ? "border-amber-400/30 text-amber-400 hover:bg-amber-400/5"
+                          : "border-emerald-400/30 text-emerald-400 hover:bg-emerald-400/5"
+                          }`}
+                      >
+                        {listing.approved ? "Unapprove" : "Approve"}
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => handleEditStart(listing)}
@@ -1725,15 +1779,13 @@ Interested? Contact us today!
                     >
                       Edit
                     </button>
-                    {listing.status === "published" && (
-                      <button
-                        type="button"
-                        onClick={() => handleToggleStatus(listing)}
-                        className="rounded-full border border-white/15 px-4 py-2 text-xs font-semibold text-slate-50 transition hover:border-white/30 hover:bg-white/5"
-                      >
-                        Draft
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleToggleStatus(listing)}
+                      className="rounded-full border border-white/15 px-4 py-2 text-xs font-semibold text-slate-50 transition hover:border-white/30 hover:bg-white/5"
+                    >
+                      {listing.status === "published" ? "Deactivate" : "Activate"}
+                    </button>
                     <button
                       type="button"
                       onClick={() => handleDelete(listing._id)}
@@ -1763,17 +1815,21 @@ Interested? Contact us today!
               <p className="mt-2 text-3xl font-bold text-white">{stats?.totalListings || 0}</p>
             </div>
             <div className="rounded-3xl border border-white/10 bg-slate-900/40 p-6">
-              <p className="text-sm font-medium text-slate-400">Pending Approval</p>
-              <p className="mt-2 text-3xl font-bold text-amber-400">{stats?.pendingApproval || 0}</p>
+              <p className="text-sm font-medium text-slate-400">{scope === "mine" ? "Views on your listings" : "Pending Approval"}</p>
+              <p className={`mt-2 text-3xl font-bold ${scope === "mine" ? "text-blue-400" : "text-amber-400"}`}>
+                {scope === "mine" ? stats?.totalViews || 0 : stats?.pendingApproval || 0}
+              </p>
             </div>
             <div className="rounded-3xl border border-white/10 bg-slate-900/40 p-6">
-              <p className="text-sm font-medium text-slate-400">Total Reports</p>
-              <p className="mt-2 text-3xl font-bold text-rose-400">{stats?.totalReports || 0}</p>
+              <p className="text-sm font-medium text-slate-400">{scope === "mine" ? "Number of purchases" : "Total Reports"}</p>
+              <p className={`mt-2 text-3xl font-bold ${scope === "mine" ? "text-emerald-400" : "text-rose-400"}`}>
+                {scope === "mine" ? stats?.totalPurchases || 0 : stats?.totalReports || 0}
+              </p>
             </div>
           </div>
 
           <div className="rounded-3xl border border-white/10 bg-slate-900/40 p-6">
-            <p className="text-sm font-semibold text-white">Recent Activity</p>
+            <p className="text-sm font-semibold text-white">{scope === "mine" ? "Recent purchases on your listings" : "Recent Activity"}</p>
             <div className="mt-6 space-y-4">
               {stats?.recentPurchases?.length > 0 ? (
                 stats.recentPurchases.map((purchase, idx) => (
@@ -1793,7 +1849,7 @@ Interested? Contact us today!
         </div>
       )}
 
-      {activeTab === "reports" && (
+      {canManageReports && activeTab === "reports" && (
         <div className="rounded-3xl border border-white/10 bg-slate-900/40">
           <div className="border-b border-white/10 p-5">
             <p className="text-sm font-semibold text-white">Listing Reports</p>
