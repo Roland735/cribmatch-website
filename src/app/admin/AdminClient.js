@@ -2,7 +2,6 @@
 
 import Image from "next/image";
 import { signOut } from "next-auth/react";
-import { supabase } from "@/lib/supabase";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
@@ -16,12 +15,6 @@ function randomId() {
     return crypto.randomUUID();
   }
   return `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
-}
-
-function sanitizeFilename(value) {
-  if (typeof value !== "string") return "photo";
-  const cleaned = value.trim().replace(/[^a-zA-Z0-9._-]+/g, "-");
-  return cleaned ? cleaned.slice(-100) : "photo";
 }
 
 const RESIDENTIAL_TYPES = ["Apartment", "House", "Cottage", "Garden flat", "Townhouse"];
@@ -321,27 +314,26 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
 
       queued.forEach(async (item, index) => {
         const file = selected[index];
-        const safeName = sanitizeFilename(file?.name || "photo");
-        const path = `${new Date().toISOString().slice(0, 10)}/${item.id}-${safeName}`;
 
         try {
-          // Set progress to something to show it started
           setImageUploads((current) =>
             current.map((entry) => (entry.id === item.id ? { ...entry, progress: 10 } : entry)),
           );
 
-          const { data, error } = await supabase.storage
-            .from("listings")
-            .upload(path, file, {
-              contentType: file?.type || "image/jpeg",
-              upsert: true
-            });
-
-          if (error) throw error;
-
-          const { data: { publicUrl } } = supabase.storage
-            .from("listings")
-            .getPublicUrl(path);
+          const body = new FormData();
+          body.append("file", file);
+          const response = await fetch("/api/uploads/listing-image", {
+            method: "POST",
+            body,
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(payload?.error || "Upload failed");
+          }
+          const publicUrl = typeof payload?.url === "string" ? payload.url.trim() : "";
+          if (!publicUrl) {
+            throw new Error("Upload returned an empty image URL");
+          }
 
           setImageUploads((current) =>
             current.map((entry) =>
@@ -1219,9 +1211,9 @@ Interested? Contact us today!
                         ? BOARDING_TYPES
                         : propertyCategory === "rent_a_chair"
                           ? RENT_A_CHAIR_TYPES
-                        : propertyCategory === "land"
-                          ? LAND_TYPES
-                          : RESIDENTIAL_TYPES
+                          : propertyCategory === "land"
+                            ? LAND_TYPES
+                            : RESIDENTIAL_TYPES
                     ).map((type) => (
                       <option key={type} value={type}>
                         {type}
