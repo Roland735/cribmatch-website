@@ -13,7 +13,7 @@ export default async function AdminPage() {
       <h1 className="text-balance text-3xl font-semibold tracking-tight text-white">
         Admin dashboard
       </h1>
-      <p className="mt-2 text-sm text-slate-300">Create and manage listings.</p>
+      <p className="mt-2 text-sm text-slate-300">Create listings, review activity, and manage pricing.</p>
       <AdminClient />
     </div>
   );

@@ -252,3 +252,92 @@ const ReportSchema = new mongoose.Schema({
 });
 
 export const Report = mongoose.models.Report || mongoose.model("Report", ReportSchema);
+
+const DEFAULT_PRICING_SETTINGS = {
+  contactUnlockPriceUsd: 2.5,
+  landlordListingPriceUsd: 0,
+};
+
+const PricingSettingsSchema = new mongoose.Schema(
+  {
+    _id: { type: String, default: "default" },
+    contactUnlockPriceUsd: { type: Number, required: true, min: 0, default: DEFAULT_PRICING_SETTINGS.contactUnlockPriceUsd },
+    landlordListingPriceUsd: { type: Number, required: true, min: 0, default: DEFAULT_PRICING_SETTINGS.landlordListingPriceUsd },
+  },
+  { timestamps: true },
+);
+
+export const PricingSettings =
+  mongoose.models.PricingSettings || mongoose.model("PricingSettings", PricingSettingsSchema);
+
+function normalizeMoney(value, fallback) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount < 0) return fallback;
+  return Math.round(amount * 100) / 100;
+}
+
+export async function getPricingSettings({ ensurePersisted = false } = {}) {
+  await dbConnect();
+  if (ensurePersisted) {
+    const persisted = await PricingSettings.findOneAndUpdate(
+      { _id: "default" },
+      {
+        $setOnInsert: {
+          contactUnlockPriceUsd: DEFAULT_PRICING_SETTINGS.contactUnlockPriceUsd,
+          landlordListingPriceUsd: DEFAULT_PRICING_SETTINGS.landlordListingPriceUsd,
+        },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    ).lean().exec();
+    return {
+      contactUnlockPriceUsd: normalizeMoney(
+        persisted?.contactUnlockPriceUsd,
+        DEFAULT_PRICING_SETTINGS.contactUnlockPriceUsd,
+      ),
+      landlordListingPriceUsd: normalizeMoney(
+        persisted?.landlordListingPriceUsd,
+        DEFAULT_PRICING_SETTINGS.landlordListingPriceUsd,
+      ),
+    };
+  }
+
+  const existing = await PricingSettings.findById("default").lean().exec();
+  return {
+    contactUnlockPriceUsd: normalizeMoney(
+      existing?.contactUnlockPriceUsd,
+      DEFAULT_PRICING_SETTINGS.contactUnlockPriceUsd,
+    ),
+    landlordListingPriceUsd: normalizeMoney(
+      existing?.landlordListingPriceUsd,
+      DEFAULT_PRICING_SETTINGS.landlordListingPriceUsd,
+    ),
+  };
+}
+
+export async function updatePricingSettings(input = {}) {
+  const current = await getPricingSettings({ ensurePersisted: true });
+  const contactUnlockPriceUsd = normalizeMoney(input?.contactUnlockPriceUsd, current.contactUnlockPriceUsd);
+  const landlordListingPriceUsd = normalizeMoney(input?.landlordListingPriceUsd, current.landlordListingPriceUsd);
+
+  const saved = await PricingSettings.findOneAndUpdate(
+    { _id: "default" },
+    {
+      $set: {
+        contactUnlockPriceUsd,
+        landlordListingPriceUsd,
+      },
+    },
+    { new: true, upsert: true, setDefaultsOnInsert: true },
+  ).lean().exec();
+
+  return {
+    contactUnlockPriceUsd: normalizeMoney(
+      saved?.contactUnlockPriceUsd,
+      DEFAULT_PRICING_SETTINGS.contactUnlockPriceUsd,
+    ),
+    landlordListingPriceUsd: normalizeMoney(
+      saved?.landlordListingPriceUsd,
+      DEFAULT_PRICING_SETTINGS.landlordListingPriceUsd,
+    ),
+  };
+}

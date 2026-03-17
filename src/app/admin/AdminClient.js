@@ -58,9 +58,15 @@ const COMMON_FEATURES = [
   "Fenced",
 ];
 
+function formatUsdAmount(value) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num.toFixed(2) : "0.00";
+}
+
 export default function AdminClient({ scope = "all", showSignOut = true } = {}) {
   const searchParams = useSearchParams();
-  const [activeTab, setActiveTab] = useState("listings"); // listings, reports, stats
+  const canManagePricing = scope === "all";
+  const [activeTab, setActiveTab] = useState("listings");
   const [stats, setStats] = useState(null);
   const [reports, setReports] = useState([]);
   const [loadingStats, setLoadingStats] = useState(false);
@@ -87,6 +93,17 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
   const [marketingFeatures, setMarketingFeatures] = useState([]);
   const [selectedMarketingIds, setSelectedMarketingIds] = useState(new Set());
   const [generatedPost, setGeneratedPost] = useState(null); // { id, text }
+  const [pricing, setPricing] = useState({
+    contactUnlockPriceUsd: 2.5,
+    landlordListingPriceUsd: 0,
+  });
+  const [pricingForm, setPricingForm] = useState({
+    contactUnlockPriceUsd: "2.50",
+    landlordListingPriceUsd: "0.00",
+  });
+  const [pricingError, setPricingError] = useState("");
+  const [pricingSaving, setPricingSaving] = useState(false);
+  const [loadingPricing, setLoadingPricing] = useState(false);
 
   const [title, setTitle] = useState("");
   const [city, setCity] = useState("Harare");
@@ -314,11 +331,37 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
     }
   }, []);
 
+  const loadPricing = useCallback(async () => {
+    try {
+      setLoadingPricing(true);
+      setPricingError("");
+      const response = await fetch("/api/admin/pricing");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.error || "Failed to load pricing");
+      }
+      const nextPricing = {
+        contactUnlockPriceUsd: Number(data?.pricing?.contactUnlockPriceUsd ?? 2.5),
+        landlordListingPriceUsd: Number(data?.pricing?.landlordListingPriceUsd ?? 0),
+      };
+      setPricing(nextPricing);
+      setPricingForm({
+        contactUnlockPriceUsd: formatUsdAmount(nextPricing.contactUnlockPriceUsd),
+        landlordListingPriceUsd: formatUsdAmount(nextPricing.landlordListingPriceUsd),
+      });
+    } catch (err) {
+      setPricingError(err?.message || "Failed to load pricing");
+    } finally {
+      setLoadingPricing(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (activeTab === "listings" || activeTab === "marketing") loadListings();
     if (activeTab === "stats") loadStats();
     if (activeTab === "reports") loadReports();
-  }, [activeTab, loadListings, loadStats, loadReports]);
+    if (activeTab === "pricing" && canManagePricing) loadPricing();
+  }, [activeTab, canManagePricing, loadListings, loadStats, loadReports, loadPricing]);
 
   const [isFormOpen, setIsFormOpen] = useState(false);
 
@@ -461,6 +504,44 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
     });
     if (response.ok) {
       await loadReports();
+    }
+  }
+
+  async function handleSavePricing() {
+    setPricingSaving(true);
+    setPricingError("");
+    try {
+      const contactUnlockPriceUsd = Number(pricingForm.contactUnlockPriceUsd);
+      const landlordListingPriceUsd = Number(pricingForm.landlordListingPriceUsd);
+      if (!Number.isFinite(contactUnlockPriceUsd) || contactUnlockPriceUsd < 0) {
+        throw new Error("Unlock price must be a non-negative number.");
+      }
+      if (!Number.isFinite(landlordListingPriceUsd) || landlordListingPriceUsd < 0) {
+        throw new Error("Landlord listing price must be a non-negative number.");
+      }
+
+      const response = await fetch("/api/admin/pricing", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ contactUnlockPriceUsd, landlordListingPriceUsd }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.error || "Failed to save pricing");
+      }
+      const nextPricing = {
+        contactUnlockPriceUsd: Number(data?.pricing?.contactUnlockPriceUsd ?? contactUnlockPriceUsd),
+        landlordListingPriceUsd: Number(data?.pricing?.landlordListingPriceUsd ?? landlordListingPriceUsd),
+      };
+      setPricing(nextPricing);
+      setPricingForm({
+        contactUnlockPriceUsd: formatUsdAmount(nextPricing.contactUnlockPriceUsd),
+        landlordListingPriceUsd: formatUsdAmount(nextPricing.landlordListingPriceUsd),
+      });
+    } catch (error) {
+      setPricingError(error?.message || "Failed to save pricing");
+    } finally {
+      setPricingSaving(false);
     }
   }
 
@@ -812,6 +893,17 @@ Interested? Contact us today!
           >
             Reports
           </button>
+          {canManagePricing ? (
+            <button
+              onClick={() => setActiveTab("pricing")}
+              className={`rounded-full px-6 py-2 text-sm font-semibold transition ${activeTab === "pricing"
+                ? "bg-emerald-400 text-slate-950 shadow-lg shadow-emerald-400/20"
+                : "text-slate-400 hover:text-white"
+                }`}
+            >
+              Pricing
+            </button>
+          ) : null}
           <button
             onClick={() => setActiveTab("marketing")}
             className={`rounded-full px-6 py-2 text-sm font-semibold transition ${activeTab === "marketing"
@@ -1487,6 +1579,69 @@ Interested? Contact us today!
                 <p className="text-sm text-slate-400">No reports found.</p>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {canManagePricing && activeTab === "pricing" && (
+        <div className="space-y-6">
+          <div className="rounded-3xl border border-white/10 bg-slate-900/40 p-6">
+            <p className="text-sm font-semibold text-white">Pricing controls</p>
+            <p className="mt-2 text-sm text-slate-300">
+              Set prices once and sync them across web checkout and WhatsApp flows.
+            </p>
+
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="block text-sm font-medium text-slate-200" htmlFor="contactUnlockPriceUsd">
+                  Unlock contact details (USD per listing)
+                </label>
+                <input
+                  id="contactUnlockPriceUsd"
+                  inputMode="decimal"
+                  value={pricingForm.contactUnlockPriceUsd}
+                  onChange={(event) =>
+                    setPricingForm((current) => ({ ...current, contactUnlockPriceUsd: event.target.value }))
+                  }
+                  className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+                  placeholder="2.50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-200" htmlFor="landlordListingPriceUsd">
+                  Landlord listing fee (USD per listing)
+                </label>
+                <input
+                  id="landlordListingPriceUsd"
+                  inputMode="decimal"
+                  value={pricingForm.landlordListingPriceUsd}
+                  onChange={(event) =>
+                    setPricingForm((current) => ({ ...current, landlordListingPriceUsd: event.target.value }))
+                  }
+                  className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+
+            {pricingError ? (
+              <p className="mt-4 text-sm text-rose-200">{pricingError}</p>
+            ) : null}
+
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs text-slate-400">
+                Current: Unlock ${formatUsdAmount(pricing.contactUnlockPriceUsd)} • Landlord ${formatUsdAmount(pricing.landlordListingPriceUsd)}
+              </p>
+              <button
+                type="button"
+                onClick={handleSavePricing}
+                disabled={pricingSaving || loadingPricing}
+                className="rounded-full bg-emerald-400 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {pricingSaving ? "Saving..." : "Save pricing"}
+              </button>
+            </div>
           </div>
         </div>
       )}

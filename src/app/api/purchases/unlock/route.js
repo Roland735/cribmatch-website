@@ -72,6 +72,7 @@ export async function POST(request) {
       ok: true,
       transactionId: started.transactionId,
       reference: started.reference,
+      amount: started.amount,
       instructions: started.instructions || "",
       status: "pending_confirmation",
       paid: false,

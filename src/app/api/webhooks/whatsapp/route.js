@@ -10,7 +10,7 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import mongoose from "mongoose";
-import { dbConnect, WebhookEvent, Listing, Purchase } from "@/lib/db";
+import { dbConnect, getPricingSettings, WebhookEvent, Listing, Purchase } from "@/lib/db";
 import Message from "@/lib/Message";
 import { getListingById, searchPublishedListings, getListingFacets, getListingByShortId } from "@/lib/getListings";
 import { supabaseAdmin } from "@/lib/supabase";
@@ -34,6 +34,21 @@ console.log(
    Utilities
 ------------------------- */
 function digitsOnly(v) { return String(v || "").replace(/\D/g, ""); }
+function formatUsd(value) {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount.toFixed(2) : "0.00";
+}
+async function getPricingForMessaging() {
+  try {
+    const pricing = await getPricingSettings();
+    return {
+      contactUnlockPriceUsd: Number(pricing?.contactUnlockPriceUsd ?? 2.5),
+      landlordListingPriceUsd: Number(pricing?.landlordListingPriceUsd ?? 0),
+    };
+  } catch {
+    return { contactUnlockPriceUsd: 2.5, landlordListingPriceUsd: 0 };
+  }
+}
 function _safeGet(obj, path) { try { return path.reduce((o, k) => (o && o[k] != null ? o[k] : undefined), obj); } catch (e) { return undefined; } }
 function _now() { return Date.now(); }
 function _hash(s) { try { return crypto.createHash("md5").update(String(s)).digest("hex"); } catch (e) { return String(s).slice(0, 128); } }
@@ -2980,9 +2995,13 @@ export async function POST(request) {
 
   // list a property
   if (cmd === "list" || cmd === "list a property" || cmd === "menu_list") {
+    const pricing = await getPricingForMessaging();
+    const listingFeeText = Number(pricing.landlordListingPriceUsd) <= 0
+      ? "Current listing fee: Free."
+      : `Current listing fee: USD ${formatUsd(pricing.landlordListingPriceUsd)} per listing.`;
     const flowResp = await sendListPropertyFlow(phone, {
       headerText: "📝 List a property",
-      bodyText: "Ready to list your property? Fill out the form below to get started.\n\nRequired fields are marked.",
+      bodyText: `Ready to list your property? Fill out the form below to get started.\n\n${listingFeeText}\nRequired fields are marked.`,
       footerText: "Open Listing Form",
       flow_cta: "📝 Create Listing",
     }).catch((e) => ({ error: e }));
@@ -3664,9 +3683,10 @@ async function startListingPaymentFlow({ phone, listing, dbAvailable, savedMsg, 
 
     const listingCode = getShortIdFromListing(listing);
     const listingLabel = listingCode ? `${listing.title || "Listing"} (${listingCode})` : (listing.title || "Listing");
+    const pricing = await getPricingForMessaging();
     await sendInteractiveButtons(
       phone,
-      `🔒 To unlock contact details for ${listingLabel}, pay USD 1 via PayNow EcoCash.\n\nReply with your EcoCash number (e.g. 0771234567).`,
+      `🔒 To unlock contact details for ${listingLabel}, pay USD ${formatUsd(pricing.contactUnlockPriceUsd)} via PayNow EcoCash.\n\nReply with your EcoCash number (e.g. 0771234567).`,
       [{ id: "menu_main", title: "🏠 Main menu" }],
       { headerText: "PayNow EcoCash" }
     );

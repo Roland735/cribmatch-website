@@ -2,9 +2,12 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import Link from "next/link";
 import AdminClient from "../admin/AdminClient";
+import { getPricingSettings } from "@/lib/db";
 
 export default async function Landlords() {
   const session = await getServerSession(authOptions);
+  const pricing = await getPricingSettings({ ensurePersisted: true });
+  const landlordListingPriceUsd = Number(pricing?.landlordListingPriceUsd || 0);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-50">
@@ -87,6 +90,9 @@ export default async function Landlords() {
                   </p>
                   <p className="mt-3 text-sm leading-6 text-emerald-100/90">
                     Sign in to list your property directly on the web or use WhatsApp.
+                  </p>
+                  <p className="mt-3 text-xs text-emerald-100/80">
+                    Current listing fee: {landlordListingPriceUsd === 0 ? "Free" : `$${landlordListingPriceUsd.toFixed(2)} per listing`}.
                   </p>
                 </div>
                 <div className="mt-6 flex flex-wrap gap-3">

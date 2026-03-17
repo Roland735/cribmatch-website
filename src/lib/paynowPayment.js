@@ -1,12 +1,12 @@
 // /lib/paynowEcocash.js
 import crypto from "crypto";
-import { dbConnect, PaymentTransaction } from "@/lib/db";
+import { dbConnect, getPricingSettings, PaymentTransaction } from "@/lib/db";
 
 const PAYNOW_INTEGRATION_ID = process.env.PAYNOW_INTEGRATION_ID || "22925";
 const PAYNOW_INTEGRATION_KEY = process.env.PAYNOW_INTEGRATION_KEY || "290c9058-50a4-4bbf-b999-d07c2cd46c44";
 const PAYNOW_COMPANY = process.env.PAYNOW_COMPANY || "Omnirol";
 const PAYNOW_PAYMENT_LINK_LABEL = process.env.PAYNOW_PAYMENT_LINK_LABEL || "Rentals App";
-const CONTACT_UNLOCK_AMOUNT = Number(process.env.PAYNOW_CONTACT_UNLOCK_AMOUNT || 1);
+const CONTACT_UNLOCK_AMOUNT = Number(process.env.PAYNOW_CONTACT_UNLOCK_AMOUNT || 2.5);
 const PAYNOW_CURRENCY = String(process.env.PAYNOW_CURRENCY || "USD").toUpperCase();
 const BASE_URL = process.env.APP_BASE_URL || process.env.NEXTAUTH_URL || "https://cribmatch.app";
 const PAYNOW_TEST_MODE = String(process.env.PAYNOW_TEST_MODE || "").toLowerCase() === "true";
@@ -190,7 +190,10 @@ export async function initiatePaynowEcocashPayment({ phone, payerMobile, listing
   const listingCode = String(listing?.shortId || "").toUpperCase();
   const listingTitle = String(listing?.title || "Property listing");
   const reference = buildReference(listingCode);
-  const amount = Number.isFinite(CONTACT_UNLOCK_AMOUNT) ? CONTACT_UNLOCK_AMOUNT : 1;
+  const pricing = await getPricingSettings();
+  const amount = Number.isFinite(Number(pricing?.contactUnlockPriceUsd))
+    ? Number(pricing.contactUnlockPriceUsd)
+    : (Number.isFinite(CONTACT_UNLOCK_AMOUNT) ? CONTACT_UNLOCK_AMOUNT : 2.5);
 
   const tx = await PaymentTransaction.create({
     phone: normalizedPhone,
@@ -232,6 +235,7 @@ export async function initiatePaynowEcocashPayment({ phone, payerMobile, listing
       ok: true,
       transactionId: String(tx._id),
       reference,
+      amount,
       pollUrl: `test://paynow/${testScenario}/${reference}`,
       retriesUsed: 0,
       instructions: testScenario.startsWith("delayed")
@@ -325,6 +329,7 @@ export async function initiatePaynowEcocashPayment({ phone, payerMobile, listing
           ok: true,
           transactionId: String(tx._id),
           reference,
+          amount,
           pollUrl,
           retriesUsed: attempt,
           instructions: String(response?.instructions || response?.message || response?.Message || `Approve the ${PAYNOW_CURRENCY} EcoCash USSD prompt on your phone to complete payment.`),

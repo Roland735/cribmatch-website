@@ -1,4 +1,10 @@
-export default function Pricing() {
+import { getPricingSettings } from "@/lib/db";
+
+export default async function Pricing() {
+  const pricing = await getPricingSettings({ ensurePersisted: true });
+  const unlockPrice = Number(pricing?.contactUnlockPriceUsd || 0);
+  const landlordPrice = Number(pricing?.landlordListingPriceUsd || 0);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-50">
       <div className="mx-auto max-w-6xl px-6 py-16 lg:px-8">
@@ -11,8 +17,7 @@ export default function Pricing() {
             Simple, transparent pricing
           </h1>
           <p className="mt-4 text-pretty text-base leading-relaxed text-slate-300 sm:text-lg">
-            Keep it straightforward: start for free, then upgrade for priority
-            placement when you need it.
+            Admin-managed pricing updates automatically on web and WhatsApp.
           </p>
         </div>
 
@@ -21,29 +26,31 @@ export default function Pricing() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-base font-semibold text-white">
-                  Basic listing
+                  Landlord listing fee
                 </h2>
                 <p className="mt-2 text-sm text-slate-300">
-                  Perfect for single properties. Get web exposure and handle enquiries on WhatsApp.
+                  Price paid by landlords or agents to publish one property listing.
                 </p>
               </div>
               <div className="text-right">
-                <p className="text-3xl font-semibold text-white">Free</p>
-                <p className="text-xs text-slate-400">Launch offer</p>
+                <p className="text-3xl font-semibold text-white">
+                  {landlordPrice === 0 ? "Free" : `$${landlordPrice.toFixed(2)}`}
+                </p>
+                <p className="text-xs text-slate-400">Per listing</p>
               </div>
             </div>
             <div className="mt-6 grid gap-2 text-sm text-slate-300">
               <p className="flex items-start gap-2">
                 <span className="text-emerald-300">•</span>
-                Standard exposure
+                One-time charge for each posted listing
               </p>
               <p className="flex items-start gap-2">
                 <span className="text-emerald-300">•</span>
-                Direct WhatsApp enquiries
+                Appears on web and WhatsApp channels
               </p>
               <p className="flex items-start gap-2">
                 <span className="text-emerald-300">•</span>
-                30-day active listing
+                Admin can change this anytime
               </p>
             </div>
             <a
@@ -60,29 +67,29 @@ export default function Pricing() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-base font-semibold text-white">
-                  Featured listing
+                  Contact unlock fee
                 </h2>
                 <p className="mt-2 text-sm text-emerald-100/90">
-                  Priority placement and faster matching for high-demand units.
+                  Price renters pay to unlock contact details for one listing.
                 </p>
               </div>
               <div className="text-right">
-                <p className="text-3xl font-semibold text-white">$5</p>
-                <p className="text-xs text-emerald-100/80">USD / month</p>
+                <p className="text-3xl font-semibold text-white">${unlockPrice.toFixed(2)}</p>
+                <p className="text-xs text-emerald-100/80">USD / listing</p>
               </div>
             </div>
             <div className="mt-6 grid gap-2 text-sm text-emerald-100/90">
               <p className="flex items-start gap-2">
                 <span className="text-emerald-200">•</span>
-                Priority placement in featured slots
+                Unlocks phone, WhatsApp, and email details
               </p>
               <p className="flex items-start gap-2">
                 <span className="text-emerald-200">•</span>
-                Broadcast to matching renters
+                One-time payment per listing
               </p>
               <p className="flex items-start gap-2">
                 <span className="text-emerald-200">•</span>
-                Faster viewing coordination
+                Works on web and WhatsApp flows
               </p>
             </div>
             <a
@@ -98,8 +105,7 @@ export default function Pricing() {
 
         <div className="mx-auto mt-12 max-w-4xl rounded-3xl border border-white/10 bg-slate-900/40 p-6">
           <p className="text-sm text-slate-300">
-            For agent partner plans and volume discounts, message us on WhatsApp
-            and tell us how many properties you manage.
+            Need bulk plans for many listings? Message us on WhatsApp for custom pricing.
           </p>
         </div>
       </div>
