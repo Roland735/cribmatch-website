@@ -20,6 +20,116 @@ function serializeListing(listing) {
   };
 }
 
+function toValidNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function normalizeListingPayload(body = {}) {
+  const title = typeof body?.title === "string" ? body.title.trim() : "";
+  const city = typeof body?.city === "string" ? body.city.trim() : "";
+  const suburb = typeof body?.suburb === "string" ? body.suburb.trim() : "";
+  const propertyCategoryRaw =
+    typeof body?.propertyCategory === "string" ? body.propertyCategory.trim() : "";
+  const propertyCategory = propertyCategoryRaw
+    ? KNOWN_PROPERTY_CATEGORIES.includes(propertyCategoryRaw)
+      ? propertyCategoryRaw
+      : null
+    : "residential";
+  const propertyTypeRaw =
+    typeof body?.propertyType === "string" ? body.propertyType.trim() : "";
+  const propertyType =
+    propertyCategory === "commercial" && propertyTypeRaw === "Retail"
+      ? "Retail warehouse"
+      : propertyTypeRaw;
+  const allowedTypes = propertyCategory ? KNOWN_PROPERTY_TYPES_BY_CATEGORY[propertyCategory] || [] : [];
+  const pricePerMonth = toValidNumber(body?.pricePerMonth);
+  const deposit = toValidNumber(body?.deposit);
+  const bedrooms = toValidNumber(body?.bedrooms);
+  const description =
+    typeof body?.description === "string" ? body.description.trim() : "";
+  const features = Array.isArray(body?.features)
+    ? body.features.filter((f) => typeof f === "string" && f.trim()).slice(0, 12)
+    : [];
+  const images = Array.isArray(body?.images)
+    ? body.images
+      .filter((url) => typeof url === "string" && url.trim())
+      .slice(0, 12)
+    : [];
+  const contactName =
+    typeof body?.contactName === "string" ? body.contactName.trim() : "";
+  const contactPhone =
+    typeof body?.contactPhone === "string" ? body.contactPhone.trim() : "";
+  const contactWhatsApp =
+    typeof body?.contactWhatsApp === "string"
+      ? body.contactWhatsApp.trim()
+      : "";
+  const contactEmail =
+    typeof body?.contactEmail === "string" ? body.contactEmail.trim() : "";
+  const status = body?.status === "draft" ? "draft" : body?.status === "archived" ? "archived" : "published";
+  const occupancy = typeof body?.occupancy === "string" ? body.occupancy.trim() : "";
+  const genderPreference =
+    typeof body?.genderPreference === "string" ? body.genderPreference.trim() : "";
+  const duration = typeof body?.duration === "string" ? body.duration.trim() : "";
+  const numberOfStudentsRaw = toValidNumber(body?.numberOfStudents);
+  const numberOfStudents =
+    numberOfStudentsRaw !== null ? Math.floor(numberOfStudentsRaw) : null;
+
+  return {
+    title,
+    city,
+    suburb,
+    propertyCategory,
+    propertyType,
+    allowedTypes,
+    pricePerMonth,
+    deposit,
+    bedrooms,
+    description,
+    features,
+    images,
+    contactName,
+    contactPhone,
+    contactWhatsApp,
+    contactEmail,
+    status,
+    occupancy,
+    genderPreference,
+    duration,
+    numberOfStudents,
+  };
+}
+
+function validateListingPayload(payload) {
+  if (!payload.propertyCategory) return "Invalid property category";
+  if (!payload.propertyType || !payload.allowedTypes.includes(payload.propertyType)) {
+    return "Invalid property type for category";
+  }
+  if (!payload.title || !payload.city || !payload.suburb) {
+    return "Missing required fields";
+  }
+  if (payload.pricePerMonth === null || payload.pricePerMonth < 0) {
+    return "Price per month must be a non-negative number";
+  }
+  if (payload.deposit !== null && payload.deposit < 0) {
+    return "Deposit must be a non-negative number";
+  }
+  if (payload.bedrooms === null || payload.bedrooms < 0) {
+    return "Bedrooms must be a non-negative number";
+  }
+  if (payload.propertyCategory === "boarding") {
+    if (!payload.occupancy || !payload.genderPreference || !payload.duration) {
+      return "Boarding listings require occupancy, gender preference, and duration";
+    }
+    if (
+      payload.numberOfStudents === null ||
+      payload.numberOfStudents <= 0
+    ) {
+      return "Boarding listings require number of students greater than zero";
+    }
+  }
+  return "";
+}
+
 export async function GET(request) {
   const url = new URL(request.url);
   const includeAll = url.searchParams.get("all") === "1";
@@ -148,64 +258,11 @@ export async function POST(request) {
   }
 
   const body = await request.json();
-  const title = typeof body?.title === "string" ? body.title.trim() : "";
-  const city = typeof body?.city === "string" ? body.city.trim() : "Harare";
-  const suburb = typeof body?.suburb === "string" ? body.suburb.trim() : "";
-  const propertyCategoryRaw =
-    typeof body?.propertyCategory === "string" ? body.propertyCategory.trim() : "";
-  const propertyCategory = propertyCategoryRaw
-    ? KNOWN_PROPERTY_CATEGORIES.includes(propertyCategoryRaw)
-      ? propertyCategoryRaw
-      : null
-    : "residential";
-  if (!propertyCategory) {
-    return Response.json({ error: "Invalid property category" }, { status: 400 });
-  }
-  const propertyType =
-    typeof body?.propertyType === "string" ? body.propertyType.trim() : "";
-  const normalizedPropertyType =
-    propertyCategory === "commercial" && propertyType === "Retail"
-      ? "Retail warehouse"
-      : propertyType;
-  const allowedTypes = KNOWN_PROPERTY_TYPES_BY_CATEGORY[propertyCategory] || [];
-  if (!normalizedPropertyType || !allowedTypes.includes(normalizedPropertyType)) {
-    return Response.json(
-      { error: "Invalid property type for category" },
-      { status: 400 },
-    );
-  }
-  const pricePerMonth =
-    typeof body?.pricePerMonth === "number" ? body.pricePerMonth : null;
-  const deposit = typeof body?.deposit === "number" ? body.deposit : null;
-  const bedrooms = typeof body?.bedrooms === "number" ? body.bedrooms : null;
-  const description =
-    typeof body?.description === "string" ? body.description.trim() : "";
-  const features = Array.isArray(body?.features)
-    ? body.features.filter((f) => typeof f === "string" && f.trim()).slice(0, 12)
-    : [];
-  const images = Array.isArray(body?.images)
-    ? body.images
-      .filter((url) => typeof url === "string" && url.trim())
-      .slice(0, 12)
-    : [];
-  const contactName =
-    typeof body?.contactName === "string" ? body.contactName.trim() : "";
-  const contactPhone =
-    typeof body?.contactPhone === "string" ? body.contactPhone.trim() : "";
-  const contactWhatsApp =
-    typeof body?.contactWhatsApp === "string"
-      ? body.contactWhatsApp.trim()
-      : "";
-  const contactEmail =
-    typeof body?.contactEmail === "string" ? body.contactEmail.trim() : "";
-  const status = body?.status === "draft" ? "draft" : body?.status === "archived" ? "archived" : "published";
+  const payload = normalizeListingPayload(body);
   const approved = isAdmin && typeof body?.approved === "boolean" ? body.approved : false;
-
-  if (!title || !suburb || pricePerMonth === null || bedrooms === null) {
-    return Response.json(
-      { error: "Missing required fields" },
-      { status: 400 },
-    );
+  const validationError = validateListingPayload(payload);
+  if (validationError) {
+    return Response.json({ error: validationError }, { status: 400 });
   }
 
   const now = new Date();
@@ -213,26 +270,31 @@ export async function POST(request) {
   await dbConnect();
 
   const listing = await Listing.create({
-    title,
+    title: payload.title,
     listerPhoneNumber,
-    city,
-    suburb,
-    propertyCategory,
-    propertyType: normalizedPropertyType,
-    pricePerMonth,
-    deposit,
-    bedrooms,
-    description,
-    features,
-    images,
+    city: payload.city,
+    suburb: payload.suburb,
+    propertyCategory: payload.propertyCategory,
+    propertyType: payload.propertyType,
+    pricePerMonth: payload.pricePerMonth,
+    deposit: payload.deposit,
+    bedrooms: payload.bedrooms,
+    description: payload.description,
+    features: payload.features,
+    images: payload.images,
     contactName:
-      contactName ||
+      payload.contactName ||
       (typeof session?.user?.name === "string" ? session.user.name.trim() : "") ||
       "",
-    contactPhone: contactPhone || listerPhoneNumber,
-    contactWhatsApp: contactWhatsApp || listerPhoneNumber,
-    contactEmail,
-    status,
+    contactPhone: payload.contactPhone || listerPhoneNumber,
+    contactWhatsApp: payload.contactWhatsApp || listerPhoneNumber,
+    contactEmail: payload.contactEmail,
+    occupancy: payload.propertyCategory === "boarding" ? payload.occupancy : "",
+    genderPreference: payload.propertyCategory === "boarding" ? payload.genderPreference : "",
+    duration: payload.propertyCategory === "boarding" ? payload.duration : "",
+    numberOfStudents:
+      payload.propertyCategory === "boarding" ? payload.numberOfStudents : null,
+    status: payload.status,
     approved, // Admin can set this on create, users always false
     createdAt: now,
     updatedAt: now,

@@ -737,12 +737,16 @@ export async function getListingFacets() {
 
   await dbConnect();
   await synchronizeListingSearchFields();
-  const [suburbsRaw, citiesRaw, featuresRaw, propertyCategoriesRaw, propertyTypesRaw] = await Promise.all([
+  const [suburbsRaw, citiesRaw, featuresRaw, propertyCategoriesRaw, propertyTypesRaw, locationRows] = await Promise.all([
     Listing.distinct("suburb", { status: "published" }),
     Listing.distinct("city", { status: "published" }),
     Listing.distinct("features", { status: "published" }),
     Listing.distinct("propertyCategory", { status: "published" }),
     Listing.distinct("propertyType", { status: "published" }),
+    Listing.find(
+      { status: "published" },
+      { city: 1, suburb: 1, _id: 0 },
+    ).lean(),
   ]);
 
   const suburbs = toStringArray(suburbsRaw)
@@ -762,11 +766,21 @@ export async function getListingFacets() {
   ).sort((a, b) => a.localeCompare(b));
 
   const suburbsByCity = cities.reduce((acc, city) => {
-    acc[city] = suburbs
-      .filter((sub) => normalizeText(sub).includes(normalizeText(city)))
-      .sort((a, b) => a.localeCompare(b));
+    acc[city] = [];
     return acc;
   }, {});
+  for (const row of Array.isArray(locationRows) ? locationRows : []) {
+    const cityRaw = toSafeString(row?.city).trim() || inferCityFromSuburb(row?.suburb);
+    const suburbRaw = toSafeString(row?.suburb).trim();
+    if (!cityRaw || !suburbRaw) continue;
+    if (!suburbsByCity[cityRaw]) suburbsByCity[cityRaw] = [];
+    suburbsByCity[cityRaw].push(suburbRaw);
+  }
+  for (const cityName of Object.keys(suburbsByCity)) {
+    suburbsByCity[cityName] = Array.from(new Set(suburbsByCity[cityName])).sort((a, b) =>
+      a.localeCompare(b),
+    );
+  }
   const features = toStringArray(featuresRaw)
     .map((s) => s.trim())
     .filter(Boolean)

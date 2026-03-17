@@ -20,6 +20,10 @@ function serializeListing(listing) {
   };
 }
 
+function toValidNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 export async function GET(_request, { params }) {
   const { id } = await params;
   if (!process.env.MONGODB_URI) {
@@ -111,8 +115,8 @@ export async function PATCH(request, { params }) {
   if (typeof body?.title === "string") update.title = body.title.trim();
   if (typeof body?.city === "string") update.city = body.city.trim();
   if (typeof body?.suburb === "string") update.suburb = body.suburb.trim();
-  if (typeof body?.pricePerMonth === "number")
-    update.pricePerMonth = body.pricePerMonth;
+  if (typeof body?.pricePerMonth === "number") update.pricePerMonth = body.pricePerMonth;
+  if (typeof body?.deposit === "number") update.deposit = body.deposit;
   if (typeof body?.bedrooms === "number") update.bedrooms = body.bedrooms;
   if (typeof body?.description === "string")
     update.description = body.description.trim();
@@ -134,12 +138,75 @@ export async function PATCH(request, { params }) {
     update.contactWhatsApp = body.contactWhatsApp.trim();
   if (typeof body?.contactEmail === "string")
     update.contactEmail = body.contactEmail.trim();
+  if (typeof body?.occupancy === "string") update.occupancy = body.occupancy.trim();
+  if (typeof body?.genderPreference === "string")
+    update.genderPreference = body.genderPreference.trim();
+  if (typeof body?.duration === "string") update.duration = body.duration.trim();
+  if (typeof body?.numberOfStudents === "number")
+    update.numberOfStudents = Math.floor(body.numberOfStudents);
   if (body?.status === "draft" || body?.status === "published" || body?.status === "archived") {
     update.status = body.status;
   }
   if (isAdmin && typeof body?.marketed === "boolean") {
     update.marketed = body.marketed;
     update.marketedAt = body.marketed ? new Date() : null;
+  }
+
+  const nextCategoryValidated = typeof update.propertyCategory === "string" ? update.propertyCategory : existing.propertyCategory;
+  const nextAllowedTypes = KNOWN_PROPERTY_TYPES_BY_CATEGORY[nextCategoryValidated] || [];
+  const nextTypeValidated = typeof update.propertyType === "string" ? update.propertyType : existing.propertyType;
+  if (!nextTypeValidated || !nextAllowedTypes.includes(nextTypeValidated)) {
+    return Response.json(
+      { error: "Invalid property type for category" },
+      { status: 400 },
+    );
+  }
+
+  const nextTitle = typeof update.title === "string" ? update.title : existing.title;
+  const nextCity = typeof update.city === "string" ? update.city : existing.city;
+  const nextSuburb = typeof update.suburb === "string" ? update.suburb : existing.suburb;
+  const nextPrice = update.pricePerMonth !== undefined ? toValidNumber(update.pricePerMonth) : toValidNumber(existing.pricePerMonth);
+  const nextDeposit = update.deposit !== undefined ? toValidNumber(update.deposit) : toValidNumber(existing.deposit);
+  const nextBedrooms = update.bedrooms !== undefined ? toValidNumber(update.bedrooms) : toValidNumber(existing.bedrooms);
+  const nextOccupancy = typeof update.occupancy === "string" ? update.occupancy : existing.occupancy;
+  const nextGenderPreference =
+    typeof update.genderPreference === "string" ? update.genderPreference : existing.genderPreference;
+  const nextDuration = typeof update.duration === "string" ? update.duration : existing.duration;
+  const nextNumberOfStudents =
+    update.numberOfStudents !== undefined
+      ? toValidNumber(update.numberOfStudents)
+      : toValidNumber(existing.numberOfStudents);
+
+  if (!String(nextTitle || "").trim() || !String(nextCity || "").trim() || !String(nextSuburb || "").trim()) {
+    return Response.json({ error: "Missing required fields" }, { status: 400 });
+  }
+  if (nextPrice === null || nextPrice < 0) {
+    return Response.json({ error: "Price per month must be a non-negative number" }, { status: 400 });
+  }
+  if (nextDeposit !== null && nextDeposit < 0) {
+    return Response.json({ error: "Deposit must be a non-negative number" }, { status: 400 });
+  }
+  if (nextBedrooms === null || nextBedrooms < 0) {
+    return Response.json({ error: "Bedrooms must be a non-negative number" }, { status: 400 });
+  }
+  if (nextCategoryValidated === "boarding") {
+    if (!String(nextOccupancy || "").trim() || !String(nextGenderPreference || "").trim() || !String(nextDuration || "").trim()) {
+      return Response.json(
+        { error: "Boarding listings require occupancy, gender preference, and duration" },
+        { status: 400 },
+      );
+    }
+    if (nextNumberOfStudents === null || nextNumberOfStudents <= 0) {
+      return Response.json(
+        { error: "Boarding listings require number of students greater than zero" },
+        { status: 400 },
+      );
+    }
+  } else {
+    if (update.occupancy === undefined) update.occupancy = "";
+    if (update.genderPreference === undefined) update.genderPreference = "";
+    if (update.duration === undefined) update.duration = "";
+    if (update.numberOfStudents === undefined) update.numberOfStudents = null;
   }
 
   update.updatedAt = new Date();

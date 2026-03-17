@@ -30,37 +30,71 @@ const BOARDING_TYPES = ["Boarding house (university)", "Boarding house", "Studen
 
 const COMMERCIAL_TYPES = ["Office", "Shop", "Retail warehouse", "Warehouse", "Factory", "Workshop"];
 
+const RENT_A_CHAIR_TYPES = ["Barbering", "Hair Styling", "Nail Services", "Makeup Artistry", "Massage Therapy", "Other Services"];
+
 const LAND_TYPES = ["Farm", "Stand", "Plot"];
 
-const COMMON_FEATURES = [
+const RESIDENTIAL_FEATURES = [
   "Borehole",
-  "Solar",
-  "Inverter",
-  "Generator",
-  "Solar geyser",
-  "Alarm",
-  "Electric gate",
-  "Walled & gated",
-  "Security",
-  "Parking",
+  "Solar Backup",
+  "Solar Geyser",
+  "Internet",
+  "Fenced/Secure",
+  "Garage",
   "Garden",
-  "Pool",
-  "Water available",
-  "WiFi",
   "Furnished",
-  "Loading bay",
-  "3-phase power",
-  "High foot traffic",
-  "Street-facing",
-  "Caretaker",
-  "Walking distance to campus",
-  "Road access",
-  "Fenced",
+  "Pets Allowed",
+  "Air Conditioning",
 ];
+
+const BOARDING_FEATURES = [
+  "Meals Included",
+  "WiFi / Internet",
+  "Laundry Service",
+  "Shared Kitchen",
+  "Study Area",
+  "Common Room / Lounge",
+  "Parking Available",
+  "24/7 Security",
+  "Cleaning Service",
+  "Utilities Included",
+  "Near Public Transport",
+  "Near University/College",
+];
+
+const COMMERCIAL_FEATURES = [
+  "High Foot Traffic",
+  "Parking Available",
+  "Loading Bay/Dock",
+  "Air Conditioning",
+  "Security System",
+  "Storage Space",
+  "Backup Power",
+];
+
+const CHAIR_FEATURES = [
+  "Private Space",
+  "Shared Space",
+  "All Inclusive",
+  "Furnished",
+  "Parking Available",
+  "Utilities Included",
+];
+
+const BOARDING_OCCUPANCY_OPTIONS = ["1 Person", "2 People", "3 People", "4+ People"];
+const BOARDING_GENDER_OPTIONS = ["Male Only", "Female Only", "Mixed"];
+const BOARDING_DURATION_OPTIONS = ["Short Term (1-3 months)", "Medium Term (3-6 months)", "Long Term (6+ months)"];
 
 function formatUsdAmount(value) {
   const num = Number(value);
   return Number.isFinite(num) ? num.toFixed(2) : "0.00";
+}
+
+function getNeighborhoodLabel(value) {
+  if (typeof value !== "string") return "";
+  const raw = value.trim();
+  if (!raw) return "";
+  return raw.split(",")[0]?.trim() || raw;
 }
 
 export default function AdminClient({ scope = "all", showSignOut = true } = {}) {
@@ -111,6 +145,10 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
   const [suburb, setSuburb] = useState("");
   const [propertyCategory, setPropertyCategory] = useState("residential");
   const [propertyType, setPropertyType] = useState(RESIDENTIAL_TYPES[0]);
+  const [occupancy, setOccupancy] = useState("");
+  const [genderPreference, setGenderPreference] = useState("");
+  const [duration, setDuration] = useState("");
+  const [numberOfStudents, setNumberOfStudents] = useState("");
   const [pricePerMonth, setPricePerMonth] = useState("");
   const [deposit, setDeposit] = useState("");
   const [bedrooms, setBedrooms] = useState("");
@@ -123,6 +161,8 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
   const [editingListingId, setEditingListingId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [cities, setCities] = useState([]);
+  const [suburbsByCity, setSuburbsByCity] = useState({});
   const uploadTasksRef = useRef(new Map());
 
   const cleanedImages = useMemo(() => {
@@ -148,17 +188,68 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
       .slice(0, 12);
   }, [selectedFeatures]);
 
+  const availableSuburbs = useMemo(() => {
+    const selectedCity = city.trim();
+    if (!selectedCity) return [];
+    const list = suburbsByCity?.[selectedCity];
+    return Array.isArray(list) ? list : [];
+  }, [city, suburbsByCity]);
+
+  const featureOptions = useMemo(() => {
+    if (propertyCategory === "boarding") return BOARDING_FEATURES;
+    if (propertyCategory === "commercial") return COMMERCIAL_FEATURES;
+    if (propertyCategory === "rent_a_chair") return CHAIR_FEATURES;
+    return RESIDENTIAL_FEATURES;
+  }, [propertyCategory]);
+
+  const formValidationError = useMemo(() => {
+    if (!title.trim()) return "Title is required.";
+    if (!city.trim()) return "City is required.";
+    if (!suburb.trim()) return "Suburb is required.";
+    if (!propertyType.trim()) return "Property type is required.";
+
+    const priceValue = toNumber(pricePerMonth);
+    if (priceValue === null || priceValue < 0) return "Price per month must be a non-negative number.";
+
+    const depositValue = deposit.trim() ? toNumber(deposit) : 0;
+    if (deposit.trim() && (depositValue === null || depositValue < 0)) {
+      return "Deposit must be a non-negative number.";
+    }
+
+    const bedroomsValue = toNumber(bedrooms);
+    if (bedroomsValue === null || bedroomsValue < 0) return "Bedrooms must be a non-negative number.";
+
+    if (propertyCategory === "boarding") {
+      if (!occupancy.trim()) return "Occupancy is required for boarding listings.";
+      if (!genderPreference.trim()) return "Gender preference is required for boarding listings.";
+      if (!duration.trim()) return "Duration is required for boarding listings.";
+      const studentsValue = toNumber(numberOfStudents);
+      if (studentsValue === null || studentsValue <= 0 || !Number.isInteger(studentsValue)) {
+        return "Number of students must be a whole number greater than zero.";
+      }
+    }
+
+    if (hasUploadsInProgress) return "Please wait for image uploads to finish.";
+    return "";
+  }, [
+    bedrooms,
+    city,
+    deposit,
+    duration,
+    genderPreference,
+    hasUploadsInProgress,
+    numberOfStudents,
+    occupancy,
+    pricePerMonth,
+    propertyCategory,
+    propertyType,
+    suburb,
+    title,
+  ]);
+
   const canSubmit = useMemo(() => {
-    return (
-      title.trim() &&
-      suburb.trim() &&
-      toNumber(pricePerMonth) !== null &&
-      toNumber(bedrooms) !== null &&
-      propertyType.trim() &&
-      !hasUploadsInProgress &&
-      !saving
-    );
-  }, [bedrooms, hasUploadsInProgress, pricePerMonth, propertyType, saving, suburb, title]);
+    return !saving && !formValidationError;
+  }, [formValidationError, saving]);
 
   const removeUpload = useCallback(
     (id) => {
@@ -364,6 +455,41 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
     if (activeTab === "pricing" && canManagePricing) loadPricing();
   }, [activeTab, canManageMarketing, canManagePricing, loadListings, loadStats, loadReports, loadPricing]);
 
+  const loadLocationFacets = useCallback(async () => {
+    try {
+      const response = await fetch("/api/listings/facets");
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) return;
+      const nextCities = Array.isArray(payload?.cities)
+        ? payload.cities.map((value) => (typeof value === "string" ? value.trim() : "")).filter(Boolean)
+        : [];
+      const nextSuburbsByCityRaw =
+        payload?.suburbsByCity && typeof payload.suburbsByCity === "object"
+          ? payload.suburbsByCity
+          : {};
+      const nextSuburbsByCity = Object.entries(nextSuburbsByCityRaw).reduce((acc, [cityName, list]) => {
+        const cityKey = typeof cityName === "string" ? cityName.trim() : "";
+        if (!cityKey || !Array.isArray(list)) return acc;
+        acc[cityKey] = Array.from(
+          new Set(
+            list
+              .map((item) => getNeighborhoodLabel(item))
+              .filter(Boolean),
+          ),
+        ).sort((a, b) => a.localeCompare(b));
+        return acc;
+      }, {});
+      setCities(nextCities);
+      setSuburbsByCity(nextSuburbsByCity);
+    } catch { }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "listings") {
+      loadLocationFacets();
+    }
+  }, [activeTab, loadLocationFacets]);
+
   const [isFormOpen, setIsFormOpen] = useState(false);
 
   useEffect(() => {
@@ -375,6 +501,11 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
 
   async function handleSave(event) {
     event.preventDefault();
+    const validationError = formValidationError;
+    if (validationError) {
+      setSaveError(validationError);
+      return;
+    }
     setSaving(true);
     setSaveError("");
 
@@ -393,6 +524,11 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
           suburb: suburb.trim(),
           propertyCategory,
           propertyType: propertyType.trim(),
+          occupancy: propertyCategory === "boarding" ? occupancy.trim() : "",
+          genderPreference: propertyCategory === "boarding" ? genderPreference.trim() : "",
+          duration: propertyCategory === "boarding" ? duration.trim() : "",
+          numberOfStudents:
+            propertyCategory === "boarding" ? Math.floor(Number(numberOfStudents)) : null,
           pricePerMonth: toNumber(pricePerMonth),
           deposit: toNumber(deposit),
           bedrooms: toNumber(bedrooms),
@@ -419,13 +555,24 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
   }
 
   function handleEditStart(listing) {
+    const listingSuburbRaw = typeof listing.suburb === "string" ? listing.suburb : "";
+    const listingSuburbValue = getNeighborhoodLabel(listingSuburbRaw);
+    const listingCityFromSuburb = listingSuburbRaw.includes(",")
+      ? listingSuburbRaw.split(",").map((part) => part.trim()).filter(Boolean).slice(-1)[0] || ""
+      : "";
     setEditingListingId(listing._id);
     setIsFormOpen(true);
     setTitle(listing.title || "");
-    setCity(listing.city || "Harare");
-    setSuburb(listing.suburb || "");
+    setCity(listing.city || listingCityFromSuburb || "Harare");
+    setSuburb(listingSuburbValue || "");
     setPropertyCategory(listing.propertyCategory || "residential");
     setPropertyType(listing.propertyType || RESIDENTIAL_TYPES[0]);
+    setOccupancy(listing.occupancy || "");
+    setGenderPreference(listing.genderPreference || "");
+    setDuration(listing.duration || "");
+    setNumberOfStudents(
+      Number.isFinite(Number(listing.numberOfStudents)) ? String(Number(listing.numberOfStudents)) : "",
+    );
     setPricePerMonth(listing.pricePerMonth?.toString() || "");
     setDeposit(listing.deposit?.toString() || "");
     setBedrooms(listing.bedrooms?.toString() || "");
@@ -453,6 +600,10 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
     setSuburb("");
     setPropertyCategory("residential");
     setPropertyType(RESIDENTIAL_TYPES[0]);
+    setOccupancy("");
+    setGenderPreference("");
+    setDuration("");
+    setNumberOfStudents("");
     setPricePerMonth("");
     setDeposit("");
     setBedrooms("");
@@ -965,26 +1116,42 @@ Interested? Contact us today!
                   <label className="block text-sm font-medium text-slate-200" htmlFor="city">
                     City
                   </label>
-                  <input
+                  <select
                     id="city"
                     value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
-                    placeholder="Harare"
-                  />
+                    onChange={(e) => {
+                      setCity(e.target.value);
+                      setSuburb("");
+                    }}
+                    className="mt-2 block w-full appearance-none rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 pr-10 text-sm text-slate-50 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+                  >
+                    <option value="">Select city</option>
+                    {Array.from(new Set([city, ...cities].filter(Boolean))).map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-slate-200" htmlFor="suburb">
                     Suburb
                   </label>
-                  <input
+                  <select
                     id="suburb"
                     value={suburb}
                     onChange={(e) => setSuburb(e.target.value)}
-                    className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
-                    placeholder="Avondale"
-                  />
+                    disabled={!city.trim()}
+                    className="mt-2 block w-full appearance-none rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 pr-10 text-sm text-slate-50 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <option value="">{city.trim() ? "Select suburb" : "Select city first"}</option>
+                    {Array.from(new Set([suburb, ...availableSuburbs].filter(Boolean))).map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
@@ -1000,20 +1167,30 @@ Interested? Contact us today!
                     onChange={(e) => {
                       const nextRaw = e.target.value;
                       const next =
-                        nextRaw === "commercial" || nextRaw === "boarding" || nextRaw === "land"
+                        nextRaw === "commercial" || nextRaw === "boarding" || nextRaw === "rent_a_chair" || nextRaw === "land"
                           ? nextRaw
                           : "residential";
                       setPropertyCategory(next);
+                      setSelectedFeatures([]);
                       if (next === "commercial") {
                         setPropertyType(COMMERCIAL_TYPES[0]);
                         setBedrooms("0");
                       } else if (next === "land") {
                         setPropertyType(LAND_TYPES[0]);
                         setBedrooms("0");
+                      } else if (next === "rent_a_chair") {
+                        setPropertyType(RENT_A_CHAIR_TYPES[0]);
+                        setBedrooms("0");
                       } else if (next === "boarding") {
                         setPropertyType(BOARDING_TYPES[0]);
                       } else {
                         setPropertyType(RESIDENTIAL_TYPES[0]);
+                      }
+                      if (next !== "boarding") {
+                        setOccupancy("");
+                        setGenderPreference("");
+                        setDuration("");
+                        setNumberOfStudents("");
                       }
                     }}
                     className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
@@ -1021,6 +1198,7 @@ Interested? Contact us today!
                     <option value="residential">Residential</option>
                     <option value="boarding">Boarding</option>
                     <option value="commercial">Commercial</option>
+                    <option value="rent_a_chair">Rent a chair</option>
                     <option value="land">Land</option>
                   </select>
                 </div>
@@ -1039,6 +1217,8 @@ Interested? Contact us today!
                       ? COMMERCIAL_TYPES
                       : propertyCategory === "boarding"
                         ? BOARDING_TYPES
+                        : propertyCategory === "rent_a_chair"
+                          ? RENT_A_CHAIR_TYPES
                         : propertyCategory === "land"
                           ? LAND_TYPES
                           : RESIDENTIAL_TYPES
@@ -1091,9 +1271,85 @@ Interested? Contact us today!
                     value={bedrooms}
                     onChange={(e) => setBedrooms(e.target.value)}
                     className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
-                    placeholder={propertyCategory === "commercial" ? "0" : "2"}
+                    placeholder={
+                      propertyCategory === "commercial" || propertyCategory === "land" || propertyCategory === "rent_a_chair"
+                        ? "0"
+                        : "2"
+                    }
                   />
                 </div>
+
+                {propertyCategory === "boarding" ? (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-200" htmlFor="occupancy">
+                        Occupancy
+                      </label>
+                      <select
+                        id="occupancy"
+                        value={occupancy}
+                        onChange={(e) => setOccupancy(e.target.value)}
+                        className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+                      >
+                        <option value="">Select occupancy</option>
+                        {BOARDING_OCCUPANCY_OPTIONS.map((item) => (
+                          <option key={item} value={item}>
+                            {item}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-200" htmlFor="genderPreference">
+                        Gender preference
+                      </label>
+                      <select
+                        id="genderPreference"
+                        value={genderPreference}
+                        onChange={(e) => setGenderPreference(e.target.value)}
+                        className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+                      >
+                        <option value="">Select gender preference</option>
+                        {BOARDING_GENDER_OPTIONS.map((item) => (
+                          <option key={item} value={item}>
+                            {item}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-200" htmlFor="duration">
+                        Duration
+                      </label>
+                      <select
+                        id="duration"
+                        value={duration}
+                        onChange={(e) => setDuration(e.target.value)}
+                        className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+                      >
+                        <option value="">Select duration</option>
+                        {BOARDING_DURATION_OPTIONS.map((item) => (
+                          <option key={item} value={item}>
+                            {item}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-200" htmlFor="numberOfStudents">
+                        Number of students
+                      </label>
+                      <input
+                        id="numberOfStudents"
+                        inputMode="numeric"
+                        value={numberOfStudents}
+                        onChange={(e) => setNumberOfStudents(e.target.value)}
+                        className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+                        placeholder="1"
+                      />
+                    </div>
+                  </>
+                ) : null}
 
                 <div>
                   <label className="block text-sm font-medium text-slate-200" htmlFor="status">
@@ -1129,7 +1385,7 @@ Interested? Contact us today!
                   <p className="mt-1 text-xs text-slate-400">Select up to 12.</p>
 
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {COMMON_FEATURES.map((feature) => {
+                    {featureOptions.map((feature) => {
                       const active = cleanedFeatures.includes(feature);
                       return (
                         <button
