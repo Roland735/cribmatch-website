@@ -66,6 +66,7 @@ function formatUsdAmount(value) {
 export default function AdminClient({ scope = "all", showSignOut = true } = {}) {
   const searchParams = useSearchParams();
   const canManagePricing = scope === "all";
+  const canManageMarketing = scope === "all";
   const [activeTab, setActiveTab] = useState("listings");
   const [stats, setStats] = useState(null);
   const [reports, setReports] = useState([]);
@@ -357,11 +358,11 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
   }, []);
 
   useEffect(() => {
-    if (activeTab === "listings" || activeTab === "marketing") loadListings();
+    if (activeTab === "listings" || (activeTab === "marketing" && canManageMarketing)) loadListings();
     if (activeTab === "stats") loadStats();
     if (activeTab === "reports") loadReports();
     if (activeTab === "pricing" && canManagePricing) loadPricing();
-  }, [activeTab, canManagePricing, loadListings, loadStats, loadReports, loadPricing]);
+  }, [activeTab, canManageMarketing, canManagePricing, loadListings, loadStats, loadReports, loadPricing]);
 
   const [isFormOpen, setIsFormOpen] = useState(false);
 
@@ -904,15 +905,17 @@ Interested? Contact us today!
               Pricing
             </button>
           ) : null}
-          <button
-            onClick={() => setActiveTab("marketing")}
-            className={`rounded-full px-6 py-2 text-sm font-semibold transition ${activeTab === "marketing"
-              ? "bg-emerald-400 text-slate-950 shadow-lg shadow-emerald-400/20"
-              : "text-slate-400 hover:text-white"
-              }`}
-          >
-            Marketing
-          </button>
+          {canManageMarketing ? (
+            <button
+              onClick={() => setActiveTab("marketing")}
+              className={`rounded-full px-6 py-2 text-sm font-semibold transition ${activeTab === "marketing"
+                ? "bg-emerald-400 text-slate-950 shadow-lg shadow-emerald-400/20"
+                : "text-slate-400 hover:text-white"
+                }`}
+            >
+              Marketing
+            </button>
+          ) : null}
         </div>
 
         <div className="flex items-center gap-3">
@@ -1646,7 +1649,7 @@ Interested? Contact us today!
         </div>
       )}
 
-      {activeTab === "marketing" && (
+      {canManageMarketing && activeTab === "marketing" && (
         <div className="space-y-8">
           <div className="rounded-3xl border border-white/10 bg-slate-900/40">
             <div className="flex flex-col gap-6 border-b border-white/10 p-6">
