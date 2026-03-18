@@ -97,33 +97,48 @@ async function sendTemplateCode(phone, code) {
   }
 
   async function getTemplateDiagnostics(name) {
-    const phoneInfo = await graphGet(`${phoneNumberId}?fields=display_phone_number,verified_name,whatsapp_business_account`);
+    const phoneInfo = await graphGet(`${phoneNumberId}?fields=id,display_phone_number,verified_name`);
     const explicitWabaId = String(process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || "").trim();
-    const wabaId = explicitWabaId || phoneInfo?.whatsapp_business_account?.id || "";
+    const wabaId = explicitWabaId;
     if (!wabaId) {
       return {
         wabaId: "",
         matchedTemplate: null,
+        phoneLinkedToWaba: null,
+        displayPhoneNumber: phoneInfo?.display_phone_number || "",
+        verifiedName: phoneInfo?.verified_name || "",
         phoneInfoError:
           phoneInfo?.error?.message ||
           phoneInfo?.error?.error_user_msg ||
           phoneInfo?.error?.error_data?.details ||
-          "",
+          "WHATSAPP_BUSINESS_ACCOUNT_ID is not set",
       };
     }
     const templates = await graphGet(
       `${wabaId}/message_templates?name=${encodeURIComponent(name)}&fields=name,status,language,category`,
     );
+    const phoneNumbers = await graphGet(
+      `${wabaId}/phone_numbers?fields=id,display_phone_number,verified_name`,
+    );
     const matchedTemplate = Array.isArray(templates?.data) ? templates.data[0] : null;
+    const phoneLinkedToWaba = Array.isArray(phoneNumbers?.data)
+      ? phoneNumbers.data.some((item) => String(item?.id || "") === String(phoneNumberId))
+      : null;
     return {
       wabaId,
       matchedTemplate,
+      phoneLinkedToWaba,
       displayPhoneNumber: phoneInfo?.display_phone_number || "",
       verifiedName: phoneInfo?.verified_name || "",
       templatesError:
         templates?.error?.message ||
         templates?.error?.error_user_msg ||
         templates?.error?.error_data?.details ||
+        "",
+      phoneNumbersError:
+        phoneNumbers?.error?.message ||
+        phoneNumbers?.error?.error_user_msg ||
+        phoneNumbers?.error?.error_data?.details ||
         "",
     };
   }
@@ -177,11 +192,18 @@ async function sendTemplateCode(phone, code) {
     diagnostics?.displayPhoneNumber && diagnostics?.verifiedName
       ? `${diagnostics.displayPhoneNumber} (${diagnostics.verifiedName})`
       : "unknown";
-  const diagnosticsIssue = diagnostics?.phoneInfoError || diagnostics?.templatesError || "";
+  const linkStatus =
+    diagnostics?.phoneLinkedToWaba === true
+      ? "linked"
+      : diagnostics?.phoneLinkedToWaba === false
+        ? "not-linked"
+        : "unknown";
+  const diagnosticsIssue =
+    diagnostics?.phoneInfoError || diagnostics?.templatesError || diagnostics?.phoneNumbersError || "";
 
   return {
     ok: false,
-    error: `${lastError}. Check approved template name/language in WhatsApp Manager. Tried names: ${templateNames.join(", ")}; languages: ${languageCodes.join(", ")}. Connected WABA: ${connectedWaba}. Connected number: ${connectedNumber}. Template lookup: ${templateSeen}.${diagnosticsIssue ? ` Graph diagnostics: ${diagnosticsIssue}.` : ""} If WABA is unknown, set WHATSAPP_BUSINESS_ACCOUNT_ID to the WABA that owns this template.`,
+    error: `${lastError}. Check approved template name/language in WhatsApp Manager. Tried names: ${templateNames.join(", ")}; languages: ${languageCodes.join(", ")}. Connected WABA: ${connectedWaba}. Connected number: ${connectedNumber}. Phone-WABA link: ${linkStatus}. Template lookup: ${templateSeen}.${diagnosticsIssue ? ` Graph diagnostics: ${diagnosticsIssue}.` : ""} Ensure WHATSAPP_BUSINESS_ACCOUNT_ID is set and matches the WABA where this phone number and template both exist.`,
   };
 }
 
