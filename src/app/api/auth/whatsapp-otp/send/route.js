@@ -98,11 +98,17 @@ async function sendTemplateCode(phone, code) {
 
   async function getTemplateDiagnostics(name) {
     const phoneInfo = await graphGet(`${phoneNumberId}?fields=display_phone_number,verified_name,whatsapp_business_account`);
-    const wabaId = phoneInfo?.whatsapp_business_account?.id || "";
+    const explicitWabaId = String(process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || "").trim();
+    const wabaId = explicitWabaId || phoneInfo?.whatsapp_business_account?.id || "";
     if (!wabaId) {
       return {
         wabaId: "",
         matchedTemplate: null,
+        phoneInfoError:
+          phoneInfo?.error?.message ||
+          phoneInfo?.error?.error_user_msg ||
+          phoneInfo?.error?.error_data?.details ||
+          "",
       };
     }
     const templates = await graphGet(
@@ -114,6 +120,11 @@ async function sendTemplateCode(phone, code) {
       matchedTemplate,
       displayPhoneNumber: phoneInfo?.display_phone_number || "",
       verifiedName: phoneInfo?.verified_name || "",
+      templatesError:
+        templates?.error?.message ||
+        templates?.error?.error_user_msg ||
+        templates?.error?.error_data?.details ||
+        "",
     };
   }
 
@@ -166,10 +177,11 @@ async function sendTemplateCode(phone, code) {
     diagnostics?.displayPhoneNumber && diagnostics?.verifiedName
       ? `${diagnostics.displayPhoneNumber} (${diagnostics.verifiedName})`
       : "unknown";
+  const diagnosticsIssue = diagnostics?.phoneInfoError || diagnostics?.templatesError || "";
 
   return {
     ok: false,
-    error: `${lastError}. Check approved template name/language in WhatsApp Manager. Tried names: ${templateNames.join(", ")}; languages: ${languageCodes.join(", ")}. Connected WABA: ${connectedWaba}. Connected number: ${connectedNumber}. Template lookup: ${templateSeen}.`,
+    error: `${lastError}. Check approved template name/language in WhatsApp Manager. Tried names: ${templateNames.join(", ")}; languages: ${languageCodes.join(", ")}. Connected WABA: ${connectedWaba}. Connected number: ${connectedNumber}. Template lookup: ${templateSeen}.${diagnosticsIssue ? ` Graph diagnostics: ${diagnosticsIssue}.` : ""} If WABA is unknown, set WHATSAPP_BUSINESS_ACCOUNT_ID to the WABA that owns this template.`,
   };
 }
 
