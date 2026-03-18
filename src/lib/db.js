@@ -154,11 +154,39 @@ const UserSchema = new mongoose.Schema(
       default: "user",
       index: true,
     },
+    whatsappVerified: { type: Boolean, default: false, index: true },
+    whatsappVerifiedAt: { type: Date, default: null },
   },
   { timestamps: true },
 );
 
 export const User = mongoose.models.User || mongoose.model("User", UserSchema);
+
+const OtpChallengeSchema = new mongoose.Schema(
+  {
+    phone: { type: String, required: true, trim: true, index: true },
+    purpose: {
+      type: String,
+      required: true,
+      enum: ["signup", "reset_password", "first_web_login"],
+      index: true,
+    },
+    codeSalt: { type: String, required: true },
+    codeHash: { type: String, required: true },
+    expiresAt: { type: Date, required: true },
+    attempts: { type: Number, default: 0, min: 0 },
+    sendCount: { type: Number, default: 0, min: 0 },
+    lastSentAt: { type: Date, default: null },
+    usedAt: { type: Date, default: null },
+  },
+  { timestamps: true },
+);
+
+OtpChallengeSchema.index({ phone: 1, purpose: 1 }, { unique: true });
+OtpChallengeSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 60 * 60 * 24 });
+
+export const OtpChallenge =
+  mongoose.models.OtpChallenge || mongoose.model("OtpChallenge", OtpChallengeSchema);
 
 const WebhookEventSchema = new mongoose.Schema(
   {

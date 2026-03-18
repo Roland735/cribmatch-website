@@ -2,7 +2,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import crypto from "crypto";
 import { dbConnect, User } from "@/lib/db";
 
-function normalizePhoneNumber(value) {
+export function normalizePhoneNumber(value) {
   if (typeof value !== "string") return "";
   const trimmed = value.trim();
   if (!trimmed) return "";
@@ -21,7 +21,7 @@ function normalizePhoneNumber(value) {
   return digits;
 }
 
-function normalizePhoneNumberCandidates(value) {
+export function normalizePhoneNumberCandidates(value) {
   if (typeof value !== "string") return [];
   const trimmed = value.trim();
   if (!trimmed) return [];
@@ -79,7 +79,13 @@ function scryptAsync(password, salt) {
   });
 }
 
-async function verifyPassword(password, stored) {
+export async function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString("base64");
+  const derivedKey = await scryptAsync(password, salt);
+  return { salt, hash: derivedKey.toString("base64") };
+}
+
+export async function verifyPassword(password, stored) {
   if (!stored?.salt || !stored?.hash) return false;
   if (typeof password !== "string" || password.length < 8) return false;
   const derivedKey = await scryptAsync(password, stored.salt);
