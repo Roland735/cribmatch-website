@@ -148,38 +148,44 @@ async function sendTemplateCode(phone, code) {
   let lastError = "";
   for (const templateName of templateNames) {
     for (const languageCode of languageCodes) {
-      const payload = {
-        messaging_product: "whatsapp",
-        to: digitsOnly(phone),
-        type: "template",
-        template: {
-          name: templateName,
-          language: { code: languageCode },
-          components: [
-            {
-              type: "body",
-              parameters: [{ type: "text", text: code }],
-            },
-          ],
-        },
-      };
+      const languageVariants = [
+        { code: languageCode, policy: "deterministic" },
+        { code: languageCode },
+      ];
+      for (const language of languageVariants) {
+        const payload = {
+          messaging_product: "whatsapp",
+          to: digitsOnly(phone),
+          type: "template",
+          template: {
+            name: templateName,
+            language,
+            components: [
+              {
+                type: "body",
+                parameters: [{ type: "text", text: code }],
+              },
+            ],
+          },
+        };
 
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiToken}`,
-        },
-        body: JSON.stringify(payload),
-      });
-      const result = await response.json().catch(() => ({}));
-      if (response.ok && !result?.error) {
-        return { ok: true };
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiToken}`,
+          },
+          body: JSON.stringify(payload),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (response.ok && !result?.error) {
+          return { ok: true };
+        }
+        lastError =
+          result?.error?.message ||
+          result?.error?.error_data?.details ||
+          "Failed to send WhatsApp verification code";
       }
-      lastError =
-        result?.error?.message ||
-        result?.error?.error_data?.details ||
-        "Failed to send WhatsApp verification code";
     }
   }
 
