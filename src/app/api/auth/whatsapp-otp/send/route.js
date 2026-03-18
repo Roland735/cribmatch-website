@@ -54,46 +54,81 @@ async function hasWhatsappHistory(phoneCandidates, digitsCandidates) {
 async function sendTemplateCode(phone, code) {
   const apiToken = process.env.WHATSAPP_API_TOKEN;
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_ID;
-  const templateName = process.env.WHATSAPP_AUTH_TEMPLATE_NAME || "cribmatch_verification_code";
-  const languageCode = process.env.WHATSAPP_AUTH_TEMPLATE_LANG || "en";
+  const configuredTemplateName = process.env.WHATSAPP_AUTH_TEMPLATE_NAME || "cribmatch_verification_code";
+  const configuredLanguageCode = process.env.WHATSAPP_AUTH_TEMPLATE_LANG || "en_US";
+  const templateNames = Array.from(
+    new Set(
+      [
+        ...String(process.env.WHATSAPP_AUTH_TEMPLATE_NAMES || "")
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean),
+        configuredTemplateName,
+      ],
+    ),
+  );
+  const languageCodes = Array.from(
+    new Set(
+      [
+        ...String(process.env.WHATSAPP_AUTH_TEMPLATE_LANGS || "")
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean),
+        configuredLanguageCode,
+        "en_US",
+        "en",
+      ],
+    ),
+  );
 
   if (!apiToken || !phoneNumberId) {
     return { ok: false, error: "WhatsApp credentials are missing" };
   }
 
   const url = `https://graph.facebook.com/v24.0/${phoneNumberId}/messages`;
-  const payload = {
-    messaging_product: "whatsapp",
-    to: digitsOnly(phone),
-    type: "template",
-    template: {
-      name: templateName,
-      language: { code: languageCode },
-      components: [
-        {
-          type: "body",
-          parameters: [{ type: "text", text: code }],
-        },
-      ],
-    },
-  };
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiToken}`,
-    },
-    body: JSON.stringify(payload),
-  });
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok || result?.error) {
-    return {
-      ok: false,
-      error: result?.error?.message || "Failed to send WhatsApp verification code",
-    };
+  let lastError = "";
+  for (const templateName of templateNames) {
+    for (const languageCode of languageCodes) {
+      const payload = {
+        messaging_product: "whatsapp",
+        to: digitsOnly(phone),
+        type: "template",
+        template: {
+          name: templateName,
+          language: { code: languageCode },
+          components: [
+            {
+              type: "body",
+              parameters: [{ type: "text", text: code }],
+            },
+          ],
+        },
+      };
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiToken}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (response.ok && !result?.error) {
+        return { ok: true };
+      }
+      lastError =
+        result?.error?.message ||
+        result?.error?.error_data?.details ||
+        "Failed to send WhatsApp verification code";
+    }
   }
-  return { ok: true };
+
+  return {
+    ok: false,
+    error: `${lastError}. Check approved template name/language in WhatsApp Manager. Tried names: ${templateNames.join(", ")}; languages: ${languageCodes.join(", ")}.`,
+  };
 }
 
 export async function POST(request) {
