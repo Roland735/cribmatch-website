@@ -85,6 +85,38 @@ async function sendTemplateCode(phone, code) {
     return { ok: false, error: "WhatsApp credentials are missing" };
   }
 
+  async function graphGet(path) {
+    const response = await fetch(`https://graph.facebook.com/v24.0/${path}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiToken}`,
+      },
+    });
+    return response.json().catch(() => ({}));
+  }
+
+  async function getTemplateDiagnostics(name) {
+    const phoneInfo = await graphGet(`${phoneNumberId}?fields=display_phone_number,verified_name,whatsapp_business_account`);
+    const wabaId = phoneInfo?.whatsapp_business_account?.id || "";
+    if (!wabaId) {
+      return {
+        wabaId: "",
+        matchedTemplate: null,
+      };
+    }
+    const templates = await graphGet(
+      `${wabaId}/message_templates?name=${encodeURIComponent(name)}&fields=name,status,language,category`,
+    );
+    const matchedTemplate = Array.isArray(templates?.data) ? templates.data[0] : null;
+    return {
+      wabaId,
+      matchedTemplate,
+      displayPhoneNumber: phoneInfo?.display_phone_number || "",
+      verifiedName: phoneInfo?.verified_name || "",
+    };
+  }
+
   const url = `https://graph.facebook.com/v24.0/${phoneNumberId}/messages`;
 
   let lastError = "";
@@ -125,9 +157,19 @@ async function sendTemplateCode(phone, code) {
     }
   }
 
+  const diagnostics = await getTemplateDiagnostics(configuredTemplateName).catch(() => null);
+  const templateSeen = diagnostics?.matchedTemplate
+    ? `${diagnostics.matchedTemplate.name} (${diagnostics.matchedTemplate.language}) [${diagnostics.matchedTemplate.status}]`
+    : "not found on connected WABA";
+  const connectedWaba = diagnostics?.wabaId || "unknown";
+  const connectedNumber =
+    diagnostics?.displayPhoneNumber && diagnostics?.verifiedName
+      ? `${diagnostics.displayPhoneNumber} (${diagnostics.verifiedName})`
+      : "unknown";
+
   return {
     ok: false,
-    error: `${lastError}. Check approved template name/language in WhatsApp Manager. Tried names: ${templateNames.join(", ")}; languages: ${languageCodes.join(", ")}.`,
+    error: `${lastError}. Check approved template name/language in WhatsApp Manager. Tried names: ${templateNames.join(", ")}; languages: ${languageCodes.join(", ")}. Connected WABA: ${connectedWaba}. Connected number: ${connectedNumber}. Template lookup: ${templateSeen}.`,
   };
 }
 
