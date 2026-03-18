@@ -3,7 +3,7 @@
 import { signIn } from "next-auth/react";
 import { useMemo, useState } from "react";
 
-export default function LoginClient() {
+export default function LoginClient({ callbackUrl = "/dashboard" }) {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [phonePassword, setPhonePassword] = useState("");
   const [registerName, setRegisterName] = useState("");
@@ -18,6 +18,11 @@ export default function LoginClient() {
     return status === "loading";
   }, [status]);
 
+  const safeCallbackUrl = useMemo(() => {
+    const raw = typeof callbackUrl === "string" ? callbackUrl : "";
+    return raw.startsWith("/") ? raw : "/dashboard";
+  }, [callbackUrl]);
+
   async function handlePhoneSignIn(event) {
     event.preventDefault();
     setStatus("loading");
@@ -27,7 +32,7 @@ export default function LoginClient() {
       phoneNumber,
       password: phonePassword,
       redirect: false,
-      callbackUrl: "/dashboard",
+      callbackUrl: safeCallbackUrl,
     });
 
     if (response?.error) {
@@ -69,7 +74,7 @@ export default function LoginClient() {
       phoneNumber: registerPhoneNumber,
       password: registerPassword,
       redirect: false,
-      callbackUrl: "/dashboard",
+      callbackUrl: safeCallbackUrl,
     });
 
     if (signInResponse?.error) {

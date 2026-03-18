@@ -27,20 +27,54 @@ const RENT_A_CHAIR_TYPES = ["Barbering", "Hair Styling", "Nail Services", "Makeu
 
 const LAND_TYPES = ["Farm", "Stand", "Plot"];
 
-const RESIDENTIAL_FEATURES = [
-  "Borehole",
-  "Solar Backup",
-  "Solar Geyser",
+const REQUESTED_FEATURES = [
+  "Tiled",
+  "Ceiling",
+  "Built in cupboards",
+  "Durawalled",
+  "Gated",
+  "Solar backup",
+  "Backup well",
+  "No landlord",
+  "Own Entrance",
+  "Borehole water",
+  "Own bathroom and toilet",
+  "Electricity",
+  "Water",
+  "Security",
+  "Cleaning",
+  "Geyser",
+  "Swimming pool",
+  "Backup tank",
+  "Ensuite",
+];
+
+function uniqueList(values) {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => (typeof value === "string" ? value.trim() : ""))
+        .filter(Boolean),
+    ),
+  );
+}
+
+const RESIDENTIAL_FEATURES = uniqueList([
+  "Borehole water",
+  "Solar backup",
+  "Geyser",
   "Internet",
-  "Fenced/Secure",
+  "Durawalled",
+  "Gated",
   "Garage",
   "Garden",
   "Furnished",
   "Pets Allowed",
   "Air Conditioning",
-];
+  ...REQUESTED_FEATURES,
+]);
 
-const BOARDING_FEATURES = [
+const BOARDING_FEATURES = uniqueList([
   "Meals Included",
   "WiFi / Internet",
   "Laundry Service",
@@ -53,9 +87,10 @@ const BOARDING_FEATURES = [
   "Utilities Included",
   "Near Public Transport",
   "Near University/College",
-];
+  ...REQUESTED_FEATURES,
+]);
 
-const COMMERCIAL_FEATURES = [
+const COMMERCIAL_FEATURES = uniqueList([
   "High Foot Traffic",
   "Parking Available",
   "Loading Bay/Dock",
@@ -63,16 +98,25 @@ const COMMERCIAL_FEATURES = [
   "Security System",
   "Storage Space",
   "Backup Power",
-];
+  ...REQUESTED_FEATURES,
+]);
 
-const CHAIR_FEATURES = [
+const CHAIR_FEATURES = uniqueList([
   "Private Space",
   "Shared Space",
   "All Inclusive",
   "Furnished",
   "Parking Available",
   "Utilities Included",
-];
+  ...REQUESTED_FEATURES,
+]);
+
+const COMMON_FEATURES = uniqueList([
+  ...RESIDENTIAL_FEATURES,
+  ...BOARDING_FEATURES,
+  ...COMMERCIAL_FEATURES,
+  ...CHAIR_FEATURES,
+]);
 
 const BOARDING_OCCUPANCY_OPTIONS = ["1 Person", "2 People", "3 People", "4+ People"];
 const BOARDING_GENDER_OPTIONS = ["Male Only", "Female Only", "Mixed"];

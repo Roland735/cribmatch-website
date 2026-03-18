@@ -1,6 +1,10 @@
 import LoginClient from "./LoginClient";
 
-export default function LoginPage() {
+export default async function LoginPage({ searchParams }) {
+  const params = await searchParams;
+  const callbackUrlRaw = typeof params?.callbackUrl === "string" ? params.callbackUrl : "";
+  const callbackUrl = callbackUrlRaw.startsWith("/") ? callbackUrlRaw : "/dashboard";
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-50">
       <div className="mx-auto max-w-lg px-6 py-16 lg:px-8">
@@ -11,7 +15,7 @@ export default function LoginPage() {
           <p className="mt-2 text-sm text-slate-300">
             Everyone signs in here using their phone number.
           </p>
-          <LoginClient />
+          <LoginClient callbackUrl={callbackUrl} />
         </div>
       </div>
     </div>

@@ -146,7 +146,7 @@ export default async function ListingsGridServer({
                   </Link>
                 ) : (
                   <Link
-                    href="/login"
+                    href={`/login?callbackUrl=${encodeURIComponent(`/listings/${listing._id}#contact`)}`}
                     className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-400/10 px-3 py-2.5 text-sm font-semibold text-emerald-200 ring-1 ring-inset ring-emerald-400/30 transition hover:bg-emerald-400/20"
                     prefetch={false}
                   >

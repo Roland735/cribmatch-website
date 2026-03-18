@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import ListingCardSlider from "./ListingCardSlider";
@@ -187,7 +186,7 @@ export default function ListingsGrid() {
               </Link>
             ) : (
               <Link
-                href="/login"
+                href={`/login?callbackUrl=${encodeURIComponent(`/listings/${listing.id}#contact`)}`}
                 className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-400/10 px-3 py-2 text-sm font-semibold text-emerald-200 ring-1 ring-inset ring-emerald-400/30 transition hover:bg-emerald-400/20"
               >
                 Login to view contact

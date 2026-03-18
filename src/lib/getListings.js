@@ -161,6 +161,28 @@ export const KNOWN_PROPERTY_TYPES_BY_CATEGORY = {
   land: ["Farm", "Stand", "Plot"],
 };
 
+export const KNOWN_LISTING_FEATURES = [
+  "Tiled",
+  "Ceiling",
+  "Built in cupboards",
+  "Durawalled",
+  "Gated",
+  "Solar backup",
+  "Backup well",
+  "No landlord",
+  "Own Entrance",
+  "Borehole water",
+  "Own bathroom and toilet",
+  "Electricity",
+  "Water",
+  "Security",
+  "Cleaning",
+  "Geyser",
+  "Swimming pool",
+  "Backup tank",
+  "Ensuite",
+];
+
 function mergeStringLists(...lists) {
   return Array.from(
     new Set(lists.flatMap((list) => (Array.isArray(list) ? list : []))),
@@ -781,10 +803,10 @@ export async function getListingFacets() {
       a.localeCompare(b),
     );
   }
-  const features = toStringArray(featuresRaw)
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .sort((a, b) => a.localeCompare(b));
+  const features = mergeStringLists(
+    toStringArray(featuresRaw).map((s) => s.trim()).filter(Boolean),
+    KNOWN_LISTING_FEATURES,
+  );
 
   const propertyCategories = mergeStringLists(
     toStringArray(propertyCategoriesRaw).map((s) => s.trim()).filter(Boolean),
