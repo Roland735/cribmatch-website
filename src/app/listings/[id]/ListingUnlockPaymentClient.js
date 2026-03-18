@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import PhoneNumberInput from "@/app/PhoneNumberInput";
 
 export default function ListingUnlockPaymentClient({ listingId }) {
   const router = useRouter();
@@ -143,15 +144,14 @@ export default function ListingUnlockPaymentClient({ listingId }) {
       </div>
 
       <div className="space-y-2">
-        <label className="text-xs font-semibold uppercase tracking-wide text-emerald-200" htmlFor="payerMobile">
-          EcoCash number
-        </label>
-        <input
+        <PhoneNumberInput
           id="payerMobile"
+          name="payerMobile"
+          label="EcoCash number"
           value={payerMobile}
-          onChange={(event) => setPayerMobile(event.target.value)}
-          placeholder="0771234567 or 263771234567"
-          className="block w-full rounded-xl border border-emerald-400/30 bg-slate-950/50 px-3 py-2 text-sm text-emerald-50 outline-none transition placeholder:text-emerald-100/40 focus:border-emerald-300 focus:ring-2 focus:ring-emerald-400/30"
+          onChange={setPayerMobile}
+          placeholder="771234567"
+          disabled={loadingStart}
         />
       </div>
 

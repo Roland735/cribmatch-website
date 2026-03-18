@@ -2,6 +2,7 @@
 
 import { signIn } from "next-auth/react";
 import { useMemo, useState } from "react";
+import PhoneNumberInput from "@/app/PhoneNumberInput";
 
 export default function LoginClient({ callbackUrl = "/dashboard" }) {
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -290,22 +291,14 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
 
       {mode === "signin" ? (
         <form className="space-y-4" onSubmit={handlePhoneSignIn}>
-          <div>
-            <label className="block text-sm font-medium text-slate-200" htmlFor="phoneNumber">
-              Phone number
-            </label>
-            <input
-              id="phoneNumber"
-              name="phoneNumber"
-              type="tel"
-              autoComplete="tel"
-              value={phoneNumber}
-              onChange={(e) => setPhoneNumber(e.target.value)}
-              className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
-              placeholder="+263777123456"
-              disabled={disabled}
-            />
-          </div>
+          <PhoneNumberInput
+            id="phoneNumber"
+            name="phoneNumber"
+            label="Phone number"
+            value={phoneNumber}
+            onChange={setPhoneNumber}
+            disabled={disabled}
+          />
           <div>
             <label className="block text-sm font-medium text-slate-200" htmlFor="phonePassword">
               Password
@@ -355,21 +348,14 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
               disabled={disabled}
             />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-200" htmlFor="registerPhoneNumber">
-              Phone number
-            </label>
-            <input
-              id="registerPhoneNumber"
-              name="registerPhoneNumber"
-              type="tel"
-              value={registerPhoneNumber}
-              onChange={(e) => setRegisterPhoneNumber(e.target.value)}
-              className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
-              placeholder="+263777123456"
-              disabled={disabled}
-            />
-          </div>
+          <PhoneNumberInput
+            id="registerPhoneNumber"
+            name="registerPhoneNumber"
+            label="Phone number"
+            value={registerPhoneNumber}
+            onChange={setRegisterPhoneNumber}
+            disabled={disabled}
+          />
           <div>
             <label className="block text-sm font-medium text-slate-200" htmlFor="registerPassword">
               Password
@@ -419,21 +405,14 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
 
       {mode === "first" ? (
         <form className="space-y-4" onSubmit={firstOtpSent ? handleCompleteFirst : handleSendFirstOtp}>
-          <div>
-            <label className="block text-sm font-medium text-slate-200" htmlFor="firstPhoneNumber">
-              WhatsApp phone number
-            </label>
-            <input
-              id="firstPhoneNumber"
-              name="firstPhoneNumber"
-              type="tel"
-              value={firstPhoneNumber}
-              onChange={(e) => setFirstPhoneNumber(e.target.value)}
-              className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
-              placeholder="+263777123456"
-              disabled={disabled}
-            />
-          </div>
+          <PhoneNumberInput
+            id="firstPhoneNumber"
+            name="firstPhoneNumber"
+            label="WhatsApp phone number"
+            value={firstPhoneNumber}
+            onChange={setFirstPhoneNumber}
+            disabled={disabled}
+          />
           <div>
             <label className="block text-sm font-medium text-slate-200" htmlFor="firstName">
               Name (optional)
@@ -498,21 +477,14 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
 
       {mode === "reset" ? (
         <form className="space-y-4" onSubmit={resetOtpSent ? handleCompleteReset : handleSendResetOtp}>
-          <div>
-            <label className="block text-sm font-medium text-slate-200" htmlFor="resetPhoneNumber">
-              Registered phone number
-            </label>
-            <input
-              id="resetPhoneNumber"
-              name="resetPhoneNumber"
-              type="tel"
-              value={resetPhoneNumber}
-              onChange={(e) => setResetPhoneNumber(e.target.value)}
-              className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
-              placeholder="+263777123456"
-              disabled={disabled}
-            />
-          </div>
+          <PhoneNumberInput
+            id="resetPhoneNumber"
+            name="resetPhoneNumber"
+            label="Registered phone number"
+            value={resetPhoneNumber}
+            onChange={setResetPhoneNumber}
+            disabled={disabled}
+          />
           <div>
             <label className="block text-sm font-medium text-slate-200" htmlFor="resetPassword">
               New password
