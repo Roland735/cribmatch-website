@@ -1,10 +1,10 @@
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
-import { authOptions } from "@/lib/auth";
 import Link from "next/link";
-import ProfileClient from "./ProfileClient";
+import { authOptions } from "@/lib/auth";
+import ResetPasswordClient from "./ResetPasswordClient";
 
-export default async function UserProfilePage() {
+export default async function UserResetPasswordPage() {
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login");
 
@@ -12,30 +12,22 @@ export default async function UserProfilePage() {
     <div className="mx-auto max-w-2xl">
       <div className="mb-6">
         <Link
-          href="/user"
+          href="/user/profile"
           className="text-sm font-medium text-emerald-400 transition hover:text-emerald-300"
         >
-          ← Back to dashboard
+          ← Back to profile
         </Link>
       </div>
 
       <h1 className="text-balance text-3xl font-semibold tracking-tight text-white">
-        Profile
+        Reset password
       </h1>
       <p className="mt-2 text-sm text-slate-300">
-        Manage your account details and preferences.
+        Change your account password while you are signed in.
       </p>
-      <div className="mt-4">
-        <Link
-          href="/user/reset-password"
-          className="inline-flex items-center justify-center rounded-full border border-white/15 bg-white/0 px-4 py-2 text-sm font-semibold text-slate-50 transition hover:border-white/30 hover:bg-white/5"
-        >
-          Reset password
-        </Link>
-      </div>
 
       <div className="mt-8">
-        <ProfileClient />
+        <ResetPasswordClient />
       </div>
     </div>
   );
