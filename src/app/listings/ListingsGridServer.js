@@ -53,6 +53,13 @@ export default async function ListingsGridServer({
       className={`mx-auto mt-12 grid max-w-2xl grid-cols-1 gap-6 lg:max-w-none ${compact ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}
     >
       {listings.map((listing) => {
+        const listerType = listing?.listerType || listing?.lister_type || "direct_landlord";
+        const agentRate =
+          typeof listing?.agentRate === "number"
+            ? listing.agentRate
+            : typeof listing?.agent_rate === "number"
+              ? listing.agent_rate
+              : null;
         const photos = [
           ...(Array.isArray(listing.images) ? listing.images : []),
           ...(Array.isArray(listing.photos) ? listing.photos : []),
@@ -98,6 +105,15 @@ export default async function ListingsGridServer({
                     {formatPrice(listing.pricePerMonth)}/mo
                   </span>
                 )}
+                {listerType === "agent" ? (
+                  <span className="rounded-full bg-amber-400/10 px-2.5 py-1 text-amber-200 ring-1 ring-inset ring-amber-400/30">
+                    Agent Listing
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-sky-400/10 px-2.5 py-1 text-sky-200 ring-1 ring-inset ring-sky-400/30">
+                    Direct Landlord
+                  </span>
+                )}
               </div>
 
               <h2 className="mt-4 line-clamp-1 text-base font-semibold text-white">
@@ -119,6 +135,9 @@ export default async function ListingsGridServer({
                 <p className="mt-1">📍 Suburb: {summarySuburb}</p>
                 <p className="mt-1">🛏️ Bedrooms: {summaryBeds}</p>
                 <p className="mt-1">💰 Price: {summaryPrice}</p>
+                {listerType === "agent" && agentRate !== null ? (
+                  <p className="mt-1">💼 Agent fee: {agentRate}%</p>
+                ) : null}
               </div>
 
               <div className="mt-4 flex flex-wrap gap-2 text-[10px] text-slate-500">

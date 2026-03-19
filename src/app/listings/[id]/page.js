@@ -1,5 +1,4 @@
 import { dbConnect, Purchase } from "@/lib/db";
-import Image from "next/image";
 import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { headers } from "next/headers";
@@ -8,6 +7,7 @@ import { getListingById } from "@/lib/getListings";
 import { authOptions } from "@/lib/auth";
 import ListingImageSlider from "../ListingImageSlider";
 import ListingUnlockPaymentClient from "./ListingUnlockPaymentClient";
+import PriceBreakdownModal from "./PriceBreakdownModal";
 
 function formatPrice(pricePerMonth) {
   if (typeof pricePerMonth !== "number") return "";
@@ -103,6 +103,19 @@ export default async function ListingDetail({ params }) {
   const hasEmail = typeof listing.contactEmail === "string" && listing.contactEmail;
   const listingCity = typeof listing.city === "string" ? listing.city.trim() : "";
   const listingSuburb = typeof listing.suburb === "string" ? listing.suburb.trim() : "";
+  const listerType =
+    typeof listing?.listerType === "string"
+      ? listing.listerType
+      : typeof listing?.lister_type === "string"
+        ? listing.lister_type
+        : "direct_landlord";
+  const agentRate =
+    typeof listing?.agentRate === "number"
+      ? listing.agentRate
+      : typeof listing?.agent_rate === "number"
+        ? listing.agent_rate
+        : null;
+  const agentFixedFee = typeof listing?.agentFixedFee === "number" ? listing.agentFixedFee : null;
   const suburbWithCity = listingSuburb
     ? listingCity && !listingSuburb.toLowerCase().includes(listingCity.toLowerCase())
       ? `${listingSuburb}, ${listingCity}`
@@ -220,6 +233,20 @@ export default async function ListingDetail({ params }) {
                     {formatPrice(listing.deposit)} deposit
                   </span>
                 ) : null}
+                {listerType === "agent" ? (
+                  <span className="rounded-full bg-amber-400/10 px-3 py-1 text-amber-200 ring-1 ring-inset ring-amber-400/30">
+                    Agent Listing
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-sky-400/10 px-3 py-1 text-sky-200 ring-1 ring-inset ring-sky-400/30">
+                    Direct Landlord
+                  </span>
+                )}
+                {listerType === "agent" && agentRate !== null ? (
+                  <span className="rounded-full bg-amber-400/10 px-3 py-1 text-amber-200 ring-1 ring-inset ring-amber-400/30">
+                    Agent fee {agentRate}%
+                  </span>
+                ) : null}
               </div>
               {listing.description ? (
                 <p className="text-sm leading-6 text-slate-300 sm:text-base">
@@ -258,6 +285,8 @@ export default async function ListingDetail({ params }) {
                 <div className="space-y-2 text-sm text-emerald-50/95">
                   <p>🏷️ CODE: {listing.shortId || "N/A"}</p>
                   <p>📍 Suburb: {suburbWithCity}</p>
+                  <p>{listerType === "agent" ? "🏢 Agent Listing" : "🏠 Direct Landlord"}</p>
+                  {listerType === "agent" && agentRate !== null ? <p>💼 Agent fee: {agentRate}%</p> : null}
                   <p>
                     🛏️ Bedrooms:{" "}
                     {typeof listing.bedrooms === "number" ? `${listing.bedrooms} bed(s)` : "N/A"}
@@ -268,6 +297,15 @@ export default async function ListingDetail({ params }) {
                       ? `${formatPrice(listing.pricePerMonth)}${typeof listing.deposit === "number" ? ` (${formatPrice(listing.deposit)} deposit)` : ""}`
                       : "N/A"}
                   </p>
+                </div>
+                <div className="mt-3">
+                  <PriceBreakdownModal
+                    pricePerMonth={listing.pricePerMonth}
+                    deposit={listing.deposit}
+                    listerType={listerType}
+                    agentRate={agentRate}
+                    agentFixedFee={agentFixedFee}
+                  />
                 </div>
               </div>
 
@@ -307,6 +345,8 @@ export default async function ListingDetail({ params }) {
                           ? `${formatPrice(listing.pricePerMonth)}${typeof listing.deposit === "number" ? ` (${formatPrice(listing.deposit)} deposit)` : ""}`
                           : "N/A"}
                       </p>
+                      <p>{listerType === "agent" ? "🏢 Agent Listing" : "🏠 Direct Landlord"}</p>
+                      {listerType === "agent" && agentRate !== null ? <p>💼 Agent fee: {agentRate}%</p> : null}
                       <p>👤 Contact: {listing.contactName || "Landlord / Agent"}</p>
                       {hasPhone ? <p>📞 Phone: {listing.contactPhone}</p> : null}
                       {hasWhatsApp ? <p>📱 WhatsApp: {listing.contactWhatsApp}</p> : null}
@@ -344,6 +384,13 @@ export default async function ListingDetail({ params }) {
                   </div>
 
                   <div className="mt-4 grid gap-3 text-sm">
+                    <PriceBreakdownModal
+                      pricePerMonth={listing.pricePerMonth}
+                      deposit={listing.deposit}
+                      listerType={listerType}
+                      agentRate={agentRate}
+                      agentFixedFee={agentFixedFee}
+                    />
                     {hasWhatsApp ? (
                       <>
                         <a

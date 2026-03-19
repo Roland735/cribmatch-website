@@ -178,10 +178,12 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
   const [pricing, setPricing] = useState({
     contactUnlockPriceUsd: 2.5,
     landlordListingPriceUsd: 0,
+    agentPriceDiscountPercent: 5,
   });
   const [pricingForm, setPricingForm] = useState({
     contactUnlockPriceUsd: "2.50",
     landlordListingPriceUsd: "0.00",
+    agentPriceDiscountPercent: "5.00",
   });
   const [pricingError, setPricingError] = useState("");
   const [pricingSaving, setPricingSaving] = useState(false);
@@ -513,11 +515,13 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
       const nextPricing = {
         contactUnlockPriceUsd: Number(data?.pricing?.contactUnlockPriceUsd ?? 2.5),
         landlordListingPriceUsd: Number(data?.pricing?.landlordListingPriceUsd ?? 0),
+        agentPriceDiscountPercent: Number(data?.pricing?.agentPriceDiscountPercent ?? 5),
       };
       setPricing(nextPricing);
       setPricingForm({
         contactUnlockPriceUsd: formatUsdAmount(nextPricing.contactUnlockPriceUsd),
         landlordListingPriceUsd: formatUsdAmount(nextPricing.landlordListingPriceUsd),
+        agentPriceDiscountPercent: formatUsdAmount(nextPricing.agentPriceDiscountPercent),
       });
     } catch (err) {
       setPricingError(err?.message || "Failed to load pricing");
@@ -743,17 +747,25 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
     try {
       const contactUnlockPriceUsd = Number(pricingForm.contactUnlockPriceUsd);
       const landlordListingPriceUsd = Number(pricingForm.landlordListingPriceUsd);
+      const agentPriceDiscountPercent = Number(pricingForm.agentPriceDiscountPercent);
       if (!Number.isFinite(contactUnlockPriceUsd) || contactUnlockPriceUsd < 0) {
         throw new Error("Unlock price must be a non-negative number.");
       }
       if (!Number.isFinite(landlordListingPriceUsd) || landlordListingPriceUsd < 0) {
         throw new Error("Landlord listing price must be a non-negative number.");
       }
+      if (
+        !Number.isFinite(agentPriceDiscountPercent) ||
+        agentPriceDiscountPercent < 0 ||
+        agentPriceDiscountPercent > 100
+      ) {
+        throw new Error("Agent discount must be between 0 and 100.");
+      }
 
       const response = await fetch("/api/admin/pricing", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ contactUnlockPriceUsd, landlordListingPriceUsd }),
+        body: JSON.stringify({ contactUnlockPriceUsd, landlordListingPriceUsd, agentPriceDiscountPercent }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -762,11 +774,15 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
       const nextPricing = {
         contactUnlockPriceUsd: Number(data?.pricing?.contactUnlockPriceUsd ?? contactUnlockPriceUsd),
         landlordListingPriceUsd: Number(data?.pricing?.landlordListingPriceUsd ?? landlordListingPriceUsd),
+        agentPriceDiscountPercent: Number(
+          data?.pricing?.agentPriceDiscountPercent ?? agentPriceDiscountPercent,
+        ),
       };
       setPricing(nextPricing);
       setPricingForm({
         contactUnlockPriceUsd: formatUsdAmount(nextPricing.contactUnlockPriceUsd),
         landlordListingPriceUsd: formatUsdAmount(nextPricing.landlordListingPriceUsd),
+        agentPriceDiscountPercent: formatUsdAmount(nextPricing.agentPriceDiscountPercent),
       });
     } catch (error) {
       setPricingError(error?.message || "Failed to save pricing");
@@ -1942,7 +1958,7 @@ Interested? Contact us today!
               Set prices once and sync them across web checkout and WhatsApp flows.
             </p>
 
-            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+            <div className="mt-6 grid gap-4 sm:grid-cols-3">
               <div>
                 <label className="block text-sm font-medium text-slate-200" htmlFor="contactUnlockPriceUsd">
                   Unlock contact details (USD per listing)
@@ -1974,6 +1990,22 @@ Interested? Contact us today!
                   placeholder="0.00"
                 />
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-200" htmlFor="agentPriceDiscountPercent">
+                  Agent discount rule (% below direct-landlord median)
+                </label>
+                <input
+                  id="agentPriceDiscountPercent"
+                  inputMode="decimal"
+                  value={pricingForm.agentPriceDiscountPercent}
+                  onChange={(event) =>
+                    setPricingForm((current) => ({ ...current, agentPriceDiscountPercent: event.target.value }))
+                  }
+                  className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+                  placeholder="5.00"
+                />
+              </div>
             </div>
 
             {pricingError ? (
@@ -1982,7 +2014,7 @@ Interested? Contact us today!
 
             <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs text-slate-400">
-                Current: Unlock ${formatUsdAmount(pricing.contactUnlockPriceUsd)} • Landlord ${formatUsdAmount(pricing.landlordListingPriceUsd)}
+                Current: Unlock ${formatUsdAmount(pricing.contactUnlockPriceUsd)} • Landlord ${formatUsdAmount(pricing.landlordListingPriceUsd)} • Agent discount {formatUsdAmount(pricing.agentPriceDiscountPercent)}%
               </p>
               <button
                 type="button"

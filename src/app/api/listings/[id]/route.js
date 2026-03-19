@@ -1,6 +1,6 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { dbConnect, Listing } from "@/lib/db";
+import { dbConnect, getPricingSettings, Listing } from "@/lib/db";
 import {
   KNOWN_PROPERTY_CATEGORIES,
   KNOWN_PROPERTY_TYPES_BY_CATEGORY,
@@ -15,6 +15,8 @@ function serializeListing(listing) {
   return {
     ...obj,
     _id: obj?._id?.toString?.() ?? obj?._id,
+    lister_type: obj?.listerType || "direct_landlord",
+    agent_rate: typeof obj?.agentRate === "number" ? obj.agentRate : null,
     createdAt: obj?.createdAt?.toISOString?.() ?? obj?.createdAt,
     updatedAt: obj?.updatedAt?.toISOString?.() ?? obj?.updatedAt,
   };
@@ -22,6 +24,45 @@ function serializeListing(listing) {
 
 function toValidNumber(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function normalizeMarketValue(value) {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function computeMedian(values = []) {
+  const numbers = values
+    .map((item) => Number(item))
+    .filter((num) => Number.isFinite(num) && num >= 0)
+    .sort((a, b) => a - b);
+  if (!numbers.length) return null;
+  const middle = Math.floor(numbers.length / 2);
+  if (numbers.length % 2 === 0) return (numbers[middle - 1] + numbers[middle]) / 2;
+  return numbers[middle];
+}
+
+async function getMicroMarketMedianPrice({ city, suburb }) {
+  const cityNorm = normalizeMarketValue(city);
+  const suburbNorm = normalizeMarketValue(suburb);
+  const baseQuery = {
+    listerType: "direct_landlord",
+    status: "published",
+    approved: { $ne: false },
+  };
+  const directListings = await Listing.find(baseQuery)
+    .select("pricePerMonth city suburb")
+    .limit(1200)
+    .lean();
+  const bySuburb = directListings.filter((listing) => {
+    if (!suburbNorm) return false;
+    return normalizeMarketValue(listing?.suburb) === suburbNorm;
+  });
+  if (bySuburb.length) return computeMedian(bySuburb.map((listing) => listing?.pricePerMonth));
+  const byCity = directListings.filter((listing) => {
+    if (!cityNorm) return false;
+    return normalizeMarketValue(listing?.city) === cityNorm;
+  });
+  return computeMedian(byCity.map((listing) => listing?.pricePerMonth));
 }
 
 export async function GET(_request, { params }) {
@@ -59,6 +100,9 @@ export async function PATCH(request, { params }) {
   }
 
   const body = await request.json();
+  if (body?.listerType || body?.lister_type) {
+    return Response.json({ error: "lister_type cannot be changed after creation" }, { status: 400 });
+  }
   await dbConnect();
   const existing = await Listing.findById(id);
   if (!existing) {
@@ -72,10 +116,31 @@ export async function PATCH(request, { params }) {
   if (!isAdmin && !isOwner) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (!isAdmin && typeof body?.approved === "boolean") {
+    return Response.json({ error: "Only admins can approve or reject listings" }, { status: 403 });
+  }
 
   const update = {};
+  const now = new Date();
   if (isAdmin && typeof body?.approved === "boolean") {
     update.approved = body.approved;
+    update.approvalStatus = body.approved ? "approved" : "rejected";
+    update.approvedByAdminId = actorPhoneNumber;
+    update.approvedAt = body.approved ? now : null;
+    update.approvalReason =
+      typeof body?.approvalReason === "string" && body.approvalReason.trim()
+        ? body.approvalReason.trim()
+        : body.approved
+          ? "Approved by admin"
+          : "Rejected by admin";
+    update.$push = {
+      approvalHistory: {
+        status: update.approvalStatus,
+        adminId: actorPhoneNumber,
+        reason: update.approvalReason,
+        changedAt: now,
+      },
+    };
   }
   const propertyCategoryRaw =
     typeof body?.propertyCategory === "string" ? body.propertyCategory.trim() : "";
@@ -209,7 +274,31 @@ export async function PATCH(request, { params }) {
     if (update.numberOfStudents === undefined) update.numberOfStudents = null;
   }
 
-  update.updatedAt = new Date();
+  if (existing?.listerType === "agent" && typeof nextPrice === "number") {
+    const pricingSettings = await getPricingSettings({ ensurePersisted: true });
+    const discountPercent = Number(pricingSettings?.agentPriceDiscountPercent ?? 0);
+    const medianDirectPrice = await getMicroMarketMedianPrice({
+      city: nextCity,
+      suburb: nextSuburb,
+    });
+    if (!Number.isFinite(medianDirectPrice)) {
+      return Response.json(
+        { error: "No direct-landlord benchmark found in this micro-market yet" },
+        { status: 400 },
+      );
+    }
+    const maxAllowedAgentPrice = medianDirectPrice * (1 - discountPercent / 100);
+    if (nextPrice > maxAllowedAgentPrice) {
+      return Response.json(
+        {
+          error: `Agent listing must be at least ${discountPercent}% below micro-market median (${medianDirectPrice.toFixed(2)}). Max allowed is ${maxAllowedAgentPrice.toFixed(2)}.`,
+        },
+        { status: 400 },
+      );
+    }
+  }
+
+  update.updatedAt = now;
 
   const listing = await Listing.findByIdAndUpdate(id, update, {
     new: true,

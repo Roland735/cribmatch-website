@@ -59,4 +59,13 @@ describe("searchPublishedListings (seed fallback integration)", () => {
     const ids = result.listings.map((listing) => String(listing._id));
     expect(ids).toContain("seed-avondale-1");
   });
+
+  test("returns lister type and agent rate fields for downstream channels", async () => {
+    const result = await searchPublishedListings({ q: "borehole" });
+    const first = result.listings[0];
+    expect(first).toHaveProperty("lister_type");
+    expect(first).toHaveProperty("agent_rate");
+    expect(first.lister_type).toBeDefined();
+    expect(first.agent_rate).toBeNull();
+  });
 });

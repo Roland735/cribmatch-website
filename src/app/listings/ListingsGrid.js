@@ -33,6 +33,18 @@ function normalizeListings(raw) {
       suburb: typeof item.suburb === "string" ? item.suburb : "",
       propertyCategory: typeof item.propertyCategory === "string" ? item.propertyCategory : "",
       propertyType: typeof item.propertyType === "string" ? item.propertyType : "",
+      listerType:
+        typeof item.listerType === "string"
+          ? item.listerType
+          : typeof item.lister_type === "string"
+            ? item.lister_type
+            : "direct_landlord",
+      agentRate:
+        typeof item.agentRate === "number"
+          ? item.agentRate
+          : typeof item.agent_rate === "number"
+            ? item.agent_rate
+            : null,
       pricePerMonth:
         typeof item.pricePerMonth === "number" ? item.pricePerMonth : null,
       deposit: typeof item.deposit === "number" ? item.deposit : null,
@@ -143,6 +155,15 @@ export default function ListingsGrid() {
                 {formatPrice(listing.pricePerMonth)}/mo
               </span>
             ) : null}
+            {listing.listerType === "agent" ? (
+              <span className="rounded-full bg-amber-400/10 px-3 py-1 text-amber-200 ring-1 ring-inset ring-amber-400/25">
+                Agent Listing
+              </span>
+            ) : (
+              <span className="rounded-full bg-sky-400/10 px-3 py-1 text-sky-200 ring-1 ring-inset ring-sky-400/25">
+                Direct Landlord
+              </span>
+            )}
             {typeof listing.deposit === "number" ? (
               <span className="rounded-full bg-white/5 px-3 py-1 text-slate-200 ring-1 ring-inset ring-white/10">
                 {formatPrice(listing.deposit)} deposit
@@ -162,6 +183,11 @@ export default function ListingsGrid() {
             </p>
           )}
           <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-400">
+            {listing.listerType === "agent" && typeof listing.agentRate === "number" ? (
+              <span className="rounded-full bg-amber-400/10 px-3 py-1 text-amber-200 ring-1 ring-inset ring-amber-400/25">
+                Agent fee {listing.agentRate}%
+              </span>
+            ) : null}
             {typeof listing.bedrooms === "number" ? (
               <span className="rounded-full bg-white/5 px-3 py-1 ring-1 ring-inset ring-white/10">
                 {listing.bedrooms} bed

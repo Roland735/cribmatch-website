@@ -1,6 +1,6 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { dbConnect, Listing } from "@/lib/db";
+import { dbConnect, getPricingSettings, Listing, User } from "@/lib/db";
 import {
   KNOWN_PROPERTY_CATEGORIES,
   KNOWN_PROPERTY_TYPES_BY_CATEGORY,
@@ -15,6 +15,8 @@ function serializeListing(listing) {
   return {
     ...obj,
     _id: obj?._id?.toString?.() ?? obj?._id,
+    lister_type: obj?.listerType || "direct_landlord",
+    agent_rate: typeof obj?.agentRate === "number" ? obj.agentRate : null,
     createdAt: obj?.createdAt?.toISOString?.() ?? obj?.createdAt,
     updatedAt: obj?.updatedAt?.toISOString?.() ?? obj?.updatedAt,
   };
@@ -128,6 +130,51 @@ function validateListingPayload(payload) {
     }
   }
   return "";
+}
+
+function normalizeMarketValue(value) {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function computeMedian(values = []) {
+  const numbers = values
+    .map((item) => Number(item))
+    .filter((num) => Number.isFinite(num) && num >= 0)
+    .sort((a, b) => a - b);
+  if (!numbers.length) return null;
+  const middle = Math.floor(numbers.length / 2);
+  if (numbers.length % 2 === 0) {
+    return (numbers[middle - 1] + numbers[middle]) / 2;
+  }
+  return numbers[middle];
+}
+
+async function getMicroMarketMedianPrice({ city, suburb }) {
+  const cityNorm = normalizeMarketValue(city);
+  const suburbNorm = normalizeMarketValue(suburb);
+  const baseQuery = {
+    listerType: "direct_landlord",
+    status: "published",
+    approved: { $ne: false },
+  };
+  const directListings = await Listing.find(baseQuery)
+    .select("pricePerMonth city suburb")
+    .limit(1200)
+    .lean();
+  const bySuburb = directListings.filter((listing) => {
+    if (!suburbNorm) return false;
+    const listingSuburb = normalizeMarketValue(listing?.suburb);
+    return listingSuburb === suburbNorm;
+  });
+  if (bySuburb.length) {
+    return computeMedian(bySuburb.map((listing) => listing?.pricePerMonth));
+  }
+  const byCity = directListings.filter((listing) => {
+    if (!cityNorm) return false;
+    const listingCity = normalizeMarketValue(listing?.city);
+    return listingCity === cityNorm;
+  });
+  return computeMedian(byCity.map((listing) => listing?.pricePerMonth));
 }
 
 export async function GET(request) {
@@ -259,7 +306,6 @@ export async function POST(request) {
 
   const body = await request.json();
   const payload = normalizeListingPayload(body);
-  const approved = isAdmin && typeof body?.approved === "boolean" ? body.approved : false;
   const validationError = validateListingPayload(payload);
   if (validationError) {
     return Response.json({ error: validationError }, { status: 400 });
@@ -268,6 +314,69 @@ export async function POST(request) {
   const now = new Date();
 
   await dbConnect();
+  const actor = await User.findById(listerPhoneNumber).lean();
+  const actorRole = actor?.role || session?.user?.role || "user";
+  const isAgent = actorRole === "agent";
+  const actorVerificationStatus = actor?.agentProfile?.verificationStatus || "none";
+  const listingsFrozen = Boolean(actor?.agentProfile?.listingsFrozen);
+  if (isAgent && (listingsFrozen || actorVerificationStatus !== "verified")) {
+    return Response.json(
+      {
+        error:
+          "Your agent profile is pending verification. New listings are frozen until admin approval.",
+      },
+      { status: 403 },
+    );
+  }
+
+  let agentRate = null;
+  let agentFixedFee = null;
+  let listerType = "direct_landlord";
+  let approved = isAdmin && typeof body?.approved === "boolean" ? body.approved : false;
+  let approvalStatus = approved ? "approved" : "pending";
+  let approvedByAdminId = approved ? listerPhoneNumber : "";
+  let approvedAt = approved ? now : null;
+  let approvalReason = approved ? "Approved by admin on create" : "Awaiting admin approval";
+
+  if (isAgent) {
+    listerType = "agent";
+    approved = false;
+    approvalStatus = "pending";
+    approvedByAdminId = "";
+    approvedAt = null;
+    approvalReason = "Agent listing pending approval";
+    agentRate =
+      typeof actor?.agentProfile?.commissionRatePercent === "number"
+        ? actor.agentProfile.commissionRatePercent
+        : null;
+    agentFixedFee =
+      typeof actor?.agentProfile?.fixedFee === "number" ? actor.agentProfile.fixedFee : null;
+    if (agentRate === null) {
+      return Response.json({ error: "Missing verified agent rate" }, { status: 400 });
+    }
+
+    const pricingSettings = await getPricingSettings({ ensurePersisted: true });
+    const discountPercent = Number(pricingSettings?.agentPriceDiscountPercent ?? 0);
+    const medianDirectPrice = await getMicroMarketMedianPrice({
+      city: payload.city,
+      suburb: payload.suburb,
+    });
+    if (!Number.isFinite(medianDirectPrice)) {
+      return Response.json(
+        { error: "No direct-landlord benchmark found in this micro-market yet" },
+        { status: 400 },
+      );
+    }
+    const maxAllowedAgentPrice = medianDirectPrice * (1 - discountPercent / 100);
+    if (payload.pricePerMonth > maxAllowedAgentPrice) {
+      return Response.json(
+        {
+          error: `Agent listing must be at least ${discountPercent}% below micro-market median (${medianDirectPrice.toFixed(2)}). Max allowed is ${maxAllowedAgentPrice.toFixed(2)}.`,
+        },
+        { status: 400 },
+      );
+    }
+  }
 
   const listing = await Listing.create({
     title: payload.title,
@@ -295,7 +404,22 @@ export async function POST(request) {
     numberOfStudents:
       payload.propertyCategory === "boarding" ? payload.numberOfStudents : null,
     status: payload.status,
-    approved, // Admin can set this on create, users always false
+    approved,
+    listerType,
+    agentRate,
+    agentFixedFee,
+    approvalStatus,
+    approvedByAdminId,
+    approvedAt,
+    approvalReason,
+    approvalHistory: [
+      {
+        status: approvalStatus,
+        adminId: approvedByAdminId,
+        reason: approvalReason,
+        changedAt: now,
+      },
+    ],
     createdAt: now,
     updatedAt: now,
   });

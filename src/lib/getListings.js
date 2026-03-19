@@ -18,6 +18,16 @@ function normalizeListingDoc(listing) {
     propertyType: normalizedPropertyType,
     city: cityValue,
     shortId: typeof obj?.shortId === "string" ? obj.shortId : "",
+    listerType:
+      typeof obj?.listerType === "string" && obj.listerType
+        ? obj.listerType
+        : "direct_landlord",
+    lister_type:
+      typeof obj?.listerType === "string" && obj.listerType
+        ? obj.listerType
+        : "direct_landlord",
+    agentRate: typeof obj?.agentRate === "number" ? obj.agentRate : null,
+    agent_rate: typeof obj?.agentRate === "number" ? obj.agentRate : null,
     _id: obj?._id?.toString?.() ?? obj?._id,
     createdAt: obj?.createdAt?.toISOString?.() ?? obj?.createdAt,
     updatedAt: obj?.updatedAt?.toISOString?.() ?? obj?.updatedAt,
@@ -47,7 +57,19 @@ function withSeedShortId(listing, indexHint = 0) {
   ]
     .filter((v) => v !== undefined && v !== null)
     .join("|");
-  return { ...listing, shortId: stableShortIdSeed(seed) };
+  const listerType =
+    typeof listing?.listerType === "string" && listing.listerType
+      ? listing.listerType
+      : "direct_landlord";
+  const agentRate = typeof listing?.agentRate === "number" ? listing.agentRate : null;
+  return {
+    ...listing,
+    shortId: stableShortIdSeed(seed),
+    listerType,
+    lister_type: listerType,
+    agentRate,
+    agent_rate: agentRate,
+  };
 }
 
 function toSafeString(value) {

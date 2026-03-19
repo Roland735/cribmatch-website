@@ -1,0 +1,177 @@
+{
+  "info": {
+    "_postman_id": "2f0d9e5b-c4c5-4b50-b420-6b5dbddace4d",
+    "name": "CribMatch Agent Management",
+    "description": "End-to-end verification for agent registration, approval, listing constraints, and listing type exposure.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Agent Registration - Submit Application",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/agents/register",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "agents",
+            "register"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"fullLegalName\": \"Jane Moyo\",\n  \"contactEmail\": \"jane.agent@example.com\",\n  \"contactPhone\": \"+263771123456\",\n  \"governmentIdNumber\": \"63-123456-M-12\",\n  \"agencyLicenseNumber\": \"LIC-2026-188\",\n  \"agencyAffiliationProof\": \"https://files.example.com/proof.pdf\",\n  \"agencyName\": \"Prime Realty\",\n  \"commissionRatePercent\": 7.5,\n  \"fixedFee\": 50\n}"
+        }
+      }
+    },
+    {
+      "name": "Admin Agent Queue - Pending",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/admin/agents?status=pending",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "agents"
+          ],
+          "query": [
+            {
+              "key": "status",
+              "value": "pending"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Admin Agent Queue - Approve Agent",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/admin/agents/{{agentId}}/status",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "agents",
+            "{{agentId}}",
+            "status"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"verified\",\n  \"reason\": \"KYB documents validated\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Agent Listing Create - Price Rule Validation",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/listings",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "listings"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": \"Agent-managed two-bed\",\n  \"city\": \"Harare\",\n  \"suburb\": \"Avondale\",\n  \"propertyCategory\": \"residential\",\n  \"propertyType\": \"Apartment\",\n  \"pricePerMonth\": 780,\n  \"deposit\": 200,\n  \"bedrooms\": 2,\n  \"description\": \"Modern unit\",\n  \"features\": [\"Solar backup\"]\n}"
+        }
+      }
+    },
+    {
+      "name": "Unified Listings Endpoint - Verify lister_type & agent_rate",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/listings?city=Harare&perPage=10",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "listings"
+          ],
+          "query": [
+            {
+              "key": "city",
+              "value": "Harare"
+            },
+            {
+              "key": "perPage",
+              "value": "10"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "GraphQL - ListingsSearch",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/graphql",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "graphql"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"operationName\": \"ListingsSearch\",\n  \"variables\": {\n    \"city\": \"Harare\",\n    \"perPage\": 5\n  }\n}"
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "agentId",
+      "value": "+263771123456"
+    }
+  ]
+}

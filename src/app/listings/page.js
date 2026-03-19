@@ -1,7 +1,8 @@
 import ListingsGridServer from "./ListingsGridServer";
 import ListingsFilters from "./ListingsFilters";
 import Link from "next/link";
-import { getListingFacets, searchPublishedListings } from "@/lib/getListings";
+import { getListingFacets } from "@/lib/getListings";
+import { headers } from "next/headers";
 import { Suspense } from "react";
 
 function toSafeString(value) {
@@ -120,25 +121,37 @@ export default async function Listings({ searchParams }) {
   const photos = toSafeString(resolvedSearchParams?.photos) === "1";
   const page = Math.max(1, Math.floor(toSafeNumber(resolvedSearchParams?.page) ?? 1));
 
-  const { listings, total, perPage: perPageUsed, page: pageUsed } =
-    await searchPublishedListings({
-      q,
-      city,
-      suburb,
-      propertyCategory,
-      propertyType,
-      minPrice,
-      maxPrice,
-      minDeposit,
-      maxDeposit,
-      minBeds,
-      maxBeds,
-      features,
-      sort,
-      photos,
-      page,
-      perPage: 24,
-    });
+  const requestHeaders = await headers();
+  const forwardedHost = requestHeaders.get("x-forwarded-host");
+  const host = forwardedHost || requestHeaders.get("host") || "";
+  const proto = requestHeaders.get("x-forwarded-proto") || "https";
+  const origin = host ? `${proto}://${host}` : "http://localhost:3000";
+  const endpointQuery = buildQueryString({
+    q,
+    city,
+    suburb,
+    propertyCategory,
+    propertyType,
+    minPrice,
+    maxPrice,
+    minDeposit,
+    maxDeposit,
+    minBeds,
+    maxBeds,
+    features,
+    sort,
+    photos,
+    page,
+  });
+  const listingsResponse = await fetch(`${origin}/api/listings?${endpointQuery}`, {
+    method: "GET",
+    cache: "no-store",
+  });
+  const listingsPayload = await listingsResponse.json().catch(() => ({}));
+  const listings = Array.isArray(listingsPayload?.listings) ? listingsPayload.listings : [];
+  const total = Number(listingsPayload?.total || 0);
+  const perPageUsed = Number(listingsPayload?.perPage || 24);
+  const pageUsed = Number(listingsPayload?.page || page);
 
   const hasResults = total > 0;
   const pageCount = Math.max(1, Math.ceil(total / perPageUsed));

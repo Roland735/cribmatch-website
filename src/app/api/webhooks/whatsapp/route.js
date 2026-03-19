@@ -12,7 +12,7 @@ import crypto from "crypto";
 import mongoose from "mongoose";
 import { dbConnect, getPricingSettings, WebhookEvent, Listing, Purchase } from "@/lib/db";
 import Message from "@/lib/Message";
-import { getListingById, searchPublishedListings, getListingFacets, getListingByShortId } from "@/lib/getListings";
+import { getListingById, getListingFacets, getListingByShortId } from "@/lib/getListings";
 import { supabaseAdmin } from "@/lib/supabase";
 import { initiatePaynowEcocashPayment, normalizeZimbabweMobile, verifyPaynowPayment } from "@/lib/paynowPayment";
 
@@ -37,6 +37,36 @@ function digitsOnly(v) { return String(v || "").replace(/\D/g, ""); }
 function formatUsd(value) {
   const amount = Number(value);
   return Number.isFinite(amount) ? amount.toFixed(2) : "0.00";
+}
+function getAppBaseUrl() {
+  const explicit = String(process.env.APP_BASE_URL || "").trim();
+  if (explicit) return explicit.replace(/\/$/, "");
+  const nextAuth = String(process.env.NEXTAUTH_URL || "").trim();
+  if (nextAuth) return nextAuth.replace(/\/$/, "");
+  const vercelUrl = String(process.env.VERCEL_URL || "").trim();
+  if (vercelUrl) return `https://${vercelUrl.replace(/\/$/, "")}`;
+  return "http://localhost:3000";
+}
+
+async function searchViaListingsApi(options = {}) {
+  const params = new URLSearchParams();
+  const entries = Object.entries(options || {});
+  for (const [key, rawValue] of entries) {
+    if (rawValue === null || rawValue === undefined || rawValue === "") continue;
+    if (Array.isArray(rawValue)) {
+      if (!rawValue.length) continue;
+      params.set(key, rawValue.join(","));
+      continue;
+    }
+    params.set(key, String(rawValue));
+  }
+  const endpoint = `${getAppBaseUrl()}/api/listings?${params.toString()}`;
+  const response = await fetch(endpoint, { method: "GET" });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.error || "Failed to search listings");
+  }
+  return payload;
 }
 async function getPricingForMessaging() {
   try {
@@ -1501,6 +1531,20 @@ function formatListingResultText(listing, indexHint = 0, purchasedIds = new Set(
   const { listing: ensured, id } = ensureListingHasId(listing, indexHint);
   if (!ensured) return "";
 
+  const listerTypeRaw =
+    typeof ensured?.listerType === "string"
+      ? ensured.listerType
+      : typeof ensured?.lister_type === "string"
+        ? ensured.lister_type
+        : "direct_landlord";
+  const listerLabel =
+    listerTypeRaw === "agent" ? "🏢 Agent Listing" : "🏠 Direct Landlord";
+  const agentRate =
+    typeof ensured?.agentRate === "number"
+      ? ensured.agentRate
+      : typeof ensured?.agent_rate === "number"
+        ? ensured.agent_rate
+        : null;
   const shortId = getShortIdFromListing(ensured);
   const title = String(ensured.title || "Listing").trim();
   const suburb = String(ensured.suburb || "").trim();
@@ -1516,9 +1560,10 @@ function formatListingResultText(listing, indexHint = 0, purchasedIds = new Set(
   const featuresShort = features.slice(0, 6);
 
   const lines = [
-    `${indexHint + 1}) 🏠 ${title} — 📍 ${suburb} — 💰 $${price}`,
+    `${indexHint + 1}) ${listerLabel} ${title} — 📍 ${suburb} — 💰 $${price}`,
     shortId ? `🏷️ CODE: ${shortId}` : null,
     `🆔 ID: ${id}`,
+    listerTypeRaw === "agent" && agentRate !== null ? `Agent fee: ${agentRate}%` : null,
     purchasedIds.has(String(id)) ? "✅ Already purchased — contact is unlocked" : null,
   ].filter(Boolean);
 
@@ -2517,58 +2562,48 @@ export async function POST(request) {
 
       const runSearch = async (extraOptions) => {
         // 1. Strict Search (Approved Only)
-        let res = await searchPublishedListings({
+        let res = await searchViaListingsApi({
           ...baseSearchOptions,
           ...extraOptions,
-          approvedOnly: true,
         });
         if ((res?.listings || []).length) return res;
 
-        // 2. Strict Search (Unapproved allowed - helps testing)
-        res = await searchPublishedListings({
+        res = await searchViaListingsApi({
           ...baseSearchOptions,
           ...extraOptions,
-          approvedOnly: false,
+          all: 1,
         });
         if ((res?.listings || []).length) return res;
 
-        // 3. Relax Location (Drop Suburb & Features) - Approved Only
         const { suburb, features, ...optionsNoLoc } = extraOptions;
-        res = await searchPublishedListings({
+        res = await searchViaListingsApi({
           ...baseSearchOptions,
           ...optionsNoLoc,
-          approvedOnly: true,
         });
         if ((res?.listings || []).length) return res;
 
-        // 4. Relax Price (Drop Price & Location) - Approved Only
         const { minPrice, maxPrice, ...baseNoPrice } = baseSearchOptions;
-        res = await searchPublishedListings({
+        res = await searchViaListingsApi({
           ...baseNoPrice,
           ...optionsNoLoc,
-          approvedOnly: true,
         });
         if ((res?.listings || []).length) return res;
 
-        // 5. Ultimate Fallback: Just Category (and City if present) - Approved Only
-        // We strip almost everything to guarantee results in the category.
         const { city, propertyCategory } = extraOptions;
-        res = await searchPublishedListings({
+        res = await searchViaListingsApi({
           q: "",
           city: city || "",
           propertyCategory: propertyCategory || "residential",
           perPage: 6,
-          approvedOnly: true,
         });
         if ((res?.listings || []).length) return res;
 
-        // 6. Last Resort: Category + City (Unapproved)
-        return searchPublishedListings({
+        return searchViaListingsApi({
           q: "",
           city: city || "",
           propertyCategory: propertyCategory || "residential",
           perPage: 6,
-          approvedOnly: false,
+          all: 1,
         });
       };
 

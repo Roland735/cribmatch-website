@@ -1,0 +1,11 @@
+CribMatch is a property rental and listing platform built for the Zimbabwe market, with a strong WhatsApp-first experience supported by a modern web app.
+
+The platform helps renters find homes faster and helps landlords and agents advertise properties, manage enquiries, and share contact details securely. Users can browse listings on the website, filter by location and price, and unlock landlord or agent contact details through a Paynow EcoCash payment flow.
+
+CribMatch includes:
+- A Next.js web application for listings, user accounts, admin tools, and pricing management.
+- A WhatsApp chatbot workflow for search, listing discovery, contact unlocking, and menu-driven support.
+- Payment integration with Paynow EcoCash, including transaction verification and webhook handling.
+- Data storage and business logic built around MongoDB/Mongoose models for listings, purchases, messages, and payment transactions.
+
+The goal of CribMatch is to reduce rental friction by combining web discovery with conversational WhatsApp automation, making the process faster, mobile-friendly, and accessible for both renters and property agents.

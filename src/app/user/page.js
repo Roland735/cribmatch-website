@@ -87,6 +87,23 @@ export default async function UserDashboardPage() {
       ) : null}
 
       <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {session?.user?.role === "user" ? (
+          <div className="rounded-3xl border border-amber-400/20 bg-amber-400/5 p-6 flex flex-col">
+            <p className="text-sm font-semibold text-amber-100">Become a verified agent</p>
+            <p className="mt-2 text-sm text-slate-300 flex-1">
+              Submit legal identity, license, affiliation proof, and commission rates.
+            </p>
+            <div className="mt-4">
+              <Link
+                href="/agent/register"
+                className="inline-flex items-center justify-center rounded-full bg-amber-300 px-5 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-amber-200 w-full"
+              >
+                Start agent sign-up
+              </Link>
+            </div>
+          </div>
+        ) : null}
+
         <div className="rounded-3xl border border-white/10 bg-slate-900/40 p-6 flex flex-col">
           <p className="text-sm font-semibold text-white">List a property</p>
           <p className="mt-2 text-sm text-slate-300 flex-1">

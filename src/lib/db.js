@@ -87,6 +87,39 @@ const ListingSchema = new mongoose.Schema(
       index: true,
     },
     approved: { type: Boolean, default: false, index: true },
+    listerType: {
+      type: String,
+      enum: ["direct_landlord", "agent"],
+      default: "direct_landlord",
+      immutable: true,
+      index: true,
+    },
+    agentRate: { type: Number, default: null, min: 0, max: 100 },
+    agentFixedFee: { type: Number, default: null, min: 0 },
+    approvalStatus: {
+      type: String,
+      enum: ["pending", "approved", "rejected"],
+      default: "pending",
+      index: true,
+    },
+    approvedByAdminId: { type: String, default: "", trim: true },
+    approvedAt: { type: Date, default: null },
+    approvalReason: { type: String, default: "", trim: true },
+    approvalHistory: {
+      type: [
+        {
+          status: {
+            type: String,
+            enum: ["pending", "approved", "rejected"],
+            required: true,
+          },
+          adminId: { type: String, default: "", trim: true },
+          reason: { type: String, default: "", trim: true },
+          changedAt: { type: Date, default: Date.now },
+        },
+      ],
+      default: [],
+    },
   },
   { timestamps: true },
 );
@@ -104,6 +137,13 @@ ListingSchema.pre("validate", function normalizeLocationFields() {
     if (!current || (current === "harare" && next !== "harare")) {
       this.city = inferred;
     }
+  }
+});
+
+ListingSchema.pre("validate", function normalizeAgentFields() {
+  if (this.listerType !== "agent") {
+    this.agentRate = null;
+    this.agentFixedFee = null;
   }
 });
 
@@ -157,6 +197,55 @@ const UserSchema = new mongoose.Schema(
     whatsappVerified: { type: Boolean, default: false, index: true },
     whatsappVerifiedAt: { type: Date, default: null },
     adminContactNumber: { type: String, default: "", trim: true },
+    agentProfile: {
+      fullLegalName: { type: String, default: "", trim: true },
+      contactEmail: { type: String, default: "", trim: true },
+      contactPhone: { type: String, default: "", trim: true },
+      governmentIdNumber: { type: String, default: "", trim: true },
+      agencyLicenseNumber: { type: String, default: "", trim: true },
+      agencyAffiliationProof: { type: String, default: "", trim: true },
+      agencyName: { type: String, default: "", trim: true },
+      commissionRatePercent: { type: Number, default: null, min: 0, max: 100 },
+      fixedFee: { type: Number, default: null, min: 0 },
+      verificationStatus: {
+        type: String,
+        enum: ["none", "pending_verification", "verified", "rejected", "pending_reapproval"],
+        default: "none",
+        index: true,
+      },
+      verificationSubmittedAt: { type: Date, default: null },
+      verifiedAt: { type: Date, default: null },
+      rejectedAt: { type: Date, default: null },
+      listingsFrozen: { type: Boolean, default: false },
+    },
+    agentVerificationHistory: {
+      type: [
+        {
+          fromStatus: { type: String, default: "", trim: true },
+          toStatus: {
+            type: String,
+            enum: ["pending_verification", "verified", "rejected", "pending_reapproval"],
+            required: true,
+          },
+          adminId: { type: String, default: "", trim: true },
+          reason: { type: String, default: "", trim: true },
+          changedAt: { type: Date, default: Date.now },
+        },
+      ],
+      default: [],
+    },
+    agentRateHistory: {
+      type: [
+        {
+          commissionRatePercent: { type: Number, required: true, min: 0, max: 100 },
+          fixedFee: { type: Number, default: null, min: 0 },
+          changedBy: { type: String, default: "", trim: true },
+          changedAt: { type: Date, default: Date.now },
+          note: { type: String, default: "", trim: true },
+        },
+      ],
+      default: [],
+    },
   },
   { timestamps: true },
 );
@@ -285,6 +374,7 @@ export const Report = mongoose.models.Report || mongoose.model("Report", ReportS
 const DEFAULT_PRICING_SETTINGS = {
   contactUnlockPriceUsd: 2.5,
   landlordListingPriceUsd: 0,
+  agentPriceDiscountPercent: 5,
 };
 
 const PricingSettingsSchema = new mongoose.Schema(
@@ -292,6 +382,7 @@ const PricingSettingsSchema = new mongoose.Schema(
     _id: { type: String, default: "default" },
     contactUnlockPriceUsd: { type: Number, required: true, min: 0, default: DEFAULT_PRICING_SETTINGS.contactUnlockPriceUsd },
     landlordListingPriceUsd: { type: Number, required: true, min: 0, default: DEFAULT_PRICING_SETTINGS.landlordListingPriceUsd },
+    agentPriceDiscountPercent: { type: Number, required: true, min: 0, max: 100, default: DEFAULT_PRICING_SETTINGS.agentPriceDiscountPercent },
   },
   { timestamps: true },
 );
@@ -314,6 +405,7 @@ export async function getPricingSettings({ ensurePersisted = false } = {}) {
         $setOnInsert: {
           contactUnlockPriceUsd: DEFAULT_PRICING_SETTINGS.contactUnlockPriceUsd,
           landlordListingPriceUsd: DEFAULT_PRICING_SETTINGS.landlordListingPriceUsd,
+          agentPriceDiscountPercent: DEFAULT_PRICING_SETTINGS.agentPriceDiscountPercent,
         },
       },
       { upsert: true, new: true, setDefaultsOnInsert: true },
@@ -326,6 +418,10 @@ export async function getPricingSettings({ ensurePersisted = false } = {}) {
       landlordListingPriceUsd: normalizeMoney(
         persisted?.landlordListingPriceUsd,
         DEFAULT_PRICING_SETTINGS.landlordListingPriceUsd,
+      ),
+      agentPriceDiscountPercent: normalizeMoney(
+        persisted?.agentPriceDiscountPercent,
+        DEFAULT_PRICING_SETTINGS.agentPriceDiscountPercent,
       ),
     };
   }
@@ -340,6 +436,10 @@ export async function getPricingSettings({ ensurePersisted = false } = {}) {
       existing?.landlordListingPriceUsd,
       DEFAULT_PRICING_SETTINGS.landlordListingPriceUsd,
     ),
+    agentPriceDiscountPercent: normalizeMoney(
+      existing?.agentPriceDiscountPercent,
+      DEFAULT_PRICING_SETTINGS.agentPriceDiscountPercent,
+    ),
   };
 }
 
@@ -347,6 +447,10 @@ export async function updatePricingSettings(input = {}) {
   const current = await getPricingSettings({ ensurePersisted: true });
   const contactUnlockPriceUsd = normalizeMoney(input?.contactUnlockPriceUsd, current.contactUnlockPriceUsd);
   const landlordListingPriceUsd = normalizeMoney(input?.landlordListingPriceUsd, current.landlordListingPriceUsd);
+  const agentPriceDiscountPercent = normalizeMoney(
+    input?.agentPriceDiscountPercent,
+    current.agentPriceDiscountPercent,
+  );
 
   const saved = await PricingSettings.findOneAndUpdate(
     { _id: "default" },
@@ -354,6 +458,7 @@ export async function updatePricingSettings(input = {}) {
       $set: {
         contactUnlockPriceUsd,
         landlordListingPriceUsd,
+        agentPriceDiscountPercent,
       },
     },
     { new: true, upsert: true, setDefaultsOnInsert: true },
@@ -367,6 +472,10 @@ export async function updatePricingSettings(input = {}) {
     landlordListingPriceUsd: normalizeMoney(
       saved?.landlordListingPriceUsd,
       DEFAULT_PRICING_SETTINGS.landlordListingPriceUsd,
+    ),
+    agentPriceDiscountPercent: normalizeMoney(
+      saved?.agentPriceDiscountPercent,
+      DEFAULT_PRICING_SETTINGS.agentPriceDiscountPercent,
     ),
   };
 }
