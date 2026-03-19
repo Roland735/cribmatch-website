@@ -75,6 +75,17 @@ function resolveTestScenario(local, international) {
   return "";
 }
 
+function pickFirstNonEmptyValue(source, keys = []) {
+  if (!source || typeof source !== "object") return "";
+  for (const key of keys) {
+    const value = source?.[key];
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      return String(value).trim();
+    }
+  }
+  return "";
+}
+
 async function getPaynowClient() {
   let moduleRef = null;
   let PaynowCtorOrInstance = null;
@@ -287,24 +298,30 @@ export async function initiatePaynowEcocashPayment({ phone, payerMobile, listing
       // sendMobile may return different shapes depending on SDK; capture it
       const response = await paynow.sendMobile(payment, normalizedPayer.local, "ecocash");
 
-      // Normalize response success detection
-      const success = Boolean(response?.success) || Boolean(response?.Success) || (response && !response.error && (response.pollUrl || response.reference));
+      const pollUrl = pickFirstNonEmptyValue(response, ["pollUrl", "PollUrl", "pollurl", "pollURL", "poll_url"]);
+      const paynowReference = pickFirstNonEmptyValue(response, ["reference", "paynowreference", "paynowReference", "reference_id", "Reference"]);
+      const sdkMarkedSuccess = Boolean(response?.success) || Boolean(response?.Success);
+      const hasTrackingReference = Boolean(pollUrl || paynowReference);
+      const success = Boolean(response && (sdkMarkedSuccess || !response.error)) && hasTrackingReference;
+      const missingTrackingHint = !hasTrackingReference
+        ? "Payment gateway response is missing poll URL/reference."
+        : "";
 
       await addAttemptLog(tx._id, {
         stage: "ussd_push",
         success,
-        message: success ? "USSD push initiated" : String(response?.error || response?.message || response?.Message || "Push failed"),
+        message: success
+          ? "USSD push initiated"
+          : String(response?.error || response?.message || response?.Message || missingTrackingHint || "Push failed"),
         code: success ? "PUSH_INITIATED" : "PUSH_FAILED",
         raw: response || null,
       });
 
       if (!success) {
-        lastPushErrorMessage = String(response?.error || response?.message || response?.Message || "Push failed");
+        lastPushErrorMessage = String(response?.error || response?.message || response?.Message || missingTrackingHint || "Push failed");
       }
 
       if (success) {
-        const pollUrl = String(response?.pollUrl || response?.PollUrl || "");
-        const paynowReference = String(response?.reference || response?.paynowreference || response?.reference_id || response?.paynowReference || "");
         await PaymentTransaction.updateOne(
           { _id: tx._id },
           {
@@ -369,15 +386,23 @@ export async function verifyPaynowPayment(transactionId) {
   }
 
   if (!tx.pollUrl) {
+    if (String(tx.status || "").toLowerCase() === "paid") {
+      return { ok: true, paid: true, status: "paid", transaction: tx };
+    }
+    if (String(tx.status || "").toLowerCase().includes("cancel")) {
+      return { ok: true, paid: false, status: "cancelled", transaction: tx };
+    }
+    if (String(tx.status || "").toLowerCase().includes("fail")) {
+      return { ok: true, paid: false, status: "failed", transaction: tx };
+    }
     await addVerificationLog(tx._id, {
-      success: false,
-      status: "unknown",
+      success: true,
+      status: "pending_no_poll_url",
       paid: false,
-      message: "Missing poll URL",
+      message: "Missing poll URL; awaiting webhook status update",
       raw: null,
     });
-    await PaymentTransaction.updateOne({ _id: tx._id }, { $set: { status: "verification_failed" } }).exec();
-    return { ok: false, error: "missing-poll-url", userMessage: "Payment is pending setup. Please retry." };
+    return { ok: true, paid: false, status: String(tx.status || "pending_confirmation"), transaction: tx };
   }
 
   if (String(tx.pollUrl || "").startsWith("test://paynow/")) {

@@ -150,6 +150,16 @@ async function sendPaidListingDetails(transaction) {
   ).exec().catch(() => null);
 }
 
+async function sendUnsuccessfulPaymentUpdate(transaction, normalizedStatus) {
+  const phone = digitsOnly(transaction?.phone || "");
+  if (!phone) return;
+  const statusLabel = normalizedStatus === "cancelled" ? "cancelled" : "failed";
+  await sendWhatsAppText(
+    phone,
+    `❌ EcoCash payment ${statusLabel}. Reply with retry to request a new USSD push, or Main menu to cancel.`,
+  ).catch(() => null);
+}
+
 async function handlePaynowWebhook(request, params) {
   const url = new URL(request.url);
   const rawBody = await request.text().catch(() => "");
@@ -207,6 +217,8 @@ async function handlePaynowWebhook(request, params) {
 
       if (normalizedStatus === "paid" && !existingTx.unlockedAt) {
         await sendPaidListingDetails(existingTx).catch(() => null);
+      } else if (normalizedStatus === "cancelled" || normalizedStatus === "failed") {
+        await sendUnsuccessfulPaymentUpdate(existingTx, normalizedStatus).catch(() => null);
       }
     } else if (reference || paynowReference) {
       await PaymentTransaction.updateOne(
