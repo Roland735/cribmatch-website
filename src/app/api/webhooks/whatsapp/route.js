@@ -1896,7 +1896,7 @@ export async function POST(request) {
 
     await sendInteractiveButtons(
       phone,
-      `✅ USSD push sent to ${parsedMobile.local}.\n${paymentStart.instructions}\n\nWe'll unlock contacts automatically once payment confirms.\nIf the prompt failed, reply: retry`,
+      `✅ USSD push sent to ${parsedMobile.local}.\nApprove the EcoCash payment prompt on your phone (or dial *151*2*7# if prompted), then enter your PIN.\n\nWe'll unlock contacts automatically once payment confirms.\nIf the prompt failed, reply: retry`,
       [{ id: "menu_main", title: "🏠 Main menu" }],
       { headerText: "EcoCash Payment" }
     );
@@ -1968,7 +1968,7 @@ export async function POST(request) {
 
       await sendInteractiveButtons(
         phone,
-        `✅ New USSD push sent to ${payerMobile}.\n${paymentStart.instructions}\n\nWe'll unlock contacts automatically once payment confirms.`,
+        `✅ New USSD push sent to ${payerMobile}.\nApprove the EcoCash payment prompt on your phone (or dial *151*2*7# if prompted), then enter your PIN.\n\nWe'll unlock contacts automatically once payment confirms.\nIf the prompt failed, reply: retry`,
         [{ id: "menu_main", title: "🏠 Main menu" }],
         { headerText: "EcoCash Payment" }
       );
