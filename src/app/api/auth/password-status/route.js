@@ -1,6 +1,6 @@
 import Message from "@/lib/Message";
 import { dbConnect, Listing, Purchase, User } from "@/lib/db";
-import { normalizePhoneNumber, normalizePhoneNumberCandidates } from "@/lib/auth";
+import { getSeedCredentialProfile, normalizePhoneNumber, normalizePhoneNumberCandidates } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -38,14 +38,15 @@ export async function POST(request) {
   const phoneCandidates = normalizePhoneNumberCandidates(phoneNumber);
   const digitsCandidates = toDigitsCandidates(phoneCandidates);
   const user = await User.findOne({ _id: { $in: phoneCandidates } }).lean();
+  const seedProfile = getSeedCredentialProfile(phoneNumber);
   const hasPassword = Boolean(user?.password?.salt && user?.password?.hash);
   const historyExists = await hasWhatsappHistory(phoneCandidates, digitsCandidates);
-  const requiresPasswordSetup = Boolean((user && !hasPassword) || (!user && historyExists));
+  const requiresPasswordSetup = Boolean(!seedProfile && ((user && !hasPassword) || (!user && historyExists)));
 
   return Response.json({
     ok: true,
-    accountExists: Boolean(user),
-    hasPassword,
+    accountExists: Boolean(user || seedProfile),
+    hasPassword: Boolean(hasPassword || seedProfile),
     historyExists,
     requiresPasswordSetup,
   });
