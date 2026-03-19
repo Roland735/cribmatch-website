@@ -19,16 +19,16 @@ export default async function LoginPage({ searchParams }) {
                 <p className="inline-flex items-center rounded-full border border-emerald-300/30 bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-emerald-200">
                   CribMatch Access
                 </p>
-                <h1 className="mt-4 text-balance text-3xl font-semibold tracking-tight text-white xl:text-4xl">
-                  Welcome home to easier, happier renting.
+                <h1 className="mt-4 h-[5.5rem] max-w-[16ch] text-3xl font-semibold tracking-tight text-white xl:text-4xl">
+                  Love where you live, faster.
                 </h1>
-                <p className="mt-3 max-w-xl text-sm leading-relaxed text-slate-200">
-                  Join thousands of renters finding spaces they love. Sign in to get trusted listings, friendly support, and confident next steps.
+                <p className="mt-3 h-[3.25rem] max-w-[38ch] text-sm leading-relaxed text-slate-200">
+                  Discover verified homes, friendly support, and stress-free next steps in one place.
                 </p>
-                <ul className="mt-4 space-y-1.5 text-sm text-slate-200/90">
-                  <li>• Happy move-ins with verified listings and contacts</li>
-                  <li>• Friendly WhatsApp-first support from search to viewing</li>
-                  <li>• Smart filters that match your budget and lifestyle</li>
+                <ul className="mt-4 h-[4.75rem] space-y-1.5 text-sm text-slate-200/90">
+                  <li>• Verified listings and trusted contacts</li>
+                  <li>• WhatsApp-first help from search to viewing</li>
+                  <li>• Smart filters for budget and lifestyle</li>
                 </ul>
               </div>
               <p className="mt-4 text-xs text-slate-300">
