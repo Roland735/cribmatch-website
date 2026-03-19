@@ -27,9 +27,9 @@ export default async function LoginPage({ searchParams }) {
                 </p>
                 <div className="grid max-w-[36ch] grid-cols-2 gap-2 text-xs text-slate-100">
                   <div className="rounded-xl border border-white/15 bg-white/[0.03] px-3 py-2">Verified listings</div>
-                  <div className="rounded-xl border border-white/15 bg-white/[0.03] px-3 py-2">WhatsApp support</div>
+                  <div className="rounded-xl border border-white/15 bg-white/[0.03] px-3 py-2">WhatsApp guidance</div>
                   <div className="rounded-xl border border-white/15 bg-white/[0.03] px-3 py-2">Smart filters</div>
-                  <div className="rounded-xl border border-white/15 bg-white/[0.03] px-3 py-2">Faster move-ins</div>
+                  <div className="rounded-xl border border-white/15 bg-white/[0.03] px-3 py-2">Faster decisions</div>
                 </div>
               </div>
               <p className="text-xs text-slate-300">

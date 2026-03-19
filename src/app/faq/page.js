@@ -3,27 +3,27 @@ export default function FAQ() {
     {
       question: "How do payments work?",
       answer:
-        "Payments are agreed directly between the tenant and the landlord/agent (e.g., cash or transfer). CribMatch helps clarify terms and reduce confusion, but we will never ask for banking PINs.",
+        "Payment terms are agreed directly between renter and landlord or agent (for example, cash or transfer). CribMatch helps clarify terms and will never ask for banking PINs.",
     },
     {
       question: "Can you help verify tenants or landlords?",
       answer:
-        "Yes. We can help with basic verification steps and guidance where possible. Always do in-person viewings and confirm identity/ownership before paying deposits.",
+        "Yes. We provide practical verification guidance where possible. Always do in-person viewings and confirm identity or ownership before paying a deposit.",
     },
     {
       question: "What areas do you cover?",
       answer:
-        "We currently focus on Harare and surrounding suburbs and are expanding to more cities. Message us your suburb/city and we’ll confirm coverage.",
+        "We currently focus on Harare and nearby suburbs, with expansion to more cities in progress. Message your suburb or city and we will confirm coverage.",
     },
     {
       question: "How long until my listing appears?",
       answer:
-        "Once you send details on WhatsApp, we review and publish quickly (often same-day). We’ll confirm timelines in chat.",
+        "After you send details on WhatsApp, we review and publish quickly, often the same day. We confirm timelines in chat.",
     },
     {
       question: "Is it safe?",
       answer:
-        "Safety is a priority. We verify contact details where possible and share scam-avoidance guidance. Never share banking PINs and never pay deposits before viewing in person.",
+        "Safety is a priority. We verify contact details where possible and share scam-prevention guidance. Never share banking PINs or pay a deposit before viewing in person.",
     },
   ];
 
@@ -39,7 +39,7 @@ export default function FAQ() {
             Frequently asked questions
           </h1>
           <p className="mt-4 text-pretty text-base leading-relaxed text-slate-300 sm:text-lg">
-            Common questions about renting and listing with CribMatch.
+            Answers to common questions about renting and listing with CribMatch.
           </p>
         </div>
 
@@ -61,10 +61,10 @@ export default function FAQ() {
         <div className="mx-auto mt-12 flex max-w-3xl flex-col items-center justify-between gap-4 rounded-3xl border border-white/10 bg-slate-900/40 p-6 text-center sm:flex-row sm:text-left">
           <div>
             <p className="text-sm font-semibold text-white">
-              Still have questions?
+              Need more help?
             </p>
             <p className="mt-1 text-xs text-slate-400">
-              Message us on WhatsApp and we’ll help you quickly.
+              Message us on WhatsApp for fast support.
             </p>
           </div>
           <a

@@ -90,18 +90,17 @@ export default async function Home({ searchParams }) {
           <div className="space-y-8">
             <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-200">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
-              A rental middleman for Zimbabwe — powered by the web + WhatsApp
+              Zimbabwe rentals, simplified on web + WhatsApp
             </div>
 
             <div className="space-y-4">
               <h1 className="text-balance text-4xl font-semibold tracking-tight sm:text-5xl lg:text-6xl">
-                Find or list rentals — fast, local, on web + WhatsApp.
+                Find your next rental with confidence.
               </h1>
               <p className="max-w-xl text-pretty text-base leading-relaxed text-slate-300 sm:text-lg">
-                CribMatch connects tenants with landlords and agents. Tell us
-                your suburb, budget, and bedrooms, and we match you with
-                suitable places, coordinate viewings, and keep the process
-                simple and safe
+                We connect renters, landlords, and agents in one guided flow.
+                Share your suburb, budget, and preferences, then move forward
+                with clear support.
               </p>
             </div>
 
@@ -118,7 +117,7 @@ export default async function Home({ searchParams }) {
                 href="/listings"
                 className="rounded-full border border-white/20 px-6 py-3 text-sm font-semibold text-slate-50 transition hover:border-white/40 hover:bg-white/5"
               >
-                Browse sample listings
+                Browse listings
               </Link>
               <Link
                 href="/landlords"
@@ -127,7 +126,7 @@ export default async function Home({ searchParams }) {
                 List a property <span aria-hidden="true">→</span>
               </Link>
               <span className="text-xs text-slate-400">
-                Browse on the web. Chat on WhatsApp. No long forms.
+                Browse on web, finalize faster on WhatsApp.
               </span>
             </div>
 
@@ -164,7 +163,7 @@ export default async function Home({ searchParams }) {
                   Match preview
                 </p>
                 <p className="mt-1 text-sm text-slate-200">
-                  What you get when you describe your needs.
+                  Preview of your guided match journey.
                 </p>
               </div>
               <span className="rounded-full bg-emerald-400/15 px-3 py-1 text-xs font-semibold text-emerald-200">
@@ -176,7 +175,7 @@ export default async function Home({ searchParams }) {
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1">
                   <p className="text-sm font-semibold text-white">
-                    2-bed garden flat in Avondale
+                    2-bed garden flat · Avondale
                   </p>
                   <p className="text-xs text-slate-400">
                     Borehole • Solar backup • Secure complex
@@ -206,7 +205,7 @@ export default async function Home({ searchParams }) {
                     Next step
                   </p>
                   <p className="text-sm font-semibold text-white">
-                    Schedule a viewing
+                    Book a viewing
                   </p>
                 </div>
                 <div className="flex items-center gap-2 text-xs text-slate-300">
@@ -214,14 +213,14 @@ export default async function Home({ searchParams }) {
                     3
                   </div>
                   <p className="max-w-[10rem] text-[11px] text-slate-400">
-                    Options based on your suburb, budget, and bedrooms.
+                    Options tuned to your suburb, budget, and bedroom needs.
                   </p>
                 </div>
               </div>
             </div>
 
             <p className="text-xs text-slate-400">
-              Browse on the web, then move to WhatsApp for matching, viewings, and verification.
+              Start on web, then use WhatsApp for matching, viewings, and verification.
             </p>
           </div>
         </section>
@@ -229,11 +228,10 @@ export default async function Home({ searchParams }) {
         <section className="mt-20 space-y-8 border-t border-white/10 pt-12">
           <div className="space-y-3">
             <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-              Built for Zimbabwean rentals.
+              Designed for Zimbabwe rentals.
             </h2>
             <p className="max-w-2xl text-sm text-slate-300 sm:text-base">
-              Local suburbs, USD/ZWL realities, agent workflows, and mobile-first
-              experiences.
+              Local neighborhoods, practical pricing context, and mobile-first workflows.
             </p>
           </div>
           <div className="grid gap-6 md:grid-cols-3">
@@ -254,11 +252,10 @@ export default async function Home({ searchParams }) {
                 2
               </div>
               <h3 className="text-sm font-semibold text-white sm:text-base">
-                Middleman support
+                Guided coordination
               </h3>
               <p className="text-xs text-slate-300 sm:text-sm">
-                We connect landlords/agents and tenants, coordinate viewings,
-                and keep the process moving.
+                We coordinate communication, viewing slots, and next steps.
               </p>
             </div>
             <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-slate-900/60 p-5">
@@ -337,11 +334,11 @@ export default async function Home({ searchParams }) {
         <section className="mt-20 grid gap-10 border-t border-white/10 pt-12 lg:grid-cols-2">
           <div className="space-y-4">
             <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-              Landlords & agents: list in minutes
+              Landlords and agents: list in minutes
             </h2>
             <p className="text-sm text-slate-300 sm:text-base">
-              Send photos and details on WhatsApp, get web exposure, and receive
-              enquiries from serious renters. No complicated portals.
+              Send details on WhatsApp, get web visibility, and receive
+              qualified enquiries without complex portals.
             </p>
             <div className="flex flex-wrap gap-3">
               <Link
@@ -361,12 +358,11 @@ export default async function Home({ searchParams }) {
 
           <div className="space-y-4 rounded-3xl border border-white/10 bg-slate-900/60 p-6">
             <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-              Safety reminder
+              Safety notice
             </p>
             <p className="text-sm text-slate-200 sm:text-base">
-              CribMatch will never ask for banking PINs. Always view properties
-              in person and confirm ownership/agent details before paying
-              deposits.
+              CribMatch never asks for banking PINs. Always view in person and
+              confirm ownership or agent details before paying any deposit.
             </p>
             <Link
               href="/faq"

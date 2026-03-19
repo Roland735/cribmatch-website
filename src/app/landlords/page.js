@@ -20,12 +20,11 @@ export default async function Landlords() {
                 For landlords & agents
               </div>
               <h1 className="mt-4 text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
-                Fill vacancies faster
+                Fill vacancies faster with less back-and-forth
               </h1>
               <p className="mt-4 text-pretty text-base leading-relaxed text-slate-300 sm:text-lg">
-                CribMatch is the middleman that connects your property to serious
-                renters, publishes it on the web, coordinates viewings, and keeps
-                communication simple on WhatsApp.
+                CribMatch connects your property to serious renters, publishes
+                on the web, and coordinates communication on WhatsApp.
               </p>
             </div>
 
@@ -35,8 +34,8 @@ export default async function Landlords() {
                   Simple listing process
                 </h2>
                 <p className="mt-3 text-sm leading-6 text-slate-300">
-                  Send photos, rent, suburb, and key features on WhatsApp. We format
-                  the listing and share it with matching renters.
+                  Send photos, rent, suburb, and key features on WhatsApp. We
+                  format the listing and share it with matching renters.
                 </p>
               </div>
               <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-6">
@@ -44,8 +43,8 @@ export default async function Landlords() {
                   Qualified enquiries
                 </h2>
                 <p className="mt-3 text-sm leading-6 text-slate-300">
-                  We filter by budget, suburb, and requirements before connecting
-                  you, reducing wasted viewings.
+                  We filter by budget, suburb, and requirements before
+                  connecting you, reducing wasted viewings.
                 </p>
               </div>
               <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-6">
@@ -53,8 +52,8 @@ export default async function Landlords() {
                   Agent-friendly workflow
                 </h2>
                 <p className="mt-3 text-sm leading-6 text-slate-300">
-                  Keep your process. CribMatch routes enquiries, coordinates viewing
-                  slots, and helps track follow-ups.
+                  Keep your process. CribMatch routes enquiries, coordinates
+                  viewing slots, and supports follow-ups.
                 </p>
               </div>
             </div>
@@ -89,7 +88,7 @@ export default async function Landlords() {
                     Get started
                   </p>
                   <p className="mt-3 text-sm leading-6 text-emerald-100/90">
-                    Sign in to list your property directly on the web or use WhatsApp.
+                    Sign in to list directly on the web or continue on WhatsApp.
                   </p>
                   <p className="mt-3 text-xs text-emerald-100/80">
                     Current listing fee: {landlordListingPriceUsd === 0 ? "Free" : `$${landlordListingPriceUsd.toFixed(2)} per listing`}.
@@ -100,7 +99,7 @@ export default async function Landlords() {
                     href="/login"
                     className="inline-flex rounded-full bg-emerald-400 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300"
                   >
-                    Login to list property
+                    Sign in to list property
                   </Link>
                   <a
                     href="https://wa.me/263771150713"
@@ -124,7 +123,7 @@ export default async function Landlords() {
                 >
                   ← Back to dashboard
                 </Link>
-                <h1 className="mt-2 text-3xl font-semibold text-white">Landlord Portal</h1>
+                <h1 className="mt-2 text-3xl font-semibold text-white">Landlord portal</h1>
               </div>
             </div>
             <AdminClient scope="mine" showSignOut={false} />

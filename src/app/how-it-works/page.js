@@ -5,14 +5,13 @@ export default function HowItWorks() {
         <div className="mx-auto max-w-2xl text-center">
           <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-200">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
-            Simple, human-first process
+            Simple, guided process
           </div>
           <h1 className="mt-4 text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
             How CribMatch works
           </h1>
           <p className="mt-4 text-pretty text-base leading-relaxed text-slate-300 sm:text-lg">
-            CribMatch is the middleman between tenants and landlords/agents. Use
-            the website to browse and shortlist, then use WhatsApp for matching,
+            Browse on the website, then move to WhatsApp for matching,
             availability checks, and viewing coordination.
           </p>
         </div>
@@ -26,8 +25,8 @@ export default function HowItWorks() {
               Browse on the web
             </h2>
             <p className="mt-2 text-sm leading-6 text-slate-300">
-              Browse sample listings and shortlist what you like. Then share
-              links or requirements so we can match you quickly.
+              Review listings and shortlist your top options. Share links or
+              requirements so we can match you faster.
             </p>
           </div>
 
@@ -39,8 +38,7 @@ export default function HowItWorks() {
               Chat on WhatsApp
             </h2>
             <p className="mt-2 text-sm leading-6 text-slate-300">
-              Suburb, budget, bedrooms, and any must-haves like borehole, solar,
-              or security.
+              Share your suburb, budget, bedrooms, and must-have features.
             </p>
           </div>
 
@@ -52,8 +50,8 @@ export default function HowItWorks() {
               Get matches & view
             </h2>
             <p className="mt-2 text-sm leading-6 text-slate-300">
-              We send matches, coordinate viewings with agents/landlords, and
-              guide basic verification steps.
+              Receive tailored matches, coordinated viewings, and practical
+              verification guidance.
             </p>
           </div>
         </div>
@@ -61,10 +59,10 @@ export default function HowItWorks() {
         <div className="mx-auto mt-12 flex max-w-4xl flex-col items-center gap-4 rounded-3xl border border-white/10 bg-slate-900/40 p-6 text-center sm:flex-row sm:justify-between sm:text-left">
           <div>
             <p className="text-sm font-semibold text-white">
-              Ready to start your search?
+              Ready to start?
             </p>
             <p className="mt-1 text-xs text-slate-400">
-              Browse the website, then message us on WhatsApp to get matched quickly.
+              Browse first, then message us on WhatsApp for faster matching.
             </p>
           </div>
           <a

@@ -174,11 +174,11 @@ export default async function Listings({ searchParams }) {
             Listings
           </div>
           <h1 className="mt-4 text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
-            Featured rentals
+            Rentals in Zimbabwe
           </h1>
           <p className="mt-4 text-pretty text-base leading-relaxed text-slate-300 sm:text-lg">
-            Browse listings on the web, then contact landlords and agents to
-            confirm availability and viewing slots.
+            Filter by location, budget, and features, then connect directly
+            with landlords or agents.
           </p>
         </div>
 
@@ -201,8 +201,8 @@ export default async function Listings({ searchParams }) {
 
         <ListingsGridServer
           listings={listings}
-          emptyTitle="Listings"
-          emptyMessage="No matching listings. Try changing your search or filters."
+          emptyTitle="No listings found"
+          emptyMessage="Try adjusting your search or filters to see more matches."
         />
 
         {pageCount > 1 ? (
@@ -243,10 +243,10 @@ export default async function Listings({ searchParams }) {
         <div className="mt-12 flex flex-col items-center gap-4 rounded-3xl border border-white/10 bg-slate-900/40 p-6 text-center sm:flex-row sm:justify-between sm:text-left">
           <div>
             <p className="text-sm font-semibold text-white">
-              Want listings in your exact suburb and budget?
+              Need matches for your exact suburb and budget?
             </p>
             <p className="mt-1 text-xs text-slate-400">
-              Message us and we’ll connect you to landlords and agents.
+              Message us on WhatsApp and we’ll guide your next options.
             </p>
           </div>
           <a

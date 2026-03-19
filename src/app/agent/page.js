@@ -36,7 +36,7 @@ export default async function AgentDashboardPage() {
         Agent dashboard
       </h1>
       <p className="mt-2 text-sm text-slate-300">
-        Manage your listings and respond to enquiries.
+        Manage listings and respond to enquiries quickly.
       </p>
 
       <div className="mt-8 grid gap-4 sm:grid-cols-3">
@@ -66,14 +66,14 @@ export default async function AgentDashboardPage() {
             href="/admin"
             className="inline-flex items-center justify-center rounded-full border border-white/15 bg-white/0 px-5 py-2.5 text-sm font-semibold text-slate-50 transition hover:border-white/30 hover:bg-white/5"
           >
-            Listing manager
+            Listing management
           </Link>
         ) : null}
         <Link
           href="/listings"
           className="inline-flex items-center justify-center rounded-full border border-white/15 bg-white/0 px-5 py-2.5 text-sm font-semibold text-slate-50 transition hover:border-white/30 hover:bg-white/5"
         >
-          View listings
+          Browse listings
         </Link>
         <a
               href="https://wa.me/263771150713"

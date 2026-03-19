@@ -8,11 +8,11 @@ export default function Renters() {
             For renters
           </div>
           <h1 className="mt-4 text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
-            Rent smarter and safer
+            Rent smarter, move with confidence
           </h1>
           <p className="mt-4 text-pretty text-base leading-relaxed text-slate-300 sm:text-lg">
-            CribMatch connects you to landlords and agents and helps coordinate
-            viewings. Here are practical tips for renting in Zimbabwe.
+            CribMatch connects you to landlords and agents while guiding safer
+            viewing and payment decisions.
           </p>
         </div>
 
@@ -24,7 +24,7 @@ export default function Renters() {
             <ul className="mt-4 space-y-2 text-sm leading-6 text-slate-300">
               <li className="flex gap-2">
                 <span className="text-emerald-300">•</span>
-                Bring your ID copy.
+                Carry a copy of your ID.
               </li>
               <li className="flex gap-2">
                 <span className="text-emerald-300">•</span>
@@ -32,7 +32,7 @@ export default function Renters() {
               </li>
               <li className="flex gap-2">
                 <span className="text-emerald-300">•</span>
-                Ask about ZESA/power backup (solar/inverter).
+                Ask about ZESA and backup power (solar or inverter).
               </li>
               <li className="flex gap-2">
                 <span className="text-emerald-300">•</span>
@@ -40,7 +40,7 @@ export default function Renters() {
               </li>
               <li className="flex gap-2">
                 <span className="text-emerald-300">•</span>
-                Test network signal in the rooms.
+                Test mobile network signal in each room.
               </li>
             </ul>
           </div>
@@ -50,8 +50,8 @@ export default function Renters() {
               Safety & verification
             </h2>
             <p className="mt-4 text-sm leading-6 text-slate-300">
-              We help you verify contacts and listing details where possible,
-              and we guide you on safe steps.
+              We help verify contacts and listing details where possible, then
+              guide your next safe steps.
             </p>
             <div className="mt-4 rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm text-emerald-100">
               Never pay a deposit before viewing the property physically.
@@ -62,8 +62,8 @@ export default function Renters() {
           <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-6">
             <h2 className="text-base font-semibold text-white">Payments</h2>
             <p className="mt-4 text-sm leading-6 text-slate-300">
-              Most rentals are quoted in USD. We help clarify payment terms
-              (cash vs transfer) and what’s included, upfront.
+              Most rentals are quoted in USD. We help clarify payment terms,
+              inclusions, and timing upfront.
             </p>
           </div>
 
@@ -73,7 +73,7 @@ export default function Renters() {
             </h2>
             <p className="mt-4 text-sm leading-6 text-slate-300">
               Need a plumber or electrician? Ask our WhatsApp assistant for
-              recommended service providers in your area.
+              trusted service providers near you.
             </p>
           </div>
         </div>
@@ -81,7 +81,7 @@ export default function Renters() {
         <div className="mt-12 flex flex-col items-center justify-between gap-4 rounded-3xl border border-white/10 bg-slate-900/40 p-6 text-center sm:flex-row sm:text-left">
           <div>
             <p className="text-sm font-semibold text-white">
-              Tell us your suburb and budget and we’ll match you.
+              Share your suburb and budget for faster matches.
             </p>
             <p className="mt-1 text-xs text-slate-400">
               Example: “1 bed in Mt Pleasant under $450”.

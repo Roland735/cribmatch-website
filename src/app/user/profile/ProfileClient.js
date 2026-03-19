@@ -21,13 +21,13 @@ export default function ProfileClient() {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(payload?.error || "Failed to load profile");
+        throw new Error(payload?.error || "Could not load your profile.");
       }
       setUser(payload.user);
       setName(payload.user?.name || "");
     } catch (err) {
       console.error("Load Profile Error:", err);
-      setError(err?.message || "Failed to load profile");
+      setError(err?.message || "Could not load your profile.");
     } finally {
       setLoading(false);
     }
@@ -51,13 +51,13 @@ export default function ProfileClient() {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(payload?.error || "Failed to update profile");
+        throw new Error(payload?.error || "Could not update your profile.");
       }
       setUser(payload.user);
-      setSuccess("Profile updated successfully!");
+      setSuccess("Profile updated successfully.");
     } catch (err) {
       console.error("Update Profile Error:", err);
-      setError(err?.message || "Failed to update profile");
+      setError(err?.message || "Could not update your profile.");
     } finally {
       setSaving(false);
     }
@@ -131,8 +131,8 @@ export default function ProfileClient() {
       </div>
 
       <div className="rounded-3xl border border-rose-400/10 bg-rose-400/5 p-6">
-        <h3 className="text-sm font-semibold text-white">Sign Out</h3>
-        <p className="mt-2 text-sm text-slate-400">Log out of your account on this device.</p>
+        <h3 className="text-sm font-semibold text-white">Sign out</h3>
+        <p className="mt-2 text-sm text-slate-400">Sign out of your account on this device.</p>
         <button
           onClick={() => signOut({ callbackUrl: "/" })}
           className="mt-6 rounded-full border border-rose-400/30 bg-rose-400/10 px-6 py-2.5 text-sm font-semibold text-rose-100 transition hover:bg-rose-400/20"

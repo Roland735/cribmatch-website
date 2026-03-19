@@ -15,10 +15,10 @@ export default async function UserDashboardPage() {
   return (
     <div className="mx-auto max-w-3xl">
       <h1 className="text-balance text-3xl font-semibold tracking-tight text-white">
-        Welcome
+        Welcome back
       </h1>
       <p className="mt-2 text-sm text-slate-300">
-        Browse listings, shortlist what you like, then chat on WhatsApp to get matched.
+        Browse listings, shortlist your options, and use WhatsApp for guided matching.
       </p>
 
       <div className="mt-8 grid gap-4 sm:grid-cols-2">
@@ -46,7 +46,7 @@ export default async function UserDashboardPage() {
         <div className="rounded-3xl border border-white/10 bg-slate-900/40 p-6">
           <p className="text-sm font-semibold text-white">Need help fast?</p>
           <p className="mt-2 text-sm text-slate-300">
-            Send your suburb, budget, and bedrooms on WhatsApp.
+            Share your suburb, budget, and bedroom needs on WhatsApp.
           </p>
           <div className="mt-4 flex flex-wrap gap-3">
             <a
@@ -61,7 +61,7 @@ export default async function UserDashboardPage() {
               href="/contact"
               className="inline-flex items-center justify-center rounded-full border border-white/15 bg-white/0 px-5 py-2.5 text-sm font-semibold text-slate-50 transition hover:border-white/30 hover:bg-white/5"
             >
-              Contact
+              Contact support
             </Link>
           </div>
         </div>
@@ -90,20 +90,20 @@ export default async function UserDashboardPage() {
         <div className="rounded-3xl border border-white/10 bg-slate-900/40 p-6 flex flex-col">
           <p className="text-sm font-semibold text-white">List a property</p>
           <p className="mt-2 text-sm text-slate-300 flex-1">
-            Create a new listing or manage your existing properties.
+            Create a new listing or manage existing properties.
           </p>
           <div className="mt-4 flex flex-col gap-2">
             <Link
               href="/user/listings?create=true"
               className="inline-flex items-center justify-center rounded-full bg-emerald-400 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300 w-full"
             >
-              Create new listing
+              Create listing
             </Link>
             <Link
               href="/user/listings"
               className="inline-flex items-center justify-center rounded-full border border-white/15 bg-white/0 px-5 py-2.5 text-sm font-semibold text-slate-50 transition hover:border-white/30 hover:bg-white/5 w-full"
             >
-              Manage my listings
+              Manage listings
             </Link>
           </div>
         </div>
@@ -111,14 +111,14 @@ export default async function UserDashboardPage() {
         <div className="rounded-3xl border border-white/10 bg-slate-900/40 p-6 flex flex-col">
           <p className="text-sm font-semibold text-white">Your purchases</p>
           <p className="mt-2 text-sm text-slate-300 flex-1">
-            View property details you&apos;ve unlocked.
+            View details for listings you&apos;ve unlocked.
           </p>
           <div className="mt-4">
             <Link
               href="/user/purchases"
               className="inline-flex items-center justify-center rounded-full border border-white/15 bg-white/0 px-5 py-2.5 text-sm font-semibold text-slate-50 transition hover:border-white/30 hover:bg-white/5 w-full"
             >
-              View purchases
+              View unlocked listings
             </Link>
           </div>
         </div>
@@ -126,7 +126,7 @@ export default async function UserDashboardPage() {
         <div className="rounded-3xl border border-white/10 bg-slate-900/40 p-6 flex flex-col">
           <p className="text-sm font-semibold text-white">Profile settings</p>
           <p className="mt-2 text-sm text-slate-300 flex-1">
-            Update your name and account details.
+            Update your name and account information.
           </p>
           <div className="mt-4">
             <Link

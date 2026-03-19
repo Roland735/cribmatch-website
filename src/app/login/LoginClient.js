@@ -50,7 +50,7 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(payload?.error || "Could not send verification code.");
+      throw new Error(payload?.error || "Could not send the verification code.");
     }
   }
 
@@ -62,7 +62,7 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(data?.error || "Verification failed.");
+      throw new Error(data?.error || "Verification failed. Please try again.");
     }
   }
 
@@ -74,7 +74,7 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
       callbackUrl: safeCallbackUrl,
     });
     if (signInResponse?.error) {
-      throw new Error("Verified, but sign-in failed. Please sign in manually.");
+      throw new Error("Verification succeeded, but sign-in failed. Please sign in manually.");
     }
     window.location.assign(signInResponse?.url || "/dashboard");
   }
@@ -97,7 +97,7 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
         setFirstCode("");
         setFirstOtpSent(false);
         setMode("first");
-        setErrorMessage("You need to set up your web password first. Use First web login.");
+        setErrorMessage("Set up your web password first using First login.");
         setStatus("idle");
         return;
       }
@@ -112,9 +112,9 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
 
     if (response?.error) {
       if (phonePassword.includes("@")) {
-        setErrorMessage("Password is not your email. Use your password to sign in.");
+        setErrorMessage("Use your account password, not your email address.");
       } else {
-        setErrorMessage("Invalid phone number or password. If this is your first web login, use First web login.");
+        setErrorMessage("Invalid phone number or password. If this is your first web login, choose First login.");
       }
       setStatus("idle");
       return;
@@ -134,9 +134,9 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
     try {
       await sendOtp(registerPhoneNumber, "signup");
       setRegisterOtpSent(true);
-      setSuccessMessage("Verification code sent to your WhatsApp number.");
+      setSuccessMessage("Verification code sent to your WhatsApp.");
     } catch (error) {
-      setErrorMessage(error?.message || "Could not send verification code.");
+      setErrorMessage(error?.message || "Could not send the verification code.");
     } finally {
       setStatus("idle");
     }
@@ -156,7 +156,7 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
       });
       await signInAfterVerification(registerPhoneNumber, registerPassword);
     } catch (error) {
-      setErrorMessage(error?.message || "Could not create account.");
+      setErrorMessage(error?.message || "Could not create your account.");
       setStatus("idle");
     }
   }
@@ -172,9 +172,9 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
     try {
       await sendOtp(firstPhoneNumber, "first_web_login");
       setFirstOtpSent(true);
-      setSuccessMessage("Verification code sent to your WhatsApp number.");
+      setSuccessMessage("Verification code sent to your WhatsApp.");
     } catch (error) {
-      setErrorMessage(error?.message || "Could not send verification code.");
+      setErrorMessage(error?.message || "Could not send the verification code.");
     } finally {
       setStatus("idle");
     }
@@ -210,9 +210,9 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
     try {
       await sendOtp(resetPhoneNumber, "reset_password");
       setResetOtpSent(true);
-      setSuccessMessage("Verification code sent to your WhatsApp number.");
+      setSuccessMessage("Verification code sent to your WhatsApp.");
     } catch (error) {
-      setErrorMessage(error?.message || "Could not send verification code.");
+      setErrorMessage(error?.message || "Could not send the verification code.");
     } finally {
       setStatus("idle");
     }
@@ -231,7 +231,7 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
       });
       await signInAfterVerification(resetPhoneNumber, resetPassword);
     } catch (error) {
-      setErrorMessage(error?.message || "Could not reset password.");
+      setErrorMessage(error?.message || "Could not reset your password.");
       setStatus("idle");
     }
   }
@@ -305,7 +305,7 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
               : "rounded-xl px-3 py-2 text-xs font-semibold text-slate-300 transition hover:bg-white/5"
           }
         >
-          Reset
+          Reset password
         </button>
       </div>
 
@@ -459,7 +459,7 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
           <PhoneNumberInput
             id="firstPhoneNumber"
             name="firstPhoneNumber"
-            label="WhatsApp phone number"
+            label="WhatsApp number"
             value={firstPhoneNumber}
             onChange={(value) => {
               setFirstPhoneNumber(value);
@@ -473,7 +473,7 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
           />
           <div>
             <label className="block text-sm font-medium text-slate-200" htmlFor="firstName">
-              Name (optional)
+              Full name (optional)
             </label>
             <input
               id="firstName"
@@ -488,7 +488,7 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-200" htmlFor="firstPassword">
-              Set your web password
+              Set your password
             </label>
             <input
               id="firstPassword"
@@ -505,7 +505,7 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
           {firstOtpSent ? (
             <div>
               <label className="block text-sm font-medium text-slate-200" htmlFor="firstCode">
-                Verification code from WhatsApp
+                WhatsApp verification code
               </label>
               <input
                 id="firstCode"
@@ -552,7 +552,7 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
             disabled={disabled}
             className="inline-flex w-full items-center justify-center rounded-full bg-emerald-400 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {firstOtpSent ? "Verify and continue" : "Send code to WhatsApp"}
+            {firstOtpSent ? "Verify and continue" : "Send code on WhatsApp"}
           </button>
         </form>
       ) : null}
@@ -562,7 +562,7 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
           <PhoneNumberInput
             id="resetPhoneNumber"
             name="resetPhoneNumber"
-            label="Registered phone number"
+            label="Registered number"
             value={resetPhoneNumber}
             onChange={(value) => {
               setResetPhoneNumber(value);
@@ -593,7 +593,7 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
           {resetOtpSent ? (
             <div>
               <label className="block text-sm font-medium text-slate-200" htmlFor="resetCode">
-                Verification code from WhatsApp
+                WhatsApp verification code
               </label>
               <input
                 id="resetCode"
@@ -640,13 +640,13 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
             disabled={disabled}
             className="inline-flex w-full items-center justify-center rounded-full bg-emerald-400 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {resetOtpSent ? "Verify and reset password" : "Send code to WhatsApp"}
+            {resetOtpSent ? "Verify and reset password" : "Send code on WhatsApp"}
           </button>
         </form>
       ) : null}
 
       <p className="text-xs text-slate-400">
-        WhatsApp verification is web-only.
+        WhatsApp verification is for web access only.
       </p>
     </div>
   );

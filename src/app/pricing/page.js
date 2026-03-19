@@ -14,10 +14,10 @@ export default async function Pricing() {
             Pricing & packages
           </div>
           <h1 className="mt-4 text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
-            Simple, transparent pricing
+            Clear pricing
           </h1>
           <p className="mt-4 text-pretty text-base leading-relaxed text-slate-300 sm:text-lg">
-            Admin-managed pricing updates automatically on web and WhatsApp.
+            Pricing updates sync automatically across web and WhatsApp.
           </p>
         </div>
 
@@ -29,7 +29,7 @@ export default async function Pricing() {
                   Landlord listing fee
                 </h2>
                 <p className="mt-2 text-sm text-slate-300">
-                  Price paid by landlords or agents to publish one property listing.
+                  Cost for landlords or agents to publish one listing.
                 </p>
               </div>
               <div className="text-right">
@@ -42,15 +42,15 @@ export default async function Pricing() {
             <div className="mt-6 grid gap-2 text-sm text-slate-300">
               <p className="flex items-start gap-2">
                 <span className="text-emerald-300">•</span>
-                One-time charge for each posted listing
+                One-time fee per listing
               </p>
               <p className="flex items-start gap-2">
                 <span className="text-emerald-300">•</span>
-                Appears on web and WhatsApp channels
+                Visible on web and WhatsApp
               </p>
               <p className="flex items-start gap-2">
                 <span className="text-emerald-300">•</span>
-                Admin can change this anytime
+                Updated centrally by admin
               </p>
             </div>
             <a
@@ -70,7 +70,7 @@ export default async function Pricing() {
                   Contact unlock fee
                 </h2>
                 <p className="mt-2 text-sm text-emerald-100/90">
-                  Price renters pay to unlock contact details for one listing.
+                  Cost for renters to unlock contact details for one listing.
                 </p>
               </div>
               <div className="text-right">
@@ -89,7 +89,7 @@ export default async function Pricing() {
               </p>
               <p className="flex items-start gap-2">
                 <span className="text-emerald-200">•</span>
-                Works on web and WhatsApp flows
+                Works across web and WhatsApp flows
               </p>
             </div>
             <a
@@ -105,7 +105,7 @@ export default async function Pricing() {
 
         <div className="mx-auto mt-12 max-w-4xl rounded-3xl border border-white/10 bg-slate-900/40 p-6">
           <p className="text-sm text-slate-300">
-            Need bulk plans for many listings? Message us on WhatsApp for custom pricing.
+            Need volume plans for many listings? Message us on WhatsApp for custom pricing.
           </p>
         </div>
       </div>
