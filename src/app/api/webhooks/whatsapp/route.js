@@ -74,6 +74,7 @@ const TTL_INTERACTIVE_MS = process.env.NODE_ENV === "production" ? 3000 : 1000;
 ------------------------- */
 const messageSendCache = new Map();
 const paymentAutoMonitors = new Map();
+const paymentAutoMonitorCancels = new Set();
 function _shouldSend(phone, hash, ttl = TTL_TEXT_MS) {
   if (!phone) return true;
   const p = messageSendCache.get(phone) || new Map();
@@ -1919,7 +1920,7 @@ export async function POST(request) {
 
     await sendInteractiveButtons(
       phone,
-      `✅ USSD push sent to ${parsedMobile.local}.\nApprove the EcoCash payment prompt on your phone (or dial *151*2*7# if prompted), then enter your PIN.\n\nWe'll unlock contacts automatically once payment confirms.\nIf the prompt failed, reply: retry`,
+      "⏳ Transaction processing. Please wait — status will be updated soon. This can take up to 6 minutes.",
       [{ id: "menu_main", title: "🏠 Main menu" }],
       { headerText: "EcoCash Payment" }
     );
@@ -1935,6 +1936,7 @@ export async function POST(request) {
 
   if (lastMeta?.state === "PAYMENT_PENDING_CONFIRMATION") {
     if (cmd === "menu" || cmd === "main menu" || cmd === "menu_main" || cmd === "cancel") {
+      cancelPaymentAutoMonitor(lastMeta?.paymentTransactionId);
       if (savedMsg && savedMsg._id) {
         await Message.findByIdAndUpdate(savedMsg._id, { $set: { "meta.state": "IDLE" } }).catch(() => null);
       }
@@ -1998,7 +2000,7 @@ export async function POST(request) {
 
       await sendInteractiveButtons(
         phone,
-        `✅ New USSD push sent to ${payerMobile}.\nApprove the EcoCash payment prompt on your phone (or dial *151*2*7# if prompted), then enter your PIN.\n\nWe'll unlock contacts automatically once payment confirms.\nIf the prompt failed, reply: retry`,
+        "⏳ Transaction processing. Please wait — status will be updated soon. This can take up to 6 minutes.",
         [{ id: "menu_main", title: "🏠 Main menu" }],
         { headerText: "EcoCash Payment" }
       );
@@ -2046,7 +2048,7 @@ export async function POST(request) {
 
     await sendInteractiveButtons(
       phone,
-      "⏳ Payment is still pending.\nWe'll unlock contacts automatically as soon as payment succeeds.\nReply: retry if no prompt arrived.",
+      "⏳ Transaction processing. Please wait — status will be updated soon. This can take up to 6 minutes.",
       [{ id: "menu_main", title: "🏠 Main menu" }],
       { headerText: "EcoCash Payment" }
     );
@@ -3904,6 +3906,7 @@ function startPaymentAutoMonitor({ transactionId, phone, lastMeta, savedMsgId, d
   const txId = String(transactionId || "").trim();
   const phoneDigits = digitsOnly(phone);
   if (!txId || !phoneDigits) return;
+  paymentAutoMonitorCancels.delete(txId);
   if (paymentAutoMonitors.has(txId)) return;
 
   const task = (async () => {
@@ -3915,6 +3918,17 @@ function startPaymentAutoMonitor({ transactionId, phone, lastMeta, savedMsgId, d
       : 4000;
 
     for (let i = 0; i < maxChecks; i += 1) {
+      if (paymentAutoMonitorCancels.has(txId)) return;
+      if (dbAvailable && typeof Message?.findOne === "function") {
+        const latestState = await Message.findOne({
+          phone: phoneDigits,
+          "meta.state": { $exists: true },
+        }).sort({ createdAt: -1 }).select({ "meta.state": 1, "meta.paymentTransactionId": 1 }).lean().exec().catch(() => null);
+        const state = String(latestState?.meta?.state || "");
+        const latestTx = String(latestState?.meta?.paymentTransactionId || "");
+        if (state && state !== "PAYMENT_PENDING_CONFIRMATION") return;
+        if (latestTx && latestTx !== txId) return;
+      }
       const verification = await verifyPaynowPayment(txId).catch(() => null);
       if (verification?.ok && verification?.paid) {
         if (dbAvailable && savedMsgId) {
@@ -3949,6 +3963,12 @@ function startPaymentAutoMonitor({ transactionId, phone, lastMeta, savedMsgId, d
 
   paymentAutoMonitors.set(txId, task);
   task.finally(() => paymentAutoMonitors.delete(txId));
+}
+
+function cancelPaymentAutoMonitor(transactionId) {
+  const txId = String(transactionId || "").trim();
+  if (!txId) return;
+  paymentAutoMonitorCancels.add(txId);
 }
 
 async function autoVerifyPaymentUntilSettled(transactionId, opts = {}) {
