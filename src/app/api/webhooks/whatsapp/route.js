@@ -1845,6 +1845,10 @@ export async function POST(request) {
   // normalize user input
   const userRaw = String(parsedText || "").trim();
   const cmd = userRaw.toLowerCase();
+  const paymentPendingButtons = [
+    { id: "refresh_status", title: "🔄 Refresh status" },
+    { id: "menu_main", title: "🏠 Main menu" },
+  ];
 
   if (lastMeta?.state === "AWAITING_PAYMENT_MOBILE") {
     if (cmd === "menu" || cmd === "main menu" || cmd === "menu_main" || cmd === "cancel") {
@@ -1921,7 +1925,7 @@ export async function POST(request) {
     await sendInteractiveButtons(
       phone,
       "⏳ Transaction processing. Please wait — status will be updated soon. This can take up to 6 minutes.",
-      [{ id: "menu_main", title: "🏠 Main menu" }],
+      paymentPendingButtons,
       { headerText: "EcoCash Payment" }
     );
     startPaymentAutoMonitor({
@@ -1935,6 +1939,7 @@ export async function POST(request) {
   }
 
   if (lastMeta?.state === "PAYMENT_PENDING_CONFIRMATION") {
+    const isRefreshStatusCommand = cmd === "refresh_status" || cmd === "refresh status" || cmd === "refresh";
     if (cmd === "menu" || cmd === "main menu" || cmd === "menu_main" || cmd === "cancel") {
       cancelPaymentAutoMonitor(lastMeta?.paymentTransactionId);
       if (savedMsg && savedMsg._id) {
@@ -2001,7 +2006,7 @@ export async function POST(request) {
       await sendInteractiveButtons(
         phone,
         "⏳ Transaction processing. Please wait — status will be updated soon. This can take up to 6 minutes.",
-        [{ id: "menu_main", title: "🏠 Main menu" }],
+        paymentPendingButtons,
         { headerText: "EcoCash Payment" }
       );
       startPaymentAutoMonitor({
@@ -2025,7 +2030,7 @@ export async function POST(request) {
       await sendInteractiveButtons(
         phone,
         `⚠️ ${verification.userMessage || "Could not verify payment yet."}\nReply: retry to send a new USSD push.`,
-        [{ id: "retry", title: "🔁 Retry payment" }, { id: "menu_main", title: "🏠 Main menu" }],
+        [{ id: "retry", title: "🔁 Retry payment" }, { id: "refresh_status", title: "🔄 Refresh status" }, { id: "menu_main", title: "🏠 Main menu" }],
         { headerText: "Payment Check" }
       );
       return NextResponse.json({ ok: true, note: "payment-check-error" });
@@ -2048,8 +2053,10 @@ export async function POST(request) {
 
     await sendInteractiveButtons(
       phone,
-      "⏳ Transaction processing. Please wait — status will be updated soon. This can take up to 6 minutes.",
-      [{ id: "menu_main", title: "🏠 Main menu" }],
+      isRefreshStatusCommand
+        ? "⏳ Payment is still pending. You can tap Refresh status again in a few seconds, or wait for automatic update."
+        : "⏳ Transaction processing. Please wait — status will be updated soon. This can take up to 6 minutes.",
+      paymentPendingButtons,
       { headerText: "EcoCash Payment" }
     );
     startPaymentAutoMonitor({
