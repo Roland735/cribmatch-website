@@ -237,10 +237,12 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
   }
 
   return (
-    <div className="mt-4 space-y-4 lg:mt-3 lg:space-y-3">
-      <div className="flex flex-wrap gap-1.5">
+    <div className="mt-3 space-y-3">
+      <div className="grid grid-cols-2 gap-1.5 rounded-2xl border border-white/10 bg-slate-950/40 p-1 md:grid-cols-4" role="tablist" aria-label="Authentication modes">
         <button
           type="button"
+          role="tab"
+          aria-selected={mode === "signin"}
           onClick={() => {
             setMode("signin");
             resetMessages();
@@ -248,14 +250,16 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
           disabled={disabled}
           className={
             mode === "signin"
-              ? "rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-white"
-              : "rounded-full border border-white/15 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/5"
+              ? "rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold text-white"
+              : "rounded-xl px-3 py-2 text-xs font-semibold text-slate-300 transition hover:bg-white/5"
           }
         >
           Sign in
         </button>
         <button
           type="button"
+          role="tab"
+          aria-selected={mode === "register"}
           onClick={() => {
             setMode("register");
             resetMessages();
@@ -263,14 +267,16 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
           disabled={disabled}
           className={
             mode === "register"
-              ? "rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-white"
-              : "rounded-full border border-white/15 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/5"
+              ? "rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold text-white"
+              : "rounded-xl px-3 py-2 text-xs font-semibold text-slate-300 transition hover:bg-white/5"
           }
         >
-          Create account
+          Create
         </button>
         <button
           type="button"
+          role="tab"
+          aria-selected={mode === "first"}
           onClick={() => {
             setMode("first");
             resetMessages();
@@ -278,14 +284,16 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
           disabled={disabled}
           className={
             mode === "first"
-              ? "rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-white"
-              : "rounded-full border border-white/15 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/5"
+              ? "rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold text-white"
+              : "rounded-xl px-3 py-2 text-xs font-semibold text-slate-300 transition hover:bg-white/5"
           }
         >
-          First web login
+          First login
         </button>
         <button
           type="button"
+          role="tab"
+          aria-selected={mode === "reset"}
           onClick={() => {
             setMode("reset");
             resetMessages();
@@ -293,16 +301,16 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
           disabled={disabled}
           className={
             mode === "reset"
-              ? "rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-white"
-              : "rounded-full border border-white/15 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/5"
+              ? "rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold text-white"
+              : "rounded-xl px-3 py-2 text-xs font-semibold text-slate-300 transition hover:bg-white/5"
           }
         >
-          Forgot password
+          Reset
         </button>
       </div>
 
       {mode === "signin" ? (
-        <form className="space-y-3 lg:space-y-2.5" onSubmit={handlePhoneSignIn}>
+        <form className="space-y-3" onSubmit={handlePhoneSignIn}>
           <PhoneNumberInput
             id="phoneNumber"
             name="phoneNumber"
@@ -344,7 +352,7 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
       ) : null}
 
       {mode === "register" ? (
-        <form className="space-y-3 lg:space-y-2.5" onSubmit={registerOtpSent ? handleCompleteRegister : handleSendRegisterOtp}>
+        <form className="space-y-3" onSubmit={registerOtpSent ? handleCompleteRegister : handleSendRegisterOtp}>
           <div>
             <label className="block text-sm font-medium text-slate-200" htmlFor="registerName">
               Name (optional)
@@ -447,7 +455,7 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
       ) : null}
 
       {mode === "first" ? (
-        <form className="space-y-3 lg:space-y-2.5" onSubmit={firstOtpSent ? handleCompleteFirst : handleSendFirstOtp}>
+        <form className="space-y-3" onSubmit={firstOtpSent ? handleCompleteFirst : handleSendFirstOtp}>
           <PhoneNumberInput
             id="firstPhoneNumber"
             name="firstPhoneNumber"
@@ -550,7 +558,7 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
       ) : null}
 
       {mode === "reset" ? (
-        <form className="space-y-3 lg:space-y-2.5" onSubmit={resetOtpSent ? handleCompleteReset : handleSendResetOtp}>
+        <form className="space-y-3" onSubmit={resetOtpSent ? handleCompleteReset : handleSendResetOtp}>
           <PhoneNumberInput
             id="resetPhoneNumber"
             name="resetPhoneNumber"
@@ -638,7 +646,7 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
       ) : null}
 
       <p className="text-xs text-slate-400">
-        WhatsApp verification is web-only and does not interrupt ongoing WhatsApp conversations.
+        WhatsApp verification is web-only.
       </p>
     </div>
   );
