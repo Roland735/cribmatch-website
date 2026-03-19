@@ -135,6 +135,64 @@ export function getSeedCredentialProfile(value) {
   return null;
 }
 
+function seedUserFromProfile(seedProfile) {
+  if (!seedProfile) return null;
+  return {
+    id: seedProfile.phoneNumber,
+    name: seedProfile.name || seedProfile.phoneNumber,
+    role: seedProfile.role || "user",
+    phoneNumber: seedProfile.phoneNumber,
+  };
+}
+
+export async function authorizePhoneCredentials(credentials) {
+  const phoneNumber = normalizePhoneNumber(credentials?.phoneNumber);
+  const password = credentials?.password;
+  if (!phoneNumber || typeof password !== "string") return null;
+
+  const seedProfile = getSeedCredentialProfile(phoneNumber);
+  const isSeedPassword = Boolean(seedProfile && password === seedProfile.plainPassword);
+  if (!process.env.MONGODB_URI) {
+    return isSeedPassword ? seedUserFromProfile(seedProfile) : null;
+  }
+
+  await dbConnect();
+  const candidates = normalizePhoneNumberCandidates(credentials?.phoneNumber);
+  let user = await User.findOne({ _id: { $in: candidates } });
+
+  if (user) {
+    const ok = await verifyPassword(password, user.password);
+    if (!ok) {
+      if (!isSeedPassword) return null;
+      const passwordRecord = await hashPassword(seedProfile.plainPassword);
+      user.password = passwordRecord;
+      if (!user.name) user.name = seedProfile.name;
+      if (!user.role) user.role = seedProfile.role;
+      user.whatsappVerified = true;
+      user.whatsappVerifiedAt = user.whatsappVerifiedAt || new Date();
+      await user.save();
+    }
+  } else {
+    if (!isSeedPassword) return null;
+    const passwordRecord = await hashPassword(seedProfile.plainPassword);
+    user = await User.create({
+      _id: seedProfile.phoneNumber,
+      name: seedProfile.name,
+      role: seedProfile.role,
+      password: passwordRecord,
+      whatsappVerified: true,
+      whatsappVerifiedAt: new Date(),
+    });
+  }
+
+  return {
+    id: user._id,
+    name: user.name || user._id,
+    role: user.role || "user",
+    phoneNumber: user._id,
+  };
+}
+
 export const authOptions = {
   session: { strategy: "jwt" },
   pages: {
@@ -149,48 +207,7 @@ export const authOptions = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        const phoneNumber = normalizePhoneNumber(credentials?.phoneNumber);
-        const password = credentials?.password;
-        if (!phoneNumber || typeof password !== "string") return null;
-
-        await dbConnect();
-        const candidates = normalizePhoneNumberCandidates(credentials?.phoneNumber);
-        const seedProfile = getSeedCredentialProfile(phoneNumber);
-        let user = await User.findOne({ _id: { $in: candidates } });
-
-        if (user) {
-          const ok = await verifyPassword(password, user.password);
-          if (!ok) {
-            const isSeedPassword = Boolean(seedProfile && password === seedProfile.plainPassword);
-            if (!isSeedPassword) return null;
-            const passwordRecord = await hashPassword(seedProfile.plainPassword);
-            user.password = passwordRecord;
-            if (!user.name) user.name = seedProfile.name;
-            if (!user.role) user.role = seedProfile.role;
-            user.whatsappVerified = true;
-            user.whatsappVerifiedAt = user.whatsappVerifiedAt || new Date();
-            await user.save();
-          }
-        } else {
-          const isSeedPassword = Boolean(seedProfile && password === seedProfile.plainPassword);
-          if (!isSeedPassword) return null;
-          const passwordRecord = await hashPassword(seedProfile.plainPassword);
-          user = await User.create({
-            _id: seedProfile.phoneNumber,
-            name: seedProfile.name,
-            role: seedProfile.role,
-            password: passwordRecord,
-            whatsappVerified: true,
-            whatsappVerifiedAt: new Date(),
-          });
-        }
-
-        return {
-          id: user._id,
-          name: user.name || user._id,
-          role: user.role || "user",
-          phoneNumber: user._id,
-        };
+        return authorizePhoneCredentials(credentials);
       },
     }),
   ],
