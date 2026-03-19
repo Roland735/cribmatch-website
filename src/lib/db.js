@@ -156,6 +156,7 @@ const UserSchema = new mongoose.Schema(
     },
     whatsappVerified: { type: Boolean, default: false, index: true },
     whatsappVerifiedAt: { type: Date, default: null },
+    adminContactNumber: { type: String, default: "", trim: true },
   },
   { timestamps: true },
 );
