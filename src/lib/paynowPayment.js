@@ -191,9 +191,17 @@ export async function initiatePaynowEcocashPayment({ phone, payerMobile, listing
   const listingTitle = String(listing?.title || "Property listing");
   const reference = buildReference(listingCode);
   const pricing = await getPricingSettings();
-  const amount = Number.isFinite(Number(pricing?.contactUnlockPriceUsd))
+  const amountCandidate = Number.isFinite(Number(pricing?.contactUnlockPriceUsd))
     ? Number(pricing.contactUnlockPriceUsd)
     : (Number.isFinite(CONTACT_UNLOCK_AMOUNT) ? CONTACT_UNLOCK_AMOUNT : 2.5);
+  const amount = Number.parseFloat(amountCandidate.toFixed(2));
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return {
+      ok: false,
+      error: "invalid-amount",
+      userMessage: "Payment amount is invalid. Please contact support.",
+    };
+  }
 
   const tx = await PaymentTransaction.create({
     phone: normalizedPhone,
@@ -274,23 +282,7 @@ export async function initiatePaynowEcocashPayment({ phone, payerMobile, listing
         console.warn("Could not set currency via setCurrency/currency property:", e?.message || e);
       }
 
-      // Add item — try signature with explicit currency if SDK supports it, otherwise fallback to simple add
-      let added = false;
-      try {
-        // some SDKs support add(description, amount, currency)
-        payment.add(`${PAYNOW_PAYMENT_LINK_LABEL} - ${listingTitle}`, amount, PAYNOW_CURRENCY);
-        added = true;
-      } catch (e) {
-        // try the two-arg add (description, amount)
-        try {
-          payment.add(`${PAYNOW_PAYMENT_LINK_LABEL} - ${listingTitle}`, amount);
-          added = true;
-        } catch (e2) {
-          // final fallback: include currency in description
-          payment.add(`${PAYNOW_PAYMENT_LINK_LABEL} - ${listingTitle} (${PAYNOW_CURRENCY})`, amount);
-          added = true;
-        }
-      }
+      payment.add(`${PAYNOW_PAYMENT_LINK_LABEL} - ${listingTitle}`, amount, 1);
 
       // sendMobile may return different shapes depending on SDK; capture it
       const response = await paynow.sendMobile(payment, normalizedPayer.local, "ecocash");
