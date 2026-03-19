@@ -18,23 +18,23 @@ export default async function LoginPage({ searchParams }) {
               CribMatch Access
             </p>
             <h1 className="mt-5 text-balance text-4xl font-semibold tracking-tight text-white sm:text-5xl">
-              Find your next home faster with trusted local matches.
+              Welcome home to easier, happier renting.
             </h1>
             <p className="mt-4 max-w-xl text-sm leading-relaxed text-slate-200 sm:text-base">
-              Sign in to unlock shortlisted listings, message-ready contacts, and smoother move-in decisions across Zimbabwe.
+              Join thousands of renters finding spaces they love. Sign in to get trusted listings, friendly support, and confident next steps.
             </p>
             <ul className="mt-6 space-y-2 text-sm text-slate-200/90">
-              <li>• Verified listings and landlord details</li>
-              <li>• WhatsApp-first support from search to viewing</li>
-              <li>• Smart filters for price, area, and lifestyle</li>
+              <li>• Happy move-ins with verified listings and contacts</li>
+              <li>• Friendly WhatsApp-first support from search to viewing</li>
+              <li>• Smart filters that match your budget and lifestyle</li>
             </ul>
             <div className="mt-8">
               <Image
-                src="/1.png"
-                alt="CribMatch renter"
-                width={430}
-                height={500}
-                className="h-auto w-[260px] object-contain drop-shadow-[0_18px_32px_rgba(16,185,129,0.35)] sm:w-[320px]"
+                src="/happy-person.svg"
+                alt="Happy renter illustration"
+                width={640}
+                height={760}
+                className="h-auto w-[250px] object-contain drop-shadow-[0_18px_32px_rgba(16,185,129,0.35)] sm:w-[320px]"
                 priority
               />
             </div>
