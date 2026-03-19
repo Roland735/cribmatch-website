@@ -2749,13 +2749,11 @@ export async function POST(request) {
   // menu
   if (/^menu$|^menu_main$|^main menu$/i.test(userRaw)) {
     const menuStart = Date.now();
-    const dedupeSalt = duplicateBypassForMenu && msgId ? `replay:${msgId}:${Date.now()}` : "";
-    const menuRes = await sendMainMenu(phone, { dedupeSalt });
+    const menuRes = await sendMainMenu(phone);
     logDecision("menu-command-processed", {
       msgId,
       phone,
       duplicateBypassForMenu,
-      dedupeSalt,
       durationMs: Date.now() - menuStart,
       suppressed: !!menuRes?.suppressed,
       hasError: !!menuRes?.error,
