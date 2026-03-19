@@ -237,8 +237,8 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
   }
 
   return (
-    <div className="mt-8 space-y-6">
-      <div className="flex flex-wrap gap-2">
+    <div className="mt-4 space-y-4 lg:mt-3 lg:space-y-3">
+      <div className="flex flex-wrap gap-1.5">
         <button
           type="button"
           onClick={() => {
@@ -248,8 +248,8 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
           disabled={disabled}
           className={
             mode === "signin"
-              ? "rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-white"
-              : "rounded-full border border-white/15 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/5"
+              ? "rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-white"
+              : "rounded-full border border-white/15 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/5"
           }
         >
           Sign in
@@ -263,8 +263,8 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
           disabled={disabled}
           className={
             mode === "register"
-              ? "rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-white"
-              : "rounded-full border border-white/15 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/5"
+              ? "rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-white"
+              : "rounded-full border border-white/15 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/5"
           }
         >
           Create account
@@ -278,8 +278,8 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
           disabled={disabled}
           className={
             mode === "first"
-              ? "rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-white"
-              : "rounded-full border border-white/15 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/5"
+              ? "rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-white"
+              : "rounded-full border border-white/15 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/5"
           }
         >
           First web login
@@ -293,8 +293,8 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
           disabled={disabled}
           className={
             mode === "reset"
-              ? "rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-white"
-              : "rounded-full border border-white/15 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/5"
+              ? "rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-white"
+              : "rounded-full border border-white/15 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/5"
           }
         >
           Forgot password
@@ -302,7 +302,7 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
       </div>
 
       {mode === "signin" ? (
-        <form className="space-y-4" onSubmit={handlePhoneSignIn}>
+        <form className="space-y-3 lg:space-y-2.5" onSubmit={handlePhoneSignIn}>
           <PhoneNumberInput
             id="phoneNumber"
             name="phoneNumber"
@@ -344,7 +344,7 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
       ) : null}
 
       {mode === "register" ? (
-        <form className="space-y-4" onSubmit={registerOtpSent ? handleCompleteRegister : handleSendRegisterOtp}>
+        <form className="space-y-3 lg:space-y-2.5" onSubmit={registerOtpSent ? handleCompleteRegister : handleSendRegisterOtp}>
           <div>
             <label className="block text-sm font-medium text-slate-200" htmlFor="registerName">
               Name (optional)
@@ -447,7 +447,7 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
       ) : null}
 
       {mode === "first" ? (
-        <form className="space-y-4" onSubmit={firstOtpSent ? handleCompleteFirst : handleSendFirstOtp}>
+        <form className="space-y-3 lg:space-y-2.5" onSubmit={firstOtpSent ? handleCompleteFirst : handleSendFirstOtp}>
           <PhoneNumberInput
             id="firstPhoneNumber"
             name="firstPhoneNumber"
@@ -550,7 +550,7 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
       ) : null}
 
       {mode === "reset" ? (
-        <form className="space-y-4" onSubmit={resetOtpSent ? handleCompleteReset : handleSendResetOtp}>
+        <form className="space-y-3 lg:space-y-2.5" onSubmit={resetOtpSent ? handleCompleteReset : handleSendResetOtp}>
           <PhoneNumberInput
             id="resetPhoneNumber"
             name="resetPhoneNumber"
