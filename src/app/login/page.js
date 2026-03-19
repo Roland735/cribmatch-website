@@ -9,11 +9,11 @@ export default async function LoginPage({ searchParams }) {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-50 lg:h-screen lg:overflow-hidden">
-      <div className="mx-auto grid max-w-6xl gap-6 px-4 py-4 lg:h-full lg:grid-cols-[1.05fr_1fr] lg:items-stretch lg:px-6 lg:py-5">
+      <div className="mx-auto grid max-w-6xl gap-6 px-4 py-4 lg:h-full lg:grid-cols-[1.05fr_1fr] lg:items-center lg:px-6 lg:py-5">
         <section className="relative hidden overflow-hidden rounded-3xl border border-emerald-400/20 bg-gradient-to-br from-emerald-500/15 via-emerald-400/5 to-transparent p-6 lg:block">
           <div className="pointer-events-none absolute -right-8 -top-8 h-40 w-40 rounded-full bg-emerald-300/20 blur-2xl" />
           <div className="pointer-events-none absolute -left-10 -bottom-10 h-40 w-40 rounded-full bg-emerald-500/15 blur-2xl" />
-          <div className="relative flex h-full flex-col justify-between">
+          <div className="relative flex flex-col justify-between">
             <p className="inline-flex items-center rounded-full border border-emerald-300/30 bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-emerald-200">
               CribMatch Access
             </p>
@@ -55,16 +55,14 @@ export default async function LoginPage({ searchParams }) {
           </div>
         </section>
 
-        <div className="flex min-h-0 flex-col rounded-3xl border border-white/10 bg-slate-900/60 p-5 shadow-2xl shadow-slate-950/40 lg:p-6">
+        <div className="rounded-3xl border border-white/10 bg-slate-900/60 p-5 shadow-2xl shadow-slate-950/40 lg:p-6">
           <h2 className="text-balance text-xl font-semibold tracking-tight text-white lg:text-2xl">
             Welcome back
           </h2>
           <p className="mt-1 text-sm text-slate-300">
             Sign in with your phone number to continue.
           </p>
-          <div className="min-h-0 flex-1">
-            <LoginClient callbackUrl={callbackUrl} />
-          </div>
+          <LoginClient callbackUrl={callbackUrl} />
           <div className="mt-3 text-xs text-slate-400">
             Need help?{" "}
             <Link href="/contact" className="font-medium text-emerald-300 transition hover:text-emerald-200">
