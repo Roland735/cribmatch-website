@@ -125,6 +125,10 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
 
   async function handleSendRegisterOtp(event) {
     event.preventDefault();
+    await requestRegisterOtp();
+  }
+
+  async function requestRegisterOtp() {
     setStatus("loading");
     resetMessages();
     try {
@@ -159,6 +163,10 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
 
   async function handleSendFirstOtp(event) {
     event.preventDefault();
+    await requestFirstOtp();
+  }
+
+  async function requestFirstOtp() {
     setStatus("loading");
     resetMessages();
     try {
@@ -193,6 +201,10 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
 
   async function handleSendResetOtp(event) {
     event.preventDefault();
+    await requestResetOtp();
+  }
+
+  async function requestResetOtp() {
     setStatus("loading");
     resetMessages();
     try {
@@ -353,7 +365,14 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
             name="registerPhoneNumber"
             label="Phone number"
             value={registerPhoneNumber}
-            onChange={setRegisterPhoneNumber}
+            onChange={(value) => {
+              setRegisterPhoneNumber(value);
+              if (registerOtpSent) {
+                setRegisterOtpSent(false);
+                setRegisterCode("");
+                resetMessages();
+              }
+            }}
             disabled={disabled}
           />
           <div>
@@ -393,6 +412,30 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
 
           {errorMessage ? <p className="text-sm font-medium text-rose-200">{errorMessage}</p> : null}
           {successMessage ? <p className="text-sm font-medium text-emerald-200">{successMessage}</p> : null}
+          {registerOtpSent ? (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={requestRegisterOtp}
+                disabled={disabled}
+                className="rounded-full border border-white/15 px-4 py-2 text-xs font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Request new code
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setRegisterOtpSent(false);
+                  setRegisterCode("");
+                  resetMessages();
+                }}
+                disabled={disabled}
+                className="rounded-full border border-white/15 px-4 py-2 text-xs font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Change number
+              </button>
+            </div>
+          ) : null}
           <button
             type="submit"
             disabled={disabled}
@@ -410,7 +453,14 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
             name="firstPhoneNumber"
             label="WhatsApp phone number"
             value={firstPhoneNumber}
-            onChange={setFirstPhoneNumber}
+            onChange={(value) => {
+              setFirstPhoneNumber(value);
+              if (firstOtpSent) {
+                setFirstOtpSent(false);
+                setFirstCode("");
+                resetMessages();
+              }
+            }}
             disabled={disabled}
           />
           <div>
@@ -465,6 +515,30 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
 
           {errorMessage ? <p className="text-sm font-medium text-rose-200">{errorMessage}</p> : null}
           {successMessage ? <p className="text-sm font-medium text-emerald-200">{successMessage}</p> : null}
+          {firstOtpSent ? (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={requestFirstOtp}
+                disabled={disabled}
+                className="rounded-full border border-white/15 px-4 py-2 text-xs font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Request new code
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFirstOtpSent(false);
+                  setFirstCode("");
+                  resetMessages();
+                }}
+                disabled={disabled}
+                className="rounded-full border border-white/15 px-4 py-2 text-xs font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Change number
+              </button>
+            </div>
+          ) : null}
           <button
             type="submit"
             disabled={disabled}
@@ -482,7 +556,14 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
             name="resetPhoneNumber"
             label="Registered phone number"
             value={resetPhoneNumber}
-            onChange={setResetPhoneNumber}
+            onChange={(value) => {
+              setResetPhoneNumber(value);
+              if (resetOtpSent) {
+                setResetOtpSent(false);
+                setResetCode("");
+                resetMessages();
+              }
+            }}
             disabled={disabled}
           />
           <div>
@@ -522,6 +603,30 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
 
           {errorMessage ? <p className="text-sm font-medium text-rose-200">{errorMessage}</p> : null}
           {successMessage ? <p className="text-sm font-medium text-emerald-200">{successMessage}</p> : null}
+          {resetOtpSent ? (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={requestResetOtp}
+                disabled={disabled}
+                className="rounded-full border border-white/15 px-4 py-2 text-xs font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Request new code
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setResetOtpSent(false);
+                  setResetCode("");
+                  resetMessages();
+                }}
+                disabled={disabled}
+                className="rounded-full border border-white/15 px-4 py-2 text-xs font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Change number
+              </button>
+            </div>
+          ) : null}
           <button
             type="submit"
             disabled={disabled}

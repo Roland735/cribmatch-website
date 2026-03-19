@@ -1,3 +1,5 @@
+import Image from "next/image";
+import Link from "next/link";
 import LoginClient from "./LoginClient";
 
 export default async function LoginPage({ searchParams }) {
@@ -7,15 +9,66 @@ export default async function LoginPage({ searchParams }) {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-50">
-      <div className="mx-auto max-w-lg px-6 py-16 lg:px-8">
-        <div className="rounded-3xl border border-white/10 bg-slate-900/50 p-8">
-          <h1 className="text-balance text-2xl font-semibold tracking-tight text-white">
-            Sign in
-          </h1>
+      <div className="mx-auto grid max-w-6xl gap-10 px-6 py-12 lg:grid-cols-[1.1fr_1fr] lg:items-center lg:py-16 lg:px-8">
+        <section className="relative overflow-hidden rounded-3xl border border-emerald-400/20 bg-gradient-to-br from-emerald-500/15 via-emerald-400/5 to-transparent p-8">
+          <div className="pointer-events-none absolute -right-8 -top-8 h-40 w-40 rounded-full bg-emerald-300/20 blur-2xl" />
+          <div className="pointer-events-none absolute -left-10 -bottom-10 h-40 w-40 rounded-full bg-emerald-500/15 blur-2xl" />
+          <div className="relative">
+            <p className="inline-flex items-center rounded-full border border-emerald-300/30 bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-emerald-200">
+              CribMatch Access
+            </p>
+            <h1 className="mt-5 text-balance text-4xl font-semibold tracking-tight text-white sm:text-5xl">
+              Find your next home faster with trusted local matches.
+            </h1>
+            <p className="mt-4 max-w-xl text-sm leading-relaxed text-slate-200 sm:text-base">
+              Sign in to unlock shortlisted listings, message-ready contacts, and smoother move-in decisions across Zimbabwe.
+            </p>
+            <ul className="mt-6 space-y-2 text-sm text-slate-200/90">
+              <li>• Verified listings and landlord details</li>
+              <li>• WhatsApp-first support from search to viewing</li>
+              <li>• Smart filters for price, area, and lifestyle</li>
+            </ul>
+            <div className="mt-8">
+              <Image
+                src="/1.png"
+                alt="CribMatch renter"
+                width={430}
+                height={500}
+                className="h-auto w-[260px] object-contain drop-shadow-[0_18px_32px_rgba(16,185,129,0.35)] sm:w-[320px]"
+                priority
+              />
+            </div>
+            <p className="mt-4 text-xs text-slate-300">
+              New here? Browse first on the{" "}
+              <Link href="/renters" className="font-medium text-emerald-300 transition hover:text-emerald-200">
+                renters page
+              </Link>{" "}
+              or explore{" "}
+              <Link
+                href="/how-it-works"
+                className="font-medium text-emerald-300 transition hover:text-emerald-200"
+              >
+                how it works
+              </Link>
+              .
+            </p>
+          </div>
+        </section>
+
+        <div className="rounded-3xl border border-white/10 bg-slate-900/60 p-8 shadow-2xl shadow-slate-950/40">
+          <h2 className="text-balance text-2xl font-semibold tracking-tight text-white">
+            Welcome back
+          </h2>
           <p className="mt-2 text-sm text-slate-300">
-            Everyone signs in here using their phone number.
+            Sign in with your phone number to continue.
           </p>
           <LoginClient callbackUrl={callbackUrl} />
+          <div className="mt-6 text-xs text-slate-400">
+            Need help?{" "}
+            <Link href="/contact" className="font-medium text-emerald-300 transition hover:text-emerald-200">
+              Contact support
+            </Link>
+          </div>
         </div>
       </div>
     </div>
