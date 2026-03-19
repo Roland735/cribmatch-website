@@ -201,10 +201,24 @@ const UserSchema = new mongoose.Schema(
       fullLegalName: { type: String, default: "", trim: true },
       contactEmail: { type: String, default: "", trim: true },
       contactPhone: { type: String, default: "", trim: true },
+      alternatePhone: { type: String, default: "", trim: true },
+      officeAddress: { type: String, default: "", trim: true },
+      city: { type: String, default: "", trim: true },
+      yearsExperience: { type: Number, default: null, min: 0 },
+      areasServed: { type: [String], default: [] },
+      specializations: { type: [String], default: [] },
+      bio: { type: String, default: "", trim: true },
+      preferredContactMethod: { type: String, default: "", trim: true },
+      websiteUrl: { type: String, default: "", trim: true },
       governmentIdNumber: { type: String, default: "", trim: true },
       agencyLicenseNumber: { type: String, default: "", trim: true },
       agencyAffiliationProof: { type: String, default: "", trim: true },
       agencyName: { type: String, default: "", trim: true },
+      feePreference: {
+        type: String,
+        enum: ["commission", "fixed", "both"],
+        default: "both",
+      },
       commissionRatePercent: { type: Number, default: null, min: 0, max: 100 },
       fixedFee: { type: Number, default: null, min: 0 },
       verificationStatus: {
@@ -237,8 +251,13 @@ const UserSchema = new mongoose.Schema(
     agentRateHistory: {
       type: [
         {
-          commissionRatePercent: { type: Number, required: true, min: 0, max: 100 },
+          commissionRatePercent: { type: Number, default: null, min: 0, max: 100 },
           fixedFee: { type: Number, default: null, min: 0 },
+          feePreference: {
+            type: String,
+            enum: ["commission", "fixed", "both"],
+            default: "both",
+          },
           changedBy: { type: String, default: "", trim: true },
           changedAt: { type: Date, default: Date.now },
           note: { type: String, default: "", trim: true },

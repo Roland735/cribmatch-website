@@ -68,7 +68,37 @@ describe("POST /api/agents/register", () => {
 
     expect(response.status).toBe(400);
     const payload = await response.json();
-    expect(payload.error).toMatch(/Commission rate and fixed fee are required/);
+    expect(payload.error).toMatch(/Provide either commission rate or fixed fee/);
+  });
+
+  test("allows registration with fixed fee only", async () => {
+    const saveMock = vi.fn().mockResolvedValue(undefined);
+    findByIdMock.mockResolvedValue({
+      _id: "+263771000001",
+      role: "user",
+      agentProfile: { verificationStatus: "none" },
+      agentVerificationHistory: [],
+      agentRateHistory: [],
+      save: saveMock,
+    });
+
+    const response = await POST(
+      makeRequest({
+        fullLegalName: "Agent One",
+        contactEmail: "agent@example.com",
+        contactPhone: "+263771000001",
+        governmentIdNumber: "ID123456",
+        agencyLicenseNumber: "LIC-100",
+        agencyAffiliationProof: "https://example.com/proof.pdf",
+        agencyName: "Prime Realty",
+        feePreference: "fixed",
+        commissionRatePercent: null,
+        fixedFee: 100,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(saveMock).toHaveBeenCalledTimes(1);
   });
 
   test("creates pending verification agent application", async () => {

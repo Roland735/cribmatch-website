@@ -16,6 +16,19 @@ export default function ProfileClient() {
   const [agentVerificationHistory, setAgentVerificationHistory] = useState([]);
   const [agentRate, setAgentRate] = useState("");
   const [agentFixedFee, setAgentFixedFee] = useState("");
+  const [agentFeePreference, setAgentFeePreference] = useState("both");
+  const [agentFullLegalName, setAgentFullLegalName] = useState("");
+  const [agentContactEmail, setAgentContactEmail] = useState("");
+  const [agentContactPhone, setAgentContactPhone] = useState("");
+  const [agentAlternatePhone, setAgentAlternatePhone] = useState("");
+  const [agentOfficeAddress, setAgentOfficeAddress] = useState("");
+  const [agentCity, setAgentCity] = useState("");
+  const [agentYearsExperience, setAgentYearsExperience] = useState("");
+  const [agentAreasServed, setAgentAreasServed] = useState("");
+  const [agentSpecializations, setAgentSpecializations] = useState("");
+  const [agentBio, setAgentBio] = useState("");
+  const [agentPreferredContactMethod, setAgentPreferredContactMethod] = useState("phone");
+  const [agentWebsiteUrl, setAgentWebsiteUrl] = useState("");
   const [agentNote, setAgentNote] = useState("");
   const [agentSaving, setAgentSaving] = useState(false);
 
@@ -65,6 +78,27 @@ export default function ProfileClient() {
           : "",
       );
       setAgentFixedFee(typeof profile?.fixedFee === "number" ? String(profile.fixedFee) : "");
+      setAgentFeePreference(
+        typeof profile?.feePreference === "string" ? profile.feePreference : "both",
+      );
+      setAgentFullLegalName(profile?.fullLegalName || "");
+      setAgentContactEmail(profile?.contactEmail || "");
+      setAgentContactPhone(profile?.contactPhone || "");
+      setAgentAlternatePhone(profile?.alternatePhone || "");
+      setAgentOfficeAddress(profile?.officeAddress || "");
+      setAgentCity(profile?.city || "");
+      setAgentYearsExperience(
+        typeof profile?.yearsExperience === "number" ? String(profile.yearsExperience) : "",
+      );
+      setAgentAreasServed(
+        Array.isArray(profile?.areasServed) ? profile.areasServed.join(", ") : "",
+      );
+      setAgentSpecializations(
+        Array.isArray(profile?.specializations) ? profile.specializations.join(", ") : "",
+      );
+      setAgentBio(profile?.bio || "");
+      setAgentPreferredContactMethod(profile?.preferredContactMethod || "phone");
+      setAgentWebsiteUrl(profile?.websiteUrl || "");
     } catch {
     }
   }, []);
@@ -103,14 +137,32 @@ export default function ProfileClient() {
 
   const handleAgentRateUpdate = async (e) => {
     e.preventDefault();
-    const rateValue = Number(agentRate);
-    const fixedFeeValue = Number(agentFixedFee);
-    if (!Number.isFinite(rateValue) || rateValue < 0 || rateValue > 100) {
+    const hasRate = agentRate !== "";
+    const hasFixed = agentFixedFee !== "";
+    if (!hasRate && !hasFixed) {
+      setError("Provide either commission rate or fixed fee.");
+      return;
+    }
+    const rateValue = hasRate ? Number(agentRate) : null;
+    const fixedFeeValue = hasFixed ? Number(agentFixedFee) : null;
+    if (hasRate && (!Number.isFinite(rateValue) || rateValue < 0 || rateValue > 100)) {
       setError("Commission rate must be between 0 and 100.");
       return;
     }
-    if (!Number.isFinite(fixedFeeValue) || fixedFeeValue < 0) {
+    if (hasFixed && (!Number.isFinite(fixedFeeValue) || fixedFeeValue < 0)) {
       setError("Fixed fee must be a non-negative number.");
+      return;
+    }
+    if (agentFeePreference === "commission" && !hasRate) {
+      setError("Commission model requires commission rate.");
+      return;
+    }
+    if (agentFeePreference === "fixed" && !hasFixed) {
+      setError("Fixed model requires fixed fee.");
+      return;
+    }
+    if (agentWebsiteUrl && !/^https?:\/\/.+/i.test(agentWebsiteUrl.trim())) {
+      setError("Website URL must start with http:// or https://.");
       return;
     }
 
@@ -122,6 +174,20 @@ export default function ProfileClient() {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          fullLegalName: agentFullLegalName,
+          contactEmail: agentContactEmail,
+          contactPhone: agentContactPhone,
+          alternatePhone: agentAlternatePhone,
+          officeAddress: agentOfficeAddress,
+          city: agentCity,
+          yearsExperience:
+            agentYearsExperience === "" ? null : Number(agentYearsExperience),
+          areasServed: agentAreasServed,
+          specializations: agentSpecializations,
+          bio: agentBio,
+          preferredContactMethod: agentPreferredContactMethod,
+          websiteUrl: agentWebsiteUrl,
+          feePreference: agentFeePreference,
           commissionRatePercent: rateValue,
           fixedFee: fixedFeeValue,
           note: agentNote,
@@ -242,6 +308,172 @@ export default function ProfileClient() {
           <form onSubmit={handleAgentRateUpdate} className="space-y-4">
             <div className="rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm text-amber-200">
               Verification status: {agentProfile?.verificationStatus || "none"}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-200" htmlFor="agentFullLegalName">
+                Full legal name
+              </label>
+              <input
+                id="agentFullLegalName"
+                value={agentFullLegalName}
+                onChange={(event) => setAgentFullLegalName(event.target.value)}
+                className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-200" htmlFor="agentContactEmail">
+                Contact email
+              </label>
+              <input
+                id="agentContactEmail"
+                type="email"
+                value={agentContactEmail}
+                onChange={(event) => setAgentContactEmail(event.target.value)}
+                className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-200" htmlFor="agentContactPhone">
+                Contact phone
+              </label>
+              <input
+                id="agentContactPhone"
+                value={agentContactPhone}
+                onChange={(event) => setAgentContactPhone(event.target.value)}
+                className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-200" htmlFor="agentAlternatePhone">
+                Alternate phone
+              </label>
+              <input
+                id="agentAlternatePhone"
+                value={agentAlternatePhone}
+                onChange={(event) => setAgentAlternatePhone(event.target.value)}
+                className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-200" htmlFor="agentOfficeAddress">
+                Office address
+              </label>
+              <input
+                id="agentOfficeAddress"
+                value={agentOfficeAddress}
+                onChange={(event) => setAgentOfficeAddress(event.target.value)}
+                className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-200" htmlFor="agentCity">
+                City
+              </label>
+              <input
+                id="agentCity"
+                value={agentCity}
+                onChange={(event) => setAgentCity(event.target.value)}
+                className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-200" htmlFor="agentYearsExperience">
+                Years of experience
+              </label>
+              <input
+                id="agentYearsExperience"
+                type="number"
+                value={agentYearsExperience}
+                onChange={(event) => setAgentYearsExperience(event.target.value)}
+                className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-200" htmlFor="agentAreasServed">
+                Areas served (comma-separated)
+              </label>
+              <input
+                id="agentAreasServed"
+                value={agentAreasServed}
+                onChange={(event) => setAgentAreasServed(event.target.value)}
+                className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-200" htmlFor="agentSpecializations">
+                Specializations (comma-separated)
+              </label>
+              <input
+                id="agentSpecializations"
+                value={agentSpecializations}
+                onChange={(event) => setAgentSpecializations(event.target.value)}
+                className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-200" htmlFor="agentBio">
+                Bio
+              </label>
+              <input
+                id="agentBio"
+                value={agentBio}
+                onChange={(event) => setAgentBio(event.target.value)}
+                className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-200" htmlFor="agentPreferredContactMethod">
+                Preferred contact method
+              </label>
+              <select
+                id="agentPreferredContactMethod"
+                value={agentPreferredContactMethod}
+                onChange={(event) => setAgentPreferredContactMethod(event.target.value)}
+                className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-2 text-sm text-slate-50 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+              >
+                <option value="phone">Phone</option>
+                <option value="whatsapp">WhatsApp</option>
+                <option value="email">Email</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-200" htmlFor="agentWebsiteUrl">
+                Website URL
+              </label>
+              <input
+                id="agentWebsiteUrl"
+                value={agentWebsiteUrl}
+                onChange={(event) => setAgentWebsiteUrl(event.target.value)}
+                className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-200" htmlFor="agentFeePreference">
+                Fee model
+              </label>
+              <select
+                id="agentFeePreference"
+                value={agentFeePreference}
+                onChange={(event) => setAgentFeePreference(event.target.value)}
+                className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-2 text-sm text-slate-50 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+              >
+                <option value="commission">Commission only</option>
+                <option value="fixed">Fixed fee only</option>
+                <option value="both">Commission or fixed fee</option>
+              </select>
             </div>
 
             <div>

@@ -16,8 +16,42 @@ function asMoney(value) {
   return Math.round(num * 100) / 100;
 }
 
+function asOptionalRate(value) {
+  if (value === null || value === undefined || value === "") return null;
+  return asRate(value);
+}
+
+function asOptionalMoney(value) {
+  if (value === null || value === undefined || value === "") return null;
+  return asMoney(value);
+}
+
+function asOptionalWholeNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) return null;
+  return Math.floor(num);
+}
+
 function cleanText(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function cleanStringArray(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => cleanText(item))
+      .filter(Boolean)
+      .slice(0, 12);
+  }
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, 12);
+  }
+  return [];
 }
 
 function serializeAuditRows(rows = []) {
@@ -76,17 +110,50 @@ export async function PATCH(request) {
   }
 
   const body = await request.json().catch(() => ({}));
-  const commissionRatePercent = asRate(body?.commissionRatePercent);
-  const fixedFee = asMoney(body?.fixedFee);
+  const commissionRatePercent = asOptionalRate(body?.commissionRatePercent);
+  const fixedFee = asOptionalMoney(body?.fixedFee);
   const note = cleanText(body?.note);
+  const feePreferenceRaw = cleanText(body?.feePreference).toLowerCase();
+  const feePreference = ["commission", "fixed", "both"].includes(feePreferenceRaw)
+    ? feePreferenceRaw
+    : "both";
+  const fullLegalName = cleanText(body?.fullLegalName);
+  const contactEmail = cleanText(body?.contactEmail);
+  const contactPhone = cleanText(body?.contactPhone);
+  const alternatePhone = cleanText(body?.alternatePhone);
+  const officeAddress = cleanText(body?.officeAddress);
+  const city = cleanText(body?.city);
+  const yearsExperience = asOptionalWholeNumber(body?.yearsExperience);
+  const areasServed = cleanStringArray(body?.areasServed);
+  const specializations = cleanStringArray(body?.specializations);
+  const bio = cleanText(body?.bio);
+  const preferredContactMethod = cleanText(body?.preferredContactMethod);
+  const websiteUrl = cleanText(body?.websiteUrl);
 
-  if (commissionRatePercent === null || fixedFee === null) {
-    return Response.json({ error: "Valid commission rate and fixed fee are required" }, { status: 400 });
+  if (commissionRatePercent === null && fixedFee === null) {
+    return Response.json(
+      { error: "Provide either a valid commission rate or fixed fee" },
+      { status: 400 },
+    );
   }
 
-  const currentRate = Number(user?.agentProfile?.commissionRatePercent);
-  const currentFee = Number(user?.agentProfile?.fixedFee);
-  const changed = currentRate !== commissionRatePercent || currentFee !== fixedFee;
+  const currentProfile = user?.agentProfile || {};
+  const changed =
+    Number(currentProfile?.commissionRatePercent) !== commissionRatePercent ||
+    Number(currentProfile?.fixedFee) !== fixedFee ||
+    cleanText(currentProfile?.feePreference).toLowerCase() !== feePreference ||
+    cleanText(currentProfile?.fullLegalName) !== fullLegalName ||
+    cleanText(currentProfile?.contactEmail) !== contactEmail ||
+    cleanText(currentProfile?.contactPhone) !== contactPhone ||
+    cleanText(currentProfile?.alternatePhone) !== alternatePhone ||
+    cleanText(currentProfile?.officeAddress) !== officeAddress ||
+    cleanText(currentProfile?.city) !== city ||
+    Number(currentProfile?.yearsExperience) !== yearsExperience ||
+    JSON.stringify(currentProfile?.areasServed || []) !== JSON.stringify(areasServed) ||
+    JSON.stringify(currentProfile?.specializations || []) !== JSON.stringify(specializations) ||
+    cleanText(currentProfile?.bio) !== bio ||
+    cleanText(currentProfile?.preferredContactMethod) !== preferredContactMethod ||
+    cleanText(currentProfile?.websiteUrl) !== websiteUrl;
   if (!changed) {
     return Response.json({ ok: true, unchanged: true });
   }
@@ -95,6 +162,19 @@ export async function PATCH(request) {
   const now = new Date();
   user.agentProfile = {
     ...(user.agentProfile?.toObject?.() || user.agentProfile || {}),
+    fullLegalName,
+    contactEmail,
+    contactPhone,
+    alternatePhone,
+    officeAddress,
+    city,
+    yearsExperience,
+    areasServed,
+    specializations,
+    bio,
+    preferredContactMethod,
+    websiteUrl,
+    feePreference,
     commissionRatePercent,
     fixedFee,
     verificationStatus: "pending_reapproval",
@@ -106,6 +186,7 @@ export async function PATCH(request) {
     {
       commissionRatePercent,
       fixedFee,
+      feePreference,
       changedBy: phoneNumber,
       changedAt: now,
       note: note || "Agent updated rates",

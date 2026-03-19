@@ -20,6 +20,40 @@ function asMoney(value) {
   return Math.round(num * 100) / 100;
 }
 
+function asOptionalRate(value) {
+  if (value === null || value === undefined || value === "") return null;
+  return asRate(value);
+}
+
+function asOptionalMoney(value) {
+  if (value === null || value === undefined || value === "") return null;
+  return asMoney(value);
+}
+
+function asOptionalWholeNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) return null;
+  return Math.floor(num);
+}
+
+function cleanStringArray(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === "string" ? item.trim() : ""))
+      .filter(Boolean)
+      .slice(0, 12);
+  }
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, 12);
+  }
+  return [];
+}
+
 export async function POST(request) {
   const session = await getServerSession(authOptions);
   if (!session?.user) {
@@ -36,12 +70,25 @@ export async function POST(request) {
   const fullLegalName = cleanText(body?.fullLegalName);
   const contactEmail = cleanText(body?.contactEmail);
   const contactPhone = cleanText(body?.contactPhone);
+  const alternatePhone = cleanText(body?.alternatePhone);
+  const officeAddress = cleanText(body?.officeAddress);
+  const city = cleanText(body?.city);
+  const yearsExperience = asOptionalWholeNumber(body?.yearsExperience);
+  const areasServed = cleanStringArray(body?.areasServed);
+  const specializations = cleanStringArray(body?.specializations);
+  const bio = cleanText(body?.bio);
+  const preferredContactMethod = cleanText(body?.preferredContactMethod);
+  const websiteUrl = cleanText(body?.websiteUrl);
   const governmentIdNumber = cleanText(body?.governmentIdNumber);
   const agencyLicenseNumber = cleanText(body?.agencyLicenseNumber);
   const agencyAffiliationProof = cleanText(body?.agencyAffiliationProof);
   const agencyName = cleanText(body?.agencyName);
-  const commissionRatePercent = asRate(body?.commissionRatePercent);
-  const fixedFee = asMoney(body?.fixedFee);
+  const commissionRatePercent = asOptionalRate(body?.commissionRatePercent);
+  const fixedFee = asOptionalMoney(body?.fixedFee);
+  const feePreferenceRaw = cleanText(body?.feePreference).toLowerCase();
+  const feePreference = ["commission", "fixed", "both"].includes(feePreferenceRaw)
+    ? feePreferenceRaw
+    : "both";
 
   if (
     !fullLegalName ||
@@ -53,8 +100,11 @@ export async function POST(request) {
   ) {
     return Response.json({ error: "Missing required agent registration fields" }, { status: 400 });
   }
-  if (commissionRatePercent === null || fixedFee === null) {
-    return Response.json({ error: "Commission rate and fixed fee are required" }, { status: 400 });
+  if (commissionRatePercent === null && fixedFee === null) {
+    return Response.json(
+      { error: "Provide either commission rate or fixed fee" },
+      { status: 400 },
+    );
   }
 
   await dbConnect();
@@ -72,10 +122,20 @@ export async function POST(request) {
     fullLegalName,
     contactEmail,
     contactPhone,
+    alternatePhone,
+    officeAddress,
+    city,
+    yearsExperience,
+    areasServed,
+    specializations,
+    bio,
+    preferredContactMethod,
+    websiteUrl,
     governmentIdNumber,
     agencyLicenseNumber,
     agencyAffiliationProof,
     agencyName,
+    feePreference,
     commissionRatePercent,
     fixedFee,
     verificationStatus: "pending_verification",
@@ -97,6 +157,7 @@ export async function POST(request) {
     {
       commissionRatePercent,
       fixedFee,
+      feePreference,
       changedBy: phoneNumber,
       changedAt: now,
       note: "Initial registration",

@@ -351,8 +351,11 @@ export async function POST(request) {
         : null;
     agentFixedFee =
       typeof actor?.agentProfile?.fixedFee === "number" ? actor.agentProfile.fixedFee : null;
-    if (agentRate === null) {
-      return Response.json({ error: "Missing verified agent rate" }, { status: 400 });
+    if (agentRate === null && agentFixedFee === null) {
+      return Response.json(
+        { error: "Agent profile must have commission rate or fixed fee configured" },
+        { status: 400 },
+      );
     }
 
     const pricingSettings = await getPricingSettings({ ensurePersisted: true });
