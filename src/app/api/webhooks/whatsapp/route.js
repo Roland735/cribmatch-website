@@ -73,6 +73,7 @@ const TTL_INTERACTIVE_MS = process.env.NODE_ENV === "production" ? 3000 : 1000;
    Send dedupe cache (phone -> Map<hash, ts>)
 ------------------------- */
 const messageSendCache = new Map();
+const paymentAutoMonitors = new Map();
 function _shouldSend(phone, hash, ttl = TTL_TEXT_MS) {
   if (!phone) return true;
   const p = messageSendCache.get(phone) || new Map();
@@ -1726,9 +1727,31 @@ export async function POST(request) {
     _safeGet(payload, ["entry", 0, "changes", 0, "value", "statuses", 0]) ||
     payload?.statuses?.[0]
   );
+  const statusPhone = digitsOnly(
+    _safeGet(payload, ["entry", 0, "changes", 0, "value", "statuses", 0, "recipient_id"]) ||
+    payload?.statuses?.[0]?.recipient_id ||
+    ""
+  );
 
-  if (!msgId && !phone) return NextResponse.json({ ok: true, note: "no-id-or-phone" });
+  if (!msgId && !phone && !statusPhone) return NextResponse.json({ ok: true, note: "no-id-or-phone" });
   if (!hasInboundMessage) {
+    if (hasStatuses && statusPhone) {
+      try { await dbConnect(); } catch { }
+      const pendingDoc = await Message.findOne({
+        phone: statusPhone,
+        "meta.state": "PAYMENT_PENDING_CONFIRMATION",
+        "meta.paymentTransactionId": { $exists: true, $ne: "" },
+      }).sort({ createdAt: -1 }).lean().exec().catch(() => null);
+      if (pendingDoc?.meta?.paymentTransactionId) {
+        startPaymentAutoMonitor({
+          transactionId: String(pendingDoc.meta.paymentTransactionId),
+          phone: statusPhone,
+          lastMeta: pendingDoc.meta || {},
+          savedMsgId: String(pendingDoc?._id || ""),
+          dbAvailable: true,
+        });
+      }
+    }
     logDecision("non-message-event-ignored", { msgId, hasStatuses, phone, parsedText });
     return NextResponse.json({ ok: true, note: hasStatuses ? "status-event-ignored" : "non-message-event-ignored" });
   }
@@ -1900,6 +1923,13 @@ export async function POST(request) {
       [{ id: "menu_main", title: "🏠 Main menu" }],
       { headerText: "EcoCash Payment" }
     );
+    startPaymentAutoMonitor({
+      transactionId: String(paymentStart.transactionId || ""),
+      phone,
+      lastMeta: { ...lastMeta, paymentListingSnapshot: makePaymentListingSnapshot(listing), paymentListingId: getIdFromListing(listing) },
+      savedMsgId: String(savedMsg?._id || ""),
+      dbAvailable,
+    });
     return NextResponse.json({ ok: true, note: "payment-push-sent" });
   }
 
@@ -1972,6 +2002,13 @@ export async function POST(request) {
         [{ id: "menu_main", title: "🏠 Main menu" }],
         { headerText: "EcoCash Payment" }
       );
+      startPaymentAutoMonitor({
+        transactionId: String(paymentStart.transactionId || ""),
+        phone,
+        lastMeta: { ...lastMeta, paymentListingSnapshot: listingSnapshot, paymentListingId: getIdFromListing(listingSnapshot) },
+        savedMsgId: String(savedMsg?._id || ""),
+        dbAvailable,
+      });
       return NextResponse.json({ ok: true, note: "payment-retry-sent" });
     }
 
@@ -2013,6 +2050,13 @@ export async function POST(request) {
       [{ id: "menu_main", title: "🏠 Main menu" }],
       { headerText: "EcoCash Payment" }
     );
+    startPaymentAutoMonitor({
+      transactionId: txId,
+      phone,
+      lastMeta,
+      savedMsgId: String(savedMsg?._id || ""),
+      dbAvailable,
+    });
     return NextResponse.json({ ok: true, note: "payment-awaiting-user-action" });
   }
 
@@ -3854,6 +3898,57 @@ async function completePaidContactReveal({ phone, lastMeta, savedMsg, dbAvailabl
     }).catch(() => null);
   }
   return { ok: true, note: "payment-confirmed-contact-sent" };
+}
+
+function startPaymentAutoMonitor({ transactionId, phone, lastMeta, savedMsgId, dbAvailable }) {
+  const txId = String(transactionId || "").trim();
+  const phoneDigits = digitsOnly(phone);
+  if (!txId || !phoneDigits) return;
+  if (paymentAutoMonitors.has(txId)) return;
+
+  const task = (async () => {
+    const maxChecks = Number.isFinite(Number(process.env.WHATSAPP_PAYMENT_AUTO_MAX_CHECKS))
+      ? Math.max(5, Number(process.env.WHATSAPP_PAYMENT_AUTO_MAX_CHECKS))
+      : 90;
+    const delayMs = Number.isFinite(Number(process.env.WHATSAPP_PAYMENT_AUTO_DELAY_MS))
+      ? Math.max(1500, Number(process.env.WHATSAPP_PAYMENT_AUTO_DELAY_MS))
+      : 4000;
+
+    for (let i = 0; i < maxChecks; i += 1) {
+      const verification = await verifyPaynowPayment(txId).catch(() => null);
+      if (verification?.ok && verification?.paid) {
+        if (dbAvailable && savedMsgId) {
+          const latestMsg = await Message.findById(savedMsgId).select({ "meta.state": 1 }).lean().exec().catch(() => null);
+          if (latestMsg?.meta?.state === "CONTACT_REVEALED") return;
+        }
+        await completePaidContactReveal({
+          phone: phoneDigits,
+          lastMeta: lastMeta || {},
+          savedMsg: savedMsgId ? { _id: savedMsgId } : null,
+          dbAvailable,
+        }).catch(() => null);
+        return;
+      }
+
+      const statusLower = String(verification?.status || "").toLowerCase();
+      if (statusLower.includes("failed") || statusLower.includes("cancel")) {
+        await sendInteractiveButtons(
+          phoneDigits,
+          `❌ Payment status: ${verification?.status || "failed"}.\nReply: retry to send a new USSD push.`,
+          [{ id: "retry", title: "🔁 Retry payment" }, { id: "menu_main", title: "🏠 Main menu" }],
+          { headerText: "EcoCash Payment" }
+        ).catch(() => null);
+        return;
+      }
+
+      if (i < maxChecks - 1) {
+        await sleepMs(delayMs);
+      }
+    }
+  })();
+
+  paymentAutoMonitors.set(txId, task);
+  task.finally(() => paymentAutoMonitors.delete(txId));
 }
 
 async function autoVerifyPaymentUntilSettled(transactionId, opts = {}) {
