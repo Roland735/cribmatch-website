@@ -29,6 +29,8 @@ const INITIAL_FORM = {
 export default function AgentRegistrationClient() {
   const [form, setForm] = useState(INITIAL_FORM);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadingGovIdImage, setUploadingGovIdImage] = useState(false);
+  const [uploadingProfileImage, setUploadingProfileImage] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -99,6 +101,23 @@ export default function AgentRegistrationClient() {
     }
   }
 
+  async function uploadImageFile(file, targetField) {
+    if (!(file instanceof File)) return;
+    const body = new FormData();
+    body.append("file", file);
+    const response = await fetch("/api/uploads/listing-image", {
+      method: "POST",
+      body,
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload?.error || "Image upload failed");
+    }
+    const url = typeof payload?.url === "string" ? payload.url.trim() : "";
+    if (!url) throw new Error("Upload returned an empty URL");
+    updateField(targetField, url);
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4 rounded-3xl border border-white/10 bg-slate-900/40 p-6">
       <Field label="Full legal name *" value={form.fullLegalName} onChange={(value) => updateField("fullLegalName", value)} />
@@ -123,7 +142,22 @@ export default function AgentRegistrationClient() {
       />
       <Field label="Website URL (optional)" value={form.websiteUrl} onChange={(value) => updateField("websiteUrl", value)} />
       <Field label="Government-issued ID *" value={form.governmentIdNumber} onChange={(value) => updateField("governmentIdNumber", value)} />
-      <Field label="Government ID picture URL *" value={form.governmentIdImageUrl} onChange={(value) => updateField("governmentIdImageUrl", value)} />
+      <UploadField
+        label="Government ID picture *"
+        currentUrl={form.governmentIdImageUrl}
+        uploading={uploadingGovIdImage}
+        onSelectFile={async (file) => {
+          setUploadingGovIdImage(true);
+          setError("");
+          try {
+            await uploadImageFile(file, "governmentIdImageUrl");
+          } catch (uploadError) {
+            setError(uploadError?.message || "Failed to upload ID image.");
+          } finally {
+            setUploadingGovIdImage(false);
+          }
+        }}
+      />
       <Field label="Agency license number (optional)" value={form.agencyLicenseNumber} onChange={(value) => updateField("agencyLicenseNumber", value)} />
       <Field
         label="Affiliation proof (optional)"
@@ -131,7 +165,22 @@ export default function AgentRegistrationClient() {
         onChange={(value) => updateField("agencyAffiliationProof", value)}
       />
       <Field label="Agency name *" value={form.agencyName} onChange={(value) => updateField("agencyName", value)} />
-      <Field label="Profile picture URL (optional)" value={form.profileImageUrl} onChange={(value) => updateField("profileImageUrl", value)} />
+      <UploadField
+        label="Profile picture (optional)"
+        currentUrl={form.profileImageUrl}
+        uploading={uploadingProfileImage}
+        onSelectFile={async (file) => {
+          setUploadingProfileImage(true);
+          setError("");
+          try {
+            await uploadImageFile(file, "profileImageUrl");
+          } catch (uploadError) {
+            setError(uploadError?.message || "Failed to upload profile image.");
+          } finally {
+            setUploadingProfileImage(false);
+          }
+        }}
+      />
       <SelectField
         label="Fee model"
         value={form.feePreference}
@@ -151,7 +200,7 @@ export default function AgentRegistrationClient() {
 
       <button
         type="submit"
-        disabled={Boolean(formError) || submitting}
+        disabled={Boolean(formError) || submitting || uploadingGovIdImage || uploadingProfileImage}
         className="w-full rounded-full bg-emerald-400 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {submitting ? "Submitting..." : "Submit for Verification"}
@@ -189,6 +238,28 @@ function SelectField({ label, value, onChange, options }) {
           </option>
         ))}
       </select>
+    </div>
+  );
+}
+
+function UploadField({ label, currentUrl, uploading, onSelectFile }) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-slate-200">{label}</label>
+      <div className="mt-2 flex items-center gap-3">
+        <input
+          type="file"
+          accept="image/*"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (file) onSelectFile(file);
+          }}
+          className="block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 file:mr-3 file:rounded-full file:border-0 file:bg-emerald-400 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-slate-950"
+        />
+      </div>
+      {uploading ? <p className="mt-2 text-xs text-slate-400">Uploading image...</p> : null}
+      {currentUrl ? <p className="mt-2 text-xs text-emerald-200">Image uploaded ✓</p> : null}
     </div>
   );
 }

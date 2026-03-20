@@ -37,6 +37,8 @@ export default function ProfileClient() {
   const [agentWebsiteUrl, setAgentWebsiteUrl] = useState("");
   const [agentNote, setAgentNote] = useState("");
   const [agentSaving, setAgentSaving] = useState(false);
+  const [uploadingGovIdImage, setUploadingGovIdImage] = useState(false);
+  const [uploadingProfileImage, setUploadingProfileImage] = useState(false);
 
   const loadProfile = useCallback(async () => {
     try {
@@ -260,6 +262,22 @@ export default function ProfileClient() {
     }
   };
 
+  const uploadAgentImage = useCallback(async (file) => {
+    const body = new FormData();
+    body.append("file", file);
+    const response = await fetch("/api/uploads/listing-image", {
+      method: "POST",
+      body,
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload?.error || "Image upload failed");
+    }
+    const url = typeof payload?.url === "string" ? payload.url.trim() : "";
+    if (!url) throw new Error("Upload returned an empty URL");
+    return url;
+  }, []);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -428,15 +446,32 @@ export default function ProfileClient() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-200" htmlFor="agentGovernmentIdImageUrl">
-                Government ID picture URL *
+              <label className="block text-sm font-medium text-slate-200" htmlFor="agentGovernmentIdImageUpload">
+                Government ID picture *
               </label>
               <input
-                id="agentGovernmentIdImageUrl"
-                value={agentGovernmentIdImageUrl}
-                onChange={(event) => setAgentGovernmentIdImageUrl(event.target.value)}
-                className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+                id="agentGovernmentIdImageUpload"
+                type="file"
+                accept="image/*"
+                onChange={async (event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  if (!file) return;
+                  setUploadingGovIdImage(true);
+                  setError("");
+                  try {
+                    const url = await uploadAgentImage(file);
+                    setAgentGovernmentIdImageUrl(url);
+                  } catch (uploadError) {
+                    setError(uploadError?.message || "Failed to upload ID image.");
+                  } finally {
+                    setUploadingGovIdImage(false);
+                  }
+                }}
+                className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-2 text-sm text-slate-50 file:mr-3 file:rounded-full file:border-0 file:bg-emerald-400 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-slate-950"
               />
+              {uploadingGovIdImage ? <p className="mt-2 text-xs text-slate-400">Uploading...</p> : null}
+              {agentGovernmentIdImageUrl ? <p className="mt-2 text-xs text-emerald-200">Uploaded ✓</p> : null}
             </div>
 
             <div>
@@ -476,15 +511,32 @@ export default function ProfileClient() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-200" htmlFor="agentProfileImageUrl">
-                Profile picture URL
+              <label className="block text-sm font-medium text-slate-200" htmlFor="agentProfileImageUpload">
+                Profile picture
               </label>
               <input
-                id="agentProfileImageUrl"
-                value={agentProfileImageUrl}
-                onChange={(event) => setAgentProfileImageUrl(event.target.value)}
-                className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+                id="agentProfileImageUpload"
+                type="file"
+                accept="image/*"
+                onChange={async (event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  if (!file) return;
+                  setUploadingProfileImage(true);
+                  setError("");
+                  try {
+                    const url = await uploadAgentImage(file);
+                    setAgentProfileImageUrl(url);
+                  } catch (uploadError) {
+                    setError(uploadError?.message || "Failed to upload profile image.");
+                  } finally {
+                    setUploadingProfileImage(false);
+                  }
+                }}
+                className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-2 text-sm text-slate-50 file:mr-3 file:rounded-full file:border-0 file:bg-emerald-400 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-slate-950"
               />
+              {uploadingProfileImage ? <p className="mt-2 text-xs text-slate-400">Uploading...</p> : null}
+              {agentProfileImageUrl ? <p className="mt-2 text-xs text-emerald-200">Uploaded ✓</p> : null}
             </div>
 
             <div>
@@ -657,7 +709,7 @@ export default function ProfileClient() {
 
             <button
               type="submit"
-              disabled={agentSaving}
+              disabled={agentSaving || uploadingGovIdImage || uploadingProfileImage}
               className="rounded-full bg-emerald-400 px-6 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {agentSaving ? "Submitting..." : "Submit updates"}
