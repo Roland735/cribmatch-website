@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { signOut } from "next-auth/react";
 
 export default function ProfileClient() {
@@ -117,6 +117,35 @@ export default function ProfileClient() {
     }
   }, [loadAgentProfile, user?.role]);
 
+  const agentRequiredItems = useMemo(
+    () => [
+      Boolean(agentFullLegalName.trim()),
+      Boolean(agentContactEmail.trim()),
+      Boolean(agentContactPhone.trim()),
+      Boolean(agentGovernmentIdNumber.trim()),
+      Boolean(agentAgencyLicenseNumber.trim()),
+      Boolean(agentAgencyName.trim()),
+      Boolean(agentAgencyAffiliationProof.trim()),
+      Boolean(agentRate !== "" || agentFixedFee !== ""),
+    ],
+    [
+      agentAgencyAffiliationProof,
+      agentAgencyLicenseNumber,
+      agentAgencyName,
+      agentContactEmail,
+      agentContactPhone,
+      agentFixedFee,
+      agentFullLegalName,
+      agentGovernmentIdNumber,
+      agentRate,
+    ],
+  );
+  const agentRequiredCompletedCount = agentRequiredItems.filter(Boolean).length;
+  const agentRequiredTotalCount = agentRequiredItems.length;
+  const agentCompletionPercent = Math.round(
+    (agentRequiredCompletedCount / agentRequiredTotalCount) * 100,
+  );
+
   const handleUpdate = async (e) => {
     e.preventDefault();
     setSaving(true);
@@ -218,11 +247,11 @@ export default function ProfileClient() {
       if (!response.ok) {
         throw new Error(payload?.error || "Could not update rates.");
       }
-      setSuccess("Rates updated. Profile moved to Pending Re-approval.");
+      setSuccess("Updates submitted. Profile moved to Pending Re-approval.");
       setAgentNote("");
       await loadAgentProfile();
     } catch (agentError) {
-      setError(agentError?.message || "Could not update rates.");
+      setError(agentError?.message || "Could not submit updates.");
     } finally {
       setAgentSaving(false);
     }
@@ -330,10 +359,25 @@ export default function ProfileClient() {
             <div className="rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm text-amber-200">
               Verification status: {agentProfile?.verificationStatus || "none"}
             </div>
+            <div className="rounded-2xl border border-sky-400/20 bg-sky-400/5 p-4">
+              <div className="flex items-center justify-between text-sm">
+                <p className="font-medium text-sky-100">Required profile completion</p>
+                <p className="font-semibold text-sky-200">{agentCompletionPercent}%</p>
+              </div>
+              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-800">
+                <div
+                  className="h-full rounded-full bg-sky-300 transition-all"
+                  style={{ width: `${agentCompletionPercent}%` }}
+                />
+              </div>
+              <p className="mt-2 text-xs text-sky-200/80">
+                {agentRequiredCompletedCount}/{agentRequiredTotalCount} required fields completed.
+              </p>
+            </div>
 
             <div>
               <label className="block text-sm font-medium text-slate-200" htmlFor="agentFullLegalName">
-                Full legal name
+                Full legal name *
               </label>
               <input
                 id="agentFullLegalName"
@@ -345,7 +389,7 @@ export default function ProfileClient() {
 
             <div>
               <label className="block text-sm font-medium text-slate-200" htmlFor="agentContactEmail">
-                Contact email
+                Contact email *
               </label>
               <input
                 id="agentContactEmail"
@@ -358,7 +402,7 @@ export default function ProfileClient() {
 
             <div>
               <label className="block text-sm font-medium text-slate-200" htmlFor="agentContactPhone">
-                Contact phone
+                Contact phone *
               </label>
               <input
                 id="agentContactPhone"
@@ -370,7 +414,7 @@ export default function ProfileClient() {
 
             <div>
               <label className="block text-sm font-medium text-slate-200" htmlFor="agentGovernmentIdNumber">
-                Government ID
+                Government ID *
               </label>
               <input
                 id="agentGovernmentIdNumber"
@@ -382,7 +426,7 @@ export default function ProfileClient() {
 
             <div>
               <label className="block text-sm font-medium text-slate-200" htmlFor="agentAgencyLicenseNumber">
-                Agency license number
+                Agency license number *
               </label>
               <input
                 id="agentAgencyLicenseNumber"
@@ -394,7 +438,7 @@ export default function ProfileClient() {
 
             <div>
               <label className="block text-sm font-medium text-slate-200" htmlFor="agentAgencyName">
-                Agency name
+                Agency name *
               </label>
               <input
                 id="agentAgencyName"
@@ -406,7 +450,7 @@ export default function ProfileClient() {
 
             <div>
               <label className="block text-sm font-medium text-slate-200" htmlFor="agentAgencyAffiliationProof">
-                Affiliation proof
+                Affiliation proof *
               </label>
               <input
                 id="agentAgencyAffiliationProof"
@@ -547,7 +591,7 @@ export default function ProfileClient() {
 
             <div>
               <label className="block text-sm font-medium text-slate-200" htmlFor="agentRate">
-                Commission rate (%)
+                Commission rate (%) *
               </label>
               <input
                 id="agentRate"
@@ -560,7 +604,7 @@ export default function ProfileClient() {
 
             <div>
               <label className="block text-sm font-medium text-slate-200" htmlFor="agentFixedFee">
-                Fixed fee (USD)
+                Fixed fee (USD) *
               </label>
               <input
                 id="agentFixedFee"
@@ -589,7 +633,7 @@ export default function ProfileClient() {
               disabled={agentSaving}
               className="rounded-full bg-emerald-400 px-6 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {agentSaving ? "Saving..." : "Save rates"}
+              {agentSaving ? "Submitting..." : "Submit updates"}
             </button>
           </form>
 

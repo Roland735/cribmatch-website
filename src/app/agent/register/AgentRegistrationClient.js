@@ -100,9 +100,9 @@ export default function AgentRegistrationClient() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4 rounded-3xl border border-white/10 bg-slate-900/40 p-6">
-      <Field label="Full legal name" value={form.fullLegalName} onChange={(value) => updateField("fullLegalName", value)} />
-      <Field label="Contact email" type="email" value={form.contactEmail} onChange={(value) => updateField("contactEmail", value)} />
-      <Field label="Contact phone" value={form.contactPhone} onChange={(value) => updateField("contactPhone", value)} />
+      <Field label="Full legal name *" value={form.fullLegalName} onChange={(value) => updateField("fullLegalName", value)} />
+      <Field label="Contact email *" type="email" value={form.contactEmail} onChange={(value) => updateField("contactEmail", value)} />
+      <Field label="Contact phone *" value={form.contactPhone} onChange={(value) => updateField("contactPhone", value)} />
       <Field label="Alternate phone (optional)" value={form.alternatePhone} onChange={(value) => updateField("alternatePhone", value)} />
       <Field label="Office address (optional)" value={form.officeAddress} onChange={(value) => updateField("officeAddress", value)} />
       <Field label="City (optional)" value={form.city} onChange={(value) => updateField("city", value)} />
@@ -121,14 +121,14 @@ export default function AgentRegistrationClient() {
         ]}
       />
       <Field label="Website URL (optional)" value={form.websiteUrl} onChange={(value) => updateField("websiteUrl", value)} />
-      <Field label="Government-issued ID" value={form.governmentIdNumber} onChange={(value) => updateField("governmentIdNumber", value)} />
-      <Field label="Agency license number" value={form.agencyLicenseNumber} onChange={(value) => updateField("agencyLicenseNumber", value)} />
+      <Field label="Government-issued ID *" value={form.governmentIdNumber} onChange={(value) => updateField("governmentIdNumber", value)} />
+      <Field label="Agency license number *" value={form.agencyLicenseNumber} onChange={(value) => updateField("agencyLicenseNumber", value)} />
       <Field
-        label="Proof of agency affiliation (URL or reference)"
+        label="Proof of agency affiliation (URL or reference) *"
         value={form.agencyAffiliationProof}
         onChange={(value) => updateField("agencyAffiliationProof", value)}
       />
-      <Field label="Agency name" value={form.agencyName} onChange={(value) => updateField("agencyName", value)} />
+      <Field label="Agency name *" value={form.agencyName} onChange={(value) => updateField("agencyName", value)} />
       <SelectField
         label="Fee model"
         value={form.feePreference}
@@ -139,8 +139,8 @@ export default function AgentRegistrationClient() {
           { value: "both", label: "Commission or fixed fee" },
         ]}
       />
-      <Field label="Commission rate (%)" type="number" value={form.commissionRatePercent} onChange={(value) => updateField("commissionRatePercent", value)} />
-      <Field label="Fixed fee (USD)" type="number" value={form.fixedFee} onChange={(value) => updateField("fixedFee", value)} />
+      <Field label="Commission rate (%) *" type="number" value={form.commissionRatePercent} onChange={(value) => updateField("commissionRatePercent", value)} />
+      <Field label="Fixed fee (USD) *" type="number" value={form.fixedFee} onChange={(value) => updateField("fixedFee", value)} />
 
       {error ? <p className="text-sm text-rose-200">{error}</p> : null}
       {success ? <p className="text-sm text-emerald-200">{success}</p> : null}
