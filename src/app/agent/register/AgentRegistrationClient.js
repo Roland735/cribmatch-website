@@ -37,6 +37,7 @@ export default function AgentRegistrationClient() {
     if (!form.governmentIdNumber.trim()) return "Government-issued ID is required.";
     if (!form.agencyLicenseNumber.trim()) return "Agency license number is required.";
     if (!form.agencyAffiliationProof.trim()) return "Proof of agency affiliation is required.";
+    if (!form.agencyName.trim()) return "Agency name is required.";
 
     const hasRate = form.commissionRatePercent !== "";
     const hasFixedFee = form.fixedFee !== "";
@@ -127,7 +128,7 @@ export default function AgentRegistrationClient() {
         value={form.agencyAffiliationProof}
         onChange={(value) => updateField("agencyAffiliationProof", value)}
       />
-      <Field label="Agency name (optional)" value={form.agencyName} onChange={(value) => updateField("agencyName", value)} />
+      <Field label="Agency name" value={form.agencyName} onChange={(value) => updateField("agencyName", value)} />
       <SelectField
         label="Fee model"
         value={form.feePreference}

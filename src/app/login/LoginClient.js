@@ -97,7 +97,7 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
         setFirstCode("");
         setFirstOtpSent(false);
         setMode("first");
-        setErrorMessage("Set up your web password first using First login.");
+        setErrorMessage("Set your web password first using Set password.");
         setStatus("idle");
         return;
       }
@@ -114,7 +114,7 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
       if (phonePassword.includes("@")) {
         setErrorMessage("Use your account password, not your email address.");
       } else {
-        setErrorMessage("Invalid phone number or password. If this is your first web login, choose First login.");
+        setErrorMessage("Invalid phone number or password. First time on website? Choose Set password.");
       }
       setStatus("idle");
       return;
@@ -288,7 +288,7 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
               : "rounded-xl px-3 py-2 text-xs font-semibold text-slate-300 transition hover:bg-white/5"
           }
         >
-          First login
+          Set password
         </button>
         <button
           type="button"

@@ -20,6 +20,10 @@ export default function ProfileClient() {
   const [agentFullLegalName, setAgentFullLegalName] = useState("");
   const [agentContactEmail, setAgentContactEmail] = useState("");
   const [agentContactPhone, setAgentContactPhone] = useState("");
+  const [agentGovernmentIdNumber, setAgentGovernmentIdNumber] = useState("");
+  const [agentAgencyLicenseNumber, setAgentAgencyLicenseNumber] = useState("");
+  const [agentAgencyName, setAgentAgencyName] = useState("");
+  const [agentAgencyAffiliationProof, setAgentAgencyAffiliationProof] = useState("");
   const [agentAlternatePhone, setAgentAlternatePhone] = useState("");
   const [agentOfficeAddress, setAgentOfficeAddress] = useState("");
   const [agentCity, setAgentCity] = useState("");
@@ -84,6 +88,10 @@ export default function ProfileClient() {
       setAgentFullLegalName(profile?.fullLegalName || "");
       setAgentContactEmail(profile?.contactEmail || "");
       setAgentContactPhone(profile?.contactPhone || "");
+      setAgentGovernmentIdNumber(profile?.governmentIdNumber || "");
+      setAgentAgencyLicenseNumber(profile?.agencyLicenseNumber || "");
+      setAgentAgencyName(profile?.agencyName || "");
+      setAgentAgencyAffiliationProof(profile?.agencyAffiliationProof || "");
       setAgentAlternatePhone(profile?.alternatePhone || "");
       setAgentOfficeAddress(profile?.officeAddress || "");
       setAgentCity(profile?.city || "");
@@ -165,6 +173,15 @@ export default function ProfileClient() {
       setError("Website URL must start with http:// or https://.");
       return;
     }
+    if (
+      !agentGovernmentIdNumber.trim() ||
+      !agentAgencyLicenseNumber.trim() ||
+      !agentAgencyName.trim() ||
+      !agentAgencyAffiliationProof.trim()
+    ) {
+      setError("Gov ID, license, agency, and affiliation proof are required.");
+      return;
+    }
 
     setAgentSaving(true);
     setError("");
@@ -177,6 +194,10 @@ export default function ProfileClient() {
           fullLegalName: agentFullLegalName,
           contactEmail: agentContactEmail,
           contactPhone: agentContactPhone,
+          governmentIdNumber: agentGovernmentIdNumber,
+          agencyLicenseNumber: agentAgencyLicenseNumber,
+          agencyName: agentAgencyName,
+          agencyAffiliationProof: agentAgencyAffiliationProof,
           alternatePhone: agentAlternatePhone,
           officeAddress: agentOfficeAddress,
           city: agentCity,
@@ -343,6 +364,54 @@ export default function ProfileClient() {
                 id="agentContactPhone"
                 value={agentContactPhone}
                 onChange={(event) => setAgentContactPhone(event.target.value)}
+                className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-200" htmlFor="agentGovernmentIdNumber">
+                Government ID
+              </label>
+              <input
+                id="agentGovernmentIdNumber"
+                value={agentGovernmentIdNumber}
+                onChange={(event) => setAgentGovernmentIdNumber(event.target.value)}
+                className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-200" htmlFor="agentAgencyLicenseNumber">
+                Agency license number
+              </label>
+              <input
+                id="agentAgencyLicenseNumber"
+                value={agentAgencyLicenseNumber}
+                onChange={(event) => setAgentAgencyLicenseNumber(event.target.value)}
+                className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-200" htmlFor="agentAgencyName">
+                Agency name
+              </label>
+              <input
+                id="agentAgencyName"
+                value={agentAgencyName}
+                onChange={(event) => setAgentAgencyName(event.target.value)}
+                className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-200" htmlFor="agentAgencyAffiliationProof">
+                Affiliation proof
+              </label>
+              <input
+                id="agentAgencyAffiliationProof"
+                value={agentAgencyAffiliationProof}
+                onChange={(event) => setAgentAgencyAffiliationProof(event.target.value)}
                 className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
               />
             </div>

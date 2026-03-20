@@ -120,6 +120,10 @@ export async function PATCH(request) {
   const fullLegalName = cleanText(body?.fullLegalName);
   const contactEmail = cleanText(body?.contactEmail);
   const contactPhone = cleanText(body?.contactPhone);
+  const governmentIdNumber = cleanText(body?.governmentIdNumber);
+  const agencyLicenseNumber = cleanText(body?.agencyLicenseNumber);
+  const agencyAffiliationProof = cleanText(body?.agencyAffiliationProof);
+  const agencyName = cleanText(body?.agencyName);
   const alternatePhone = cleanText(body?.alternatePhone);
   const officeAddress = cleanText(body?.officeAddress);
   const city = cleanText(body?.city);
@@ -136,6 +140,18 @@ export async function PATCH(request) {
       { status: 400 },
     );
   }
+  if (!fullLegalName || !contactEmail || !contactPhone) {
+    return Response.json(
+      { error: "Full legal name, contact email, and contact phone are required" },
+      { status: 400 },
+    );
+  }
+  if (!governmentIdNumber || !agencyLicenseNumber || !agencyAffiliationProof || !agencyName) {
+    return Response.json(
+      { error: "Gov ID, license, agency name, and affiliation proof are required" },
+      { status: 400 },
+    );
+  }
 
   const currentProfile = user?.agentProfile || {};
   const changed =
@@ -145,6 +161,10 @@ export async function PATCH(request) {
     cleanText(currentProfile?.fullLegalName) !== fullLegalName ||
     cleanText(currentProfile?.contactEmail) !== contactEmail ||
     cleanText(currentProfile?.contactPhone) !== contactPhone ||
+    cleanText(currentProfile?.governmentIdNumber) !== governmentIdNumber ||
+    cleanText(currentProfile?.agencyLicenseNumber) !== agencyLicenseNumber ||
+    cleanText(currentProfile?.agencyAffiliationProof) !== agencyAffiliationProof ||
+    cleanText(currentProfile?.agencyName) !== agencyName ||
     cleanText(currentProfile?.alternatePhone) !== alternatePhone ||
     cleanText(currentProfile?.officeAddress) !== officeAddress ||
     cleanText(currentProfile?.city) !== city ||
@@ -165,6 +185,10 @@ export async function PATCH(request) {
     fullLegalName,
     contactEmail,
     contactPhone,
+    governmentIdNumber,
+    agencyLicenseNumber,
+    agencyAffiliationProof,
+    agencyName,
     alternatePhone,
     officeAddress,
     city,
@@ -198,7 +222,7 @@ export async function PATCH(request) {
       fromStatus: previousStatus,
       toStatus: "pending_reapproval",
       adminId: "",
-      reason: "Rate updated by agent",
+      reason: "Profile updated by agent",
       changedAt: now,
     },
   ];

@@ -39,6 +39,29 @@ export async function PATCH(request, { params }) {
   const now = new Date();
   const previousStatus = user?.agentProfile?.verificationStatus || "none";
   const nextStatus = nextStatusRaw;
+  const profile = user?.agentProfile || {};
+  if (nextStatus === "verified") {
+    const hasRequiredIdentity =
+      cleanText(profile?.fullLegalName) &&
+      cleanText(profile?.contactEmail) &&
+      cleanText(profile?.contactPhone) &&
+      cleanText(profile?.governmentIdNumber) &&
+      cleanText(profile?.agencyLicenseNumber) &&
+      cleanText(profile?.agencyAffiliationProof) &&
+      cleanText(profile?.agencyName);
+    const hasAnyFee =
+      typeof profile?.commissionRatePercent === "number" ||
+      typeof profile?.fixedFee === "number";
+    if (!hasRequiredIdentity || !hasAnyFee) {
+      return Response.json(
+        {
+          error:
+            "Agent profile is incomplete. Gov ID, license, agency, affiliation proof, contact details, and at least one fee are required.",
+        },
+        { status: 400 },
+      );
+    }
+  }
   const listingsFrozen = nextStatus !== "verified";
 
   user.agentProfile = {

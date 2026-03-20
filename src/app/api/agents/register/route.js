@@ -96,7 +96,8 @@ export async function POST(request) {
     !contactPhone ||
     !governmentIdNumber ||
     !agencyLicenseNumber ||
-    !agencyAffiliationProof
+    !agencyAffiliationProof ||
+    !agencyName
   ) {
     return Response.json({ error: "Missing required agent registration fields" }, { status: 400 });
   }
