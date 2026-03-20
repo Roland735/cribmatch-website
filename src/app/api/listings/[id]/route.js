@@ -17,6 +17,7 @@ function serializeListing(listing) {
     _id: obj?._id?.toString?.() ?? obj?._id,
     lister_type: obj?.listerType || "direct_landlord",
     agent_rate: typeof obj?.agentRate === "number" ? obj.agentRate : null,
+    agent_profile_image_url: typeof obj?.agentProfileImageUrl === "string" ? obj.agentProfileImageUrl : "",
     createdAt: obj?.createdAt?.toISOString?.() ?? obj?.createdAt,
     updatedAt: obj?.updatedAt?.toISOString?.() ?? obj?.updatedAt,
   };

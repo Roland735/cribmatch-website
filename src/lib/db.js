@@ -96,6 +96,7 @@ const ListingSchema = new mongoose.Schema(
     },
     agentRate: { type: Number, default: null, min: 0, max: 100 },
     agentFixedFee: { type: Number, default: null, min: 0 },
+    agentProfileImageUrl: { type: String, default: "", trim: true },
     approvalStatus: {
       type: String,
       enum: ["pending", "approved", "rejected"],
@@ -211,9 +212,11 @@ const UserSchema = new mongoose.Schema(
       preferredContactMethod: { type: String, default: "", trim: true },
       websiteUrl: { type: String, default: "", trim: true },
       governmentIdNumber: { type: String, default: "", trim: true },
+      governmentIdImageUrl: { type: String, default: "", trim: true },
       agencyLicenseNumber: { type: String, default: "", trim: true },
       agencyAffiliationProof: { type: String, default: "", trim: true },
       agencyName: { type: String, default: "", trim: true },
+      profileImageUrl: { type: String, default: "", trim: true },
       feePreference: {
         type: String,
         enum: ["commission", "fixed", "both"],

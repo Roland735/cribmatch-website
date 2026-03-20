@@ -60,6 +60,12 @@ export default async function ListingsGridServer({
             : typeof listing?.agent_rate === "number"
               ? listing.agent_rate
               : null;
+        const agentProfileImageUrl =
+          typeof listing?.agentProfileImageUrl === "string"
+            ? listing.agentProfileImageUrl.trim()
+            : typeof listing?.agent_profile_image_url === "string"
+              ? listing.agent_profile_image_url.trim()
+              : "";
         const photos = [
           ...(Array.isArray(listing.images) ? listing.images : []),
           ...(Array.isArray(listing.photos) ? listing.photos : []),
@@ -125,6 +131,16 @@ export default async function ListingsGridServer({
                   {formatTitle(listing.title)}
                 </Link>
               </h2>
+              {listerType === "agent" && agentProfileImageUrl ? (
+                <div className="mt-3 flex items-center gap-2 text-xs text-slate-300">
+                  <div
+                    className="h-8 w-8 rounded-full border border-white/15 bg-cover bg-center"
+                    style={{ backgroundImage: `url("${agentProfileImageUrl}")` }}
+                    aria-hidden="true"
+                  />
+                  <span>Verified agent</span>
+                </div>
+              ) : null}
 
               <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-slate-400">
                 {listing.description || "Message us on WhatsApp for photos and viewing slots."}

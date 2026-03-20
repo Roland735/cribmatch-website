@@ -17,6 +17,7 @@ function serializeListing(listing) {
     _id: obj?._id?.toString?.() ?? obj?._id,
     lister_type: obj?.listerType || "direct_landlord",
     agent_rate: typeof obj?.agentRate === "number" ? obj.agentRate : null,
+    agent_profile_image_url: typeof obj?.agentProfileImageUrl === "string" ? obj.agentProfileImageUrl : "",
     createdAt: obj?.createdAt?.toISOString?.() ?? obj?.createdAt,
     updatedAt: obj?.updatedAt?.toISOString?.() ?? obj?.updatedAt,
   };
@@ -331,6 +332,7 @@ export async function POST(request) {
 
   let agentRate = null;
   let agentFixedFee = null;
+  let agentProfileImageUrl = "";
   let listerType = "direct_landlord";
   let approved = isAdmin && typeof body?.approved === "boolean" ? body.approved : false;
   let approvalStatus = approved ? "approved" : "pending";
@@ -351,6 +353,7 @@ export async function POST(request) {
         : null;
     agentFixedFee =
       typeof actor?.agentProfile?.fixedFee === "number" ? actor.agentProfile.fixedFee : null;
+    agentProfileImageUrl = String(actor?.agentProfile?.profileImageUrl || "").trim();
     if (agentRate === null && agentFixedFee === null) {
       return Response.json(
         { error: "Agent profile must have commission rate or fixed fee configured" },
@@ -411,6 +414,7 @@ export async function POST(request) {
     listerType,
     agentRate,
     agentFixedFee,
+    agentProfileImageUrl,
     approvalStatus,
     approvedByAdminId,
     approvedAt,

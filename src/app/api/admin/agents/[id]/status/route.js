@@ -46,8 +46,7 @@ export async function PATCH(request, { params }) {
       cleanText(profile?.contactEmail) &&
       cleanText(profile?.contactPhone) &&
       cleanText(profile?.governmentIdNumber) &&
-      cleanText(profile?.agencyLicenseNumber) &&
-      cleanText(profile?.agencyAffiliationProof) &&
+      cleanText(profile?.governmentIdImageUrl) &&
       cleanText(profile?.agencyName);
     const hasAnyFee =
       typeof profile?.commissionRatePercent === "number" ||
@@ -56,7 +55,7 @@ export async function PATCH(request, { params }) {
       return Response.json(
         {
           error:
-            "Agent profile is incomplete. Gov ID, license, agency, affiliation proof, contact details, and at least one fee are required.",
+            "Agent profile is incomplete. Gov ID number, Gov ID image, agency name, contact details, and at least one fee are required.",
         },
         { status: 400 },
       );

@@ -45,6 +45,12 @@ function normalizeListings(raw) {
           : typeof item.agent_rate === "number"
             ? item.agent_rate
             : null,
+      agentProfileImageUrl:
+        typeof item.agentProfileImageUrl === "string"
+          ? item.agentProfileImageUrl
+          : typeof item.agent_profile_image_url === "string"
+            ? item.agent_profile_image_url
+            : "",
       pricePerMonth:
         typeof item.pricePerMonth === "number" ? item.pricePerMonth : null,
       deposit: typeof item.deposit === "number" ? item.deposit : null,
@@ -173,6 +179,16 @@ export default function ListingsGrid() {
           <h2 className="mt-4 text-base font-semibold text-white">
             {listing.title}
           </h2>
+          {listing.listerType === "agent" && listing.agentProfileImageUrl ? (
+            <div className="mt-3 flex items-center gap-2 text-xs text-slate-300">
+              <div
+                className="h-8 w-8 rounded-full border border-white/15 bg-cover bg-center"
+                style={{ backgroundImage: `url("${listing.agentProfileImageUrl}")` }}
+                aria-hidden="true"
+              />
+              <span>Verified agent</span>
+            </div>
+          ) : null}
           {listing.description ? (
             <p className="mt-2 text-sm leading-6 text-slate-300">
               {listing.description}

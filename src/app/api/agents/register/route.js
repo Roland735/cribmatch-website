@@ -80,9 +80,11 @@ export async function POST(request) {
   const preferredContactMethod = cleanText(body?.preferredContactMethod);
   const websiteUrl = cleanText(body?.websiteUrl);
   const governmentIdNumber = cleanText(body?.governmentIdNumber);
+  const governmentIdImageUrl = cleanText(body?.governmentIdImageUrl);
   const agencyLicenseNumber = cleanText(body?.agencyLicenseNumber);
   const agencyAffiliationProof = cleanText(body?.agencyAffiliationProof);
   const agencyName = cleanText(body?.agencyName);
+  const profileImageUrl = cleanText(body?.profileImageUrl);
   const commissionRatePercent = asOptionalRate(body?.commissionRatePercent);
   const fixedFee = asOptionalMoney(body?.fixedFee);
   const feePreferenceRaw = cleanText(body?.feePreference).toLowerCase();
@@ -95,8 +97,7 @@ export async function POST(request) {
     !contactEmail ||
     !contactPhone ||
     !governmentIdNumber ||
-    !agencyLicenseNumber ||
-    !agencyAffiliationProof ||
+    !governmentIdImageUrl ||
     !agencyName
   ) {
     return Response.json({ error: "Missing required agent registration fields" }, { status: 400 });
@@ -133,9 +134,11 @@ export async function POST(request) {
     preferredContactMethod,
     websiteUrl,
     governmentIdNumber,
+    governmentIdImageUrl,
     agencyLicenseNumber,
     agencyAffiliationProof,
     agencyName,
+    profileImageUrl,
     feePreference,
     commissionRatePercent,
     fixedFee,

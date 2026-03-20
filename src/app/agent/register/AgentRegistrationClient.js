@@ -16,9 +16,11 @@ const INITIAL_FORM = {
   preferredContactMethod: "phone",
   websiteUrl: "",
   governmentIdNumber: "",
+  governmentIdImageUrl: "",
   agencyLicenseNumber: "",
   agencyAffiliationProof: "",
   agencyName: "",
+  profileImageUrl: "",
   feePreference: "both",
   commissionRatePercent: "",
   fixedFee: "",
@@ -35,8 +37,7 @@ export default function AgentRegistrationClient() {
     if (!form.contactEmail.trim()) return "Contact email is required.";
     if (!form.contactPhone.trim()) return "Contact phone is required.";
     if (!form.governmentIdNumber.trim()) return "Government-issued ID is required.";
-    if (!form.agencyLicenseNumber.trim()) return "Agency license number is required.";
-    if (!form.agencyAffiliationProof.trim()) return "Proof of agency affiliation is required.";
+    if (!form.governmentIdImageUrl.trim()) return "Government ID picture is required.";
     if (!form.agencyName.trim()) return "Agency name is required.";
 
     const hasRate = form.commissionRatePercent !== "";
@@ -122,13 +123,15 @@ export default function AgentRegistrationClient() {
       />
       <Field label="Website URL (optional)" value={form.websiteUrl} onChange={(value) => updateField("websiteUrl", value)} />
       <Field label="Government-issued ID *" value={form.governmentIdNumber} onChange={(value) => updateField("governmentIdNumber", value)} />
-      <Field label="Agency license number *" value={form.agencyLicenseNumber} onChange={(value) => updateField("agencyLicenseNumber", value)} />
+      <Field label="Government ID picture URL *" value={form.governmentIdImageUrl} onChange={(value) => updateField("governmentIdImageUrl", value)} />
+      <Field label="Agency license number (optional)" value={form.agencyLicenseNumber} onChange={(value) => updateField("agencyLicenseNumber", value)} />
       <Field
-        label="Proof of agency affiliation (URL or reference) *"
+        label="Affiliation proof (optional)"
         value={form.agencyAffiliationProof}
         onChange={(value) => updateField("agencyAffiliationProof", value)}
       />
       <Field label="Agency name *" value={form.agencyName} onChange={(value) => updateField("agencyName", value)} />
+      <Field label="Profile picture URL (optional)" value={form.profileImageUrl} onChange={(value) => updateField("profileImageUrl", value)} />
       <SelectField
         label="Fee model"
         value={form.feePreference}

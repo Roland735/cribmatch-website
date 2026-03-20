@@ -21,9 +21,11 @@ export default function ProfileClient() {
   const [agentContactEmail, setAgentContactEmail] = useState("");
   const [agentContactPhone, setAgentContactPhone] = useState("");
   const [agentGovernmentIdNumber, setAgentGovernmentIdNumber] = useState("");
+  const [agentGovernmentIdImageUrl, setAgentGovernmentIdImageUrl] = useState("");
   const [agentAgencyLicenseNumber, setAgentAgencyLicenseNumber] = useState("");
   const [agentAgencyName, setAgentAgencyName] = useState("");
   const [agentAgencyAffiliationProof, setAgentAgencyAffiliationProof] = useState("");
+  const [agentProfileImageUrl, setAgentProfileImageUrl] = useState("");
   const [agentAlternatePhone, setAgentAlternatePhone] = useState("");
   const [agentOfficeAddress, setAgentOfficeAddress] = useState("");
   const [agentCity, setAgentCity] = useState("");
@@ -89,9 +91,11 @@ export default function ProfileClient() {
       setAgentContactEmail(profile?.contactEmail || "");
       setAgentContactPhone(profile?.contactPhone || "");
       setAgentGovernmentIdNumber(profile?.governmentIdNumber || "");
+      setAgentGovernmentIdImageUrl(profile?.governmentIdImageUrl || "");
       setAgentAgencyLicenseNumber(profile?.agencyLicenseNumber || "");
       setAgentAgencyName(profile?.agencyName || "");
       setAgentAgencyAffiliationProof(profile?.agencyAffiliationProof || "");
+      setAgentProfileImageUrl(profile?.profileImageUrl || "");
       setAgentAlternatePhone(profile?.alternatePhone || "");
       setAgentOfficeAddress(profile?.officeAddress || "");
       setAgentCity(profile?.city || "");
@@ -123,19 +127,17 @@ export default function ProfileClient() {
       Boolean(agentContactEmail.trim()),
       Boolean(agentContactPhone.trim()),
       Boolean(agentGovernmentIdNumber.trim()),
-      Boolean(agentAgencyLicenseNumber.trim()),
+      Boolean(agentGovernmentIdImageUrl.trim()),
       Boolean(agentAgencyName.trim()),
-      Boolean(agentAgencyAffiliationProof.trim()),
       Boolean(agentRate !== "" || agentFixedFee !== ""),
     ],
     [
-      agentAgencyAffiliationProof,
-      agentAgencyLicenseNumber,
       agentAgencyName,
       agentContactEmail,
       agentContactPhone,
       agentFixedFee,
       agentFullLegalName,
+      agentGovernmentIdImageUrl,
       agentGovernmentIdNumber,
       agentRate,
     ],
@@ -204,11 +206,10 @@ export default function ProfileClient() {
     }
     if (
       !agentGovernmentIdNumber.trim() ||
-      !agentAgencyLicenseNumber.trim() ||
-      !agentAgencyName.trim() ||
-      !agentAgencyAffiliationProof.trim()
+      !agentGovernmentIdImageUrl.trim() ||
+      !agentAgencyName.trim()
     ) {
-      setError("Gov ID, license, agency, and affiliation proof are required.");
+      setError("Gov ID number, Gov ID picture, and agency are required.");
       return;
     }
 
@@ -224,9 +225,11 @@ export default function ProfileClient() {
           contactEmail: agentContactEmail,
           contactPhone: agentContactPhone,
           governmentIdNumber: agentGovernmentIdNumber,
+          governmentIdImageUrl: agentGovernmentIdImageUrl,
           agencyLicenseNumber: agentAgencyLicenseNumber,
           agencyName: agentAgencyName,
           agencyAffiliationProof: agentAgencyAffiliationProof,
+          profileImageUrl: agentProfileImageUrl,
           alternatePhone: agentAlternatePhone,
           officeAddress: agentOfficeAddress,
           city: agentCity,
@@ -425,8 +428,20 @@ export default function ProfileClient() {
             </div>
 
             <div>
+              <label className="block text-sm font-medium text-slate-200" htmlFor="agentGovernmentIdImageUrl">
+                Government ID picture URL *
+              </label>
+              <input
+                id="agentGovernmentIdImageUrl"
+                value={agentGovernmentIdImageUrl}
+                onChange={(event) => setAgentGovernmentIdImageUrl(event.target.value)}
+                className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+              />
+            </div>
+
+            <div>
               <label className="block text-sm font-medium text-slate-200" htmlFor="agentAgencyLicenseNumber">
-                Agency license number *
+                Agency license number
               </label>
               <input
                 id="agentAgencyLicenseNumber"
@@ -450,12 +465,24 @@ export default function ProfileClient() {
 
             <div>
               <label className="block text-sm font-medium text-slate-200" htmlFor="agentAgencyAffiliationProof">
-                Affiliation proof *
+                Affiliation proof
               </label>
               <input
                 id="agentAgencyAffiliationProof"
                 value={agentAgencyAffiliationProof}
                 onChange={(event) => setAgentAgencyAffiliationProof(event.target.value)}
+                className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-200" htmlFor="agentProfileImageUrl">
+                Profile picture URL
+              </label>
+              <input
+                id="agentProfileImageUrl"
+                value={agentProfileImageUrl}
+                onChange={(event) => setAgentProfileImageUrl(event.target.value)}
                 className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
               />
             </div>

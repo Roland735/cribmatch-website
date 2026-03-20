@@ -121,9 +121,11 @@ export async function PATCH(request) {
   const contactEmail = cleanText(body?.contactEmail);
   const contactPhone = cleanText(body?.contactPhone);
   const governmentIdNumber = cleanText(body?.governmentIdNumber);
+  const governmentIdImageUrl = cleanText(body?.governmentIdImageUrl);
   const agencyLicenseNumber = cleanText(body?.agencyLicenseNumber);
   const agencyAffiliationProof = cleanText(body?.agencyAffiliationProof);
   const agencyName = cleanText(body?.agencyName);
+  const profileImageUrl = cleanText(body?.profileImageUrl);
   const alternatePhone = cleanText(body?.alternatePhone);
   const officeAddress = cleanText(body?.officeAddress);
   const city = cleanText(body?.city);
@@ -146,9 +148,9 @@ export async function PATCH(request) {
       { status: 400 },
     );
   }
-  if (!governmentIdNumber || !agencyLicenseNumber || !agencyAffiliationProof || !agencyName) {
+  if (!governmentIdNumber || !governmentIdImageUrl || !agencyName) {
     return Response.json(
-      { error: "Gov ID, license, agency name, and affiliation proof are required" },
+      { error: "Gov ID number, Gov ID image, and agency name are required" },
       { status: 400 },
     );
   }
@@ -162,9 +164,11 @@ export async function PATCH(request) {
     cleanText(currentProfile?.contactEmail) !== contactEmail ||
     cleanText(currentProfile?.contactPhone) !== contactPhone ||
     cleanText(currentProfile?.governmentIdNumber) !== governmentIdNumber ||
+    cleanText(currentProfile?.governmentIdImageUrl) !== governmentIdImageUrl ||
     cleanText(currentProfile?.agencyLicenseNumber) !== agencyLicenseNumber ||
     cleanText(currentProfile?.agencyAffiliationProof) !== agencyAffiliationProof ||
     cleanText(currentProfile?.agencyName) !== agencyName ||
+    cleanText(currentProfile?.profileImageUrl) !== profileImageUrl ||
     cleanText(currentProfile?.alternatePhone) !== alternatePhone ||
     cleanText(currentProfile?.officeAddress) !== officeAddress ||
     cleanText(currentProfile?.city) !== city ||
@@ -186,9 +190,11 @@ export async function PATCH(request) {
     contactEmail,
     contactPhone,
     governmentIdNumber,
+    governmentIdImageUrl,
     agencyLicenseNumber,
     agencyAffiliationProof,
     agencyName,
+    profileImageUrl,
     alternatePhone,
     officeAddress,
     city,
