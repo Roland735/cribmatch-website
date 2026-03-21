@@ -1589,7 +1589,6 @@ function formatListingResultText(listing, indexHint = 0, purchasedIds = new Set(
   const lines = [
     `${indexHint + 1}) ${listerLabel} ${title} — 📍 ${suburb} — 💰 $${price}`,
     shortId ? `🏷️ CODE: ${shortId}` : null,
-    `🆔 ID: ${id}`,
     listerTypeRaw === "agent" && agentRate !== null ? `Agent fee: ${agentRate}%` : null,
     purchasedIds.has(String(id)) ? "✅ Already purchased — contact is unlocked" : null,
   ].filter(Boolean);
@@ -1798,7 +1797,6 @@ async function sendMainMenu(phone, opts = {}) {
     { id: "menu_list", title: "📝 List a property", description: "Add a new listing" },
     { id: "menu_edit_listings", title: "✏️ Edit my listings", description: "Manage your listings" },
     { id: "menu_purchases", title: "🛍️ View past purchases", description: "See properties you viewed" },
-    { id: "menu_contacts", title: "💬 View past messages", description: "See contact details revealed" },
     { id: "menu_report", title: "⚠️ Report listing", description: "Report an issue" }
   ];
 
