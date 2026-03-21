@@ -1839,7 +1839,6 @@ export async function POST(request) {
   const { msg, id: msgId, from: phoneRaw, text: parsedText } = getCanonicalMessage(payload);
   const phone = digitsOnly(phoneRaw || "");
   console.log("[webhook] incoming:", { msgId, phone, parsedText: parsedText.slice(0, 200) });
-  const isMenuRequest = isMenuCommandText(parsedText);
   const hasInboundMessage = Boolean(
     _safeGet(payload, ["entry", 0, "changes", 0, "value", "messages", 0]) ||
     payload?.messages?.[0] ||
@@ -1891,13 +1890,8 @@ export async function POST(request) {
   let duplicateBypassForMenu = false;
   try {
     if (isSeenInMemory(msgId)) {
-      if (isMenuRequest) {
-        duplicateBypassForMenu = true;
-        logDecision("dedupe-memory-bypass", { msgId, phone, parsedText });
-      } else {
-        logDecision("dedupe-memory-suppressed", { msgId, phone, parsedText });
-        return NextResponse.json({ ok: true, note: "duplicate-event-mem" });
-      }
+      logDecision("dedupe-memory-suppressed", { msgId, phone, parsedText });
+      return NextResponse.json({ ok: true, note: "duplicate-event-mem" });
     }
 
     if (dbAvailable && msgId) {
@@ -1908,15 +1902,9 @@ export async function POST(request) {
       ).select("meta.handled").lean().exec().catch(() => null);
 
       if (prev && prev.meta?.handled) {
-        if (isMenuRequest) {
-          duplicateBypassForMenu = true;
-          markSeenInMemory(msgId);
-          logDecision("dedupe-db-bypass", { msgId, phone, parsedText });
-        } else {
-          markSeenInMemory(msgId);
-          logDecision("dedupe-db-suppressed", { msgId, phone, parsedText });
-          return NextResponse.json({ ok: true, note: "duplicate-event-db" });
-        }
+        markSeenInMemory(msgId);
+        logDecision("dedupe-db-suppressed", { msgId, phone, parsedText });
+        return NextResponse.json({ ok: true, note: "duplicate-event-db" });
       }
     }
     markSeenInMemory(msgId);
