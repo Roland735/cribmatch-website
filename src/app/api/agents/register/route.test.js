@@ -15,7 +15,7 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
-import { POST } from "./route";
+import { GET, POST } from "./route";
 
 function makeRequest(body) {
   return new Request("http://localhost/api/agents/register", {
@@ -180,5 +180,52 @@ describe("POST /api/agents/register", () => {
     expect(payload.application.verificationStatus).toBe("pending_verification");
     expect(payload.application.commissionRatePercent).toBe(7.5);
     expect(payload.application.fixedFee).toBe(50);
+  });
+});
+
+describe("GET /api/agents/register", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getServerSessionMock.mockResolvedValue({
+      user: { phoneNumber: "+263771000001", role: "user" },
+    });
+  });
+
+  test("returns current application state when available", async () => {
+    findByIdMock.mockResolvedValue({
+      _id: "+263771000001",
+      role: "agent",
+      agentProfile: {
+        fullLegalName: "Agent One",
+        agencyName: "Prime Realty",
+        verificationStatus: "pending_verification",
+        verificationSubmittedAt: new Date("2026-01-03T10:20:30.000Z"),
+      },
+    });
+
+    const response = await GET();
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload.hasApplication).toBe(true);
+    expect(payload.application.verificationStatus).toBe("pending_verification");
+    expect(payload.application.agencyName).toBe("Prime Realty");
+  });
+
+  test("returns hasApplication false when no submission exists", async () => {
+    findByIdMock.mockResolvedValue({
+      _id: "+263771000001",
+      role: "user",
+      agentProfile: {
+        verificationStatus: "none",
+        fullLegalName: "",
+        agencyName: "",
+      },
+    });
+
+    const response = await GET();
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload.hasApplication).toBe(false);
+    expect(payload.application.verificationStatus).toBe("none");
   });
 });

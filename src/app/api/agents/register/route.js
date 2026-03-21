@@ -58,6 +58,71 @@ function cleanStringArray(value) {
   return [];
 }
 
+function serializeAgentApplication(user) {
+  const profile = user?.agentProfile?.toObject?.() || user?.agentProfile || {};
+  return {
+    fullLegalName: profile?.fullLegalName || "",
+    contactEmail: profile?.contactEmail || "",
+    contactPhone: profile?.contactPhone || "",
+    alternatePhone: profile?.alternatePhone || "",
+    officeAddress: profile?.officeAddress || "",
+    city: profile?.city || "",
+    yearsExperience: typeof profile?.yearsExperience === "number" ? profile.yearsExperience : null,
+    areasServed: Array.isArray(profile?.areasServed) ? profile.areasServed : [],
+    specializations: Array.isArray(profile?.specializations) ? profile.specializations : [],
+    bio: profile?.bio || "",
+    preferredContactMethod: profile?.preferredContactMethod || "phone",
+    websiteUrl: profile?.websiteUrl || "",
+    governmentIdNumber: profile?.governmentIdNumber || "",
+    governmentIdImageUrl: profile?.governmentIdImageUrl || "",
+    agencyLicenseNumber: profile?.agencyLicenseNumber || "",
+    agencyAffiliationProof: profile?.agencyAffiliationProof || "",
+    agencyName: profile?.agencyName || "",
+    profileImageUrl: profile?.profileImageUrl || "",
+    feePreference: profile?.feePreference || "both",
+    commissionRatePercent:
+      typeof profile?.commissionRatePercent === "number" ? profile.commissionRatePercent : null,
+    fixedFee: typeof profile?.fixedFee === "number" ? profile.fixedFee : null,
+    verificationStatus: profile?.verificationStatus || "none",
+    verificationSubmittedAt: profile?.verificationSubmittedAt?.toISOString?.() || null,
+    verifiedAt: profile?.verifiedAt?.toISOString?.() || null,
+    rejectedAt: profile?.rejectedAt?.toISOString?.() || null,
+    listingsFrozen: Boolean(profile?.listingsFrozen),
+  };
+}
+
+export async function GET() {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const phoneNumber =
+    typeof session?.user?.phoneNumber === "string" ? session.user.phoneNumber.trim() : "";
+  if (!phoneNumber) {
+    return Response.json({ error: "Missing phone number" }, { status: 400 });
+  }
+
+  await dbConnect();
+  const existingUser = await User.findById(phoneNumber);
+  if (!existingUser) {
+    return Response.json({ error: "User not found" }, { status: 404 });
+  }
+
+  const application = serializeAgentApplication(existingUser);
+  const hasApplication =
+    application.verificationStatus !== "none" ||
+    Boolean(application.fullLegalName) ||
+    Boolean(application.agencyName);
+
+  return Response.json({
+    ok: true,
+    hasApplication,
+    role: existingUser.role,
+    application,
+  });
+}
+
 export async function POST(request) {
   const session = await getServerSession(authOptions);
   if (!session?.user) {

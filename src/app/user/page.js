@@ -82,6 +82,14 @@ export default async function UserDashboardPage() {
             >
               Go to dashboard
             </Link>
+            {session?.user?.role === "agent" ? (
+              <Link
+                href="/agent/register"
+                className="inline-flex items-center justify-center rounded-full border border-emerald-300/40 bg-emerald-300/0 px-5 py-2.5 text-sm font-semibold text-emerald-100 transition hover:border-emerald-300/70 hover:bg-emerald-300/10"
+              >
+                View application
+              </Link>
+            ) : null}
           </div>
         </div>
       ) : null}

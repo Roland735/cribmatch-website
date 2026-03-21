@@ -17,7 +17,7 @@ export default async function AgentRegistrationPage() {
         Agent registration
       </h1>
       <p className="mt-2 text-sm text-slate-300">
-        Submit your agency credentials and commission details for verification.
+        Submit your agency credentials and commission details, or review your existing application state.
       </p>
       <div className="mt-8">
         <AgentRegistrationClient />

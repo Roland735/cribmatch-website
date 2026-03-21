@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const INITIAL_FORM = {
   fullLegalName: "",
@@ -58,8 +58,28 @@ function validateForm(form) {
   return "";
 }
 
+function normalizeStatus(status) {
+  if (status === "pending_verification") return "Pending verification";
+  if (status === "pending_reapproval") return "Pending re-approval";
+  if (status === "verified") return "Verified";
+  if (status === "rejected") return "Rejected";
+  return "Not submitted";
+}
+
+function statusToneClass(status) {
+  if (status === "verified") return "border-emerald-400/20 bg-emerald-400/10 text-emerald-100";
+  if (status === "rejected") return "border-rose-400/20 bg-rose-400/10 text-rose-100";
+  if (status === "pending_verification" || status === "pending_reapproval") {
+    return "border-amber-400/20 bg-amber-400/10 text-amber-100";
+  }
+  return "border-white/10 bg-slate-900/40 text-slate-200";
+}
+
 export default function AgentRegistrationClient() {
   const [form, setForm] = useState(INITIAL_FORM);
+  const [loadingApplication, setLoadingApplication] = useState(true);
+  const [applicationStatus, setApplicationStatus] = useState("none");
+  const [submittedAt, setSubmittedAt] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [uploadingGovIdImage, setUploadingGovIdImage] = useState(false);
   const [uploadingProfileImage, setUploadingProfileImage] = useState(false);
@@ -71,6 +91,67 @@ export default function AgentRegistrationClient() {
   function updateField(name, value) {
     setForm((current) => ({ ...current, [name]: value }));
   }
+
+  useEffect(() => {
+    let active = true;
+    async function loadExistingApplication() {
+      try {
+        const response = await fetch("/api/agents/register", {
+          method: "GET",
+          headers: { "content-type": "application/json" },
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) return;
+        if (!active) return;
+        const application = payload?.application || null;
+        if (!application) return;
+        setApplicationStatus(application?.verificationStatus || "none");
+        setSubmittedAt(application?.verificationSubmittedAt || "");
+        setForm((current) => ({
+          ...current,
+          fullLegalName: application?.fullLegalName || "",
+          contactEmail: application?.contactEmail || "",
+          contactPhone: application?.contactPhone || "",
+          alternatePhone: application?.alternatePhone || "",
+          officeAddress: application?.officeAddress || "",
+          city: application?.city || "",
+          yearsExperience:
+            typeof application?.yearsExperience === "number"
+              ? String(application.yearsExperience)
+              : "",
+          areasServed: Array.isArray(application?.areasServed)
+            ? application.areasServed.join(", ")
+            : "",
+          specializations: Array.isArray(application?.specializations)
+            ? application.specializations.join(", ")
+            : "",
+          bio: application?.bio || "",
+          preferredContactMethod: application?.preferredContactMethod || "phone",
+          websiteUrl: application?.websiteUrl || "",
+          governmentIdNumber: application?.governmentIdNumber || "",
+          governmentIdImageUrl: application?.governmentIdImageUrl || "",
+          agencyLicenseNumber: application?.agencyLicenseNumber || "",
+          agencyAffiliationProof: application?.agencyAffiliationProof || "",
+          agencyName: application?.agencyName || "",
+          profileImageUrl: application?.profileImageUrl || "",
+          feePreference: application?.feePreference || "both",
+          commissionRatePercent:
+            typeof application?.commissionRatePercent === "number"
+              ? String(application.commissionRatePercent)
+              : "",
+          fixedFee:
+            typeof application?.fixedFee === "number" ? String(application.fixedFee) : "",
+        }));
+      } catch {
+      } finally {
+        if (active) setLoadingApplication(false);
+      }
+    }
+    loadExistingApplication();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -100,6 +181,8 @@ export default function AgentRegistrationClient() {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload?.error || "Failed to submit application");
+      setApplicationStatus(payload?.application?.verificationStatus || "pending_verification");
+      setSubmittedAt(payload?.application?.verificationSubmittedAt || "");
       setSuccess("Application submitted. Status: Pending Verification.");
     } catch (submitError) {
       setError(submitError?.message || "Failed to submit application.");
@@ -127,6 +210,21 @@ export default function AgentRegistrationClient() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4 rounded-3xl border border-white/10 bg-slate-900/40 p-6">
+      {loadingApplication ? (
+        <p className="text-sm text-slate-300">Loading your application status...</p>
+      ) : null}
+      {!loadingApplication ? (
+        <div
+          className={`rounded-2xl border px-4 py-3 text-sm ${statusToneClass(applicationStatus)}`}
+        >
+          <p className="font-semibold">Current status: {normalizeStatus(applicationStatus)}</p>
+          {submittedAt ? (
+            <p className="mt-1 text-xs opacity-90">
+              Last submitted: {new Date(submittedAt).toLocaleString()}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <Field label="Full legal name *" value={form.fullLegalName} onChange={(value) => updateField("fullLegalName", value)} required />
       <Field label="Contact email *" type="email" value={form.contactEmail} onChange={(value) => updateField("contactEmail", value)} required />
       <Field label="Contact phone *" value={form.contactPhone} onChange={(value) => updateField("contactPhone", value)} required />
@@ -208,10 +306,14 @@ export default function AgentRegistrationClient() {
 
       <button
         type="submit"
-        disabled={Boolean(formError) || submitting || uploadingGovIdImage || uploadingProfileImage}
+        disabled={Boolean(formError) || submitting || uploadingGovIdImage || uploadingProfileImage || loadingApplication}
         className="w-full rounded-full bg-emerald-400 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {submitting ? "Submitting..." : "Submit for Verification"}
+        {submitting
+          ? "Submitting..."
+          : applicationStatus === "none"
+            ? "Submit for Verification"
+            : "Update Application"}
       </button>
     </form>
   );
