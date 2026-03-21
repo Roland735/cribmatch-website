@@ -212,6 +212,7 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
   const [saveError, setSaveError] = useState("");
   const [cities, setCities] = useState([]);
   const [suburbsByCity, setSuburbsByCity] = useState({});
+  const [selectedListing, setSelectedListing] = useState(null);
   const [creatorRole, setCreatorRole] = useState("user");
   const [creatorVerificationStatus, setCreatorVerificationStatus] = useState("none");
   const [listingCreatorType, setListingCreatorType] = useState("direct_landlord");
@@ -755,6 +756,11 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
     });
     if (response.ok) {
       await loadListings();
+      if (selectedListing && selectedListing._id === listing._id) {
+        setSelectedListing((current) =>
+          current ? { ...current, status: nextStatus } : current,
+        );
+      }
     }
   }
 
@@ -767,6 +773,11 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
     });
     if (response.ok) {
       await loadListings();
+      if (selectedListing && selectedListing._id === listing._id) {
+        setSelectedListing((current) =>
+          current ? { ...current, approved: nextApproved } : current,
+        );
+      }
     }
   }
 
@@ -1881,6 +1892,13 @@ Interested? Contact us today!
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2 sm:col-span-6 sm:justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedListing(listing)}
+                      className="rounded-full border border-white/15 px-4 py-2 text-xs font-semibold text-slate-50 transition hover:border-white/30 hover:bg-white/5"
+                    >
+                      View details
+                    </button>
                     {canManageApproval ? (
                       <button
                         type="button"
@@ -1925,6 +1943,136 @@ Interested? Contact us today!
               ) : null}
             </div>
           </div>
+          {selectedListing ? (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 py-6">
+              <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl shadow-black/50">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xl font-semibold text-white">
+                      {selectedListing.title || "Listing details"}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      ID: {selectedListing._id}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedListing(null)}
+                    className="rounded-full border border-white/15 px-4 py-2 text-xs font-semibold text-slate-50 transition hover:border-white/30 hover:bg-white/5"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {canManageApproval ? (
+                    <button
+                      type="button"
+                      onClick={() => handleToggleApproval(selectedListing)}
+                      className={`rounded-full border px-4 py-2 text-xs font-semibold transition ${selectedListing.approved
+                        ? "border-amber-400/30 text-amber-400 hover:bg-amber-400/5"
+                        : "border-emerald-400/30 text-emerald-400 hover:bg-emerald-400/5"
+                        }`}
+                    >
+                      {selectedListing.approved ? "Unapprove listing" : "Approve listing"}
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => handleToggleStatus(selectedListing)}
+                    className="rounded-full border border-white/15 px-4 py-2 text-xs font-semibold text-slate-50 transition hover:border-white/30 hover:bg-white/5"
+                  >
+                    {selectedListing.status === "published" ? "Deactivate listing" : "Activate listing"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const listingToEdit = selectedListing;
+                      setSelectedListing(null);
+                      handleEditStart(listingToEdit);
+                    }}
+                    className="rounded-full border border-white/15 px-4 py-2 text-xs font-semibold text-slate-50 transition hover:border-white/30 hover:bg-white/5"
+                  >
+                    Edit listing
+                  </button>
+                </div>
+
+                <div className="mt-6 grid gap-4 text-sm text-slate-200 sm:grid-cols-2">
+                  <p>City: {selectedListing.city || "N/A"}</p>
+                  <p>Suburb: {selectedListing.suburb || "N/A"}</p>
+                  <p>Category: {selectedListing.propertyCategory || "N/A"}</p>
+                  <p>Type: {selectedListing.propertyType || "N/A"}</p>
+                  <p>Price: {typeof selectedListing.pricePerMonth === "number" ? `$${selectedListing.pricePerMonth}` : "N/A"}</p>
+                  <p>Deposit: {typeof selectedListing.deposit === "number" ? `$${selectedListing.deposit}` : "N/A"}</p>
+                  <p>Bedrooms: {typeof selectedListing.bedrooms === "number" ? selectedListing.bedrooms : "N/A"}</p>
+                  <p>Status: {selectedListing.status || "N/A"}</p>
+                  <p>Approved: {selectedListing.approved ? "Yes" : "No"}</p>
+                  <p>Lister type: {selectedListing.listerType || "direct_landlord"}</p>
+                  <p>Contact name: {selectedListing.contactName || "N/A"}</p>
+                  <p>Contact phone: {selectedListing.contactPhone || "N/A"}</p>
+                  <p>Contact WhatsApp: {selectedListing.contactWhatsApp || "N/A"}</p>
+                  <p>Contact email: {selectedListing.contactEmail || "N/A"}</p>
+                  <p>Created: {selectedListing.createdAt ? new Date(selectedListing.createdAt).toLocaleString() : "N/A"}</p>
+                  <p>Updated: {selectedListing.updatedAt ? new Date(selectedListing.updatedAt).toLocaleString() : "N/A"}</p>
+                </div>
+
+                {Array.isArray(selectedListing.features) && selectedListing.features.length ? (
+                  <div className="mt-6 rounded-2xl border border-white/10 bg-slate-950/40 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                      Features
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {selectedListing.features.map((feature, index) => (
+                        <span
+                          key={`${feature}-${index}`}
+                          className="rounded-full bg-white/5 px-3 py-1 text-xs text-slate-200 ring-1 ring-inset ring-white/10"
+                        >
+                          {feature}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="mt-6 rounded-2xl border border-white/10 bg-slate-950/40 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    Description
+                  </p>
+                  <p className="mt-3 whitespace-pre-wrap text-sm text-slate-200">
+                    {selectedListing.description || "No description provided."}
+                  </p>
+                </div>
+
+                {Array.isArray(selectedListing.images) && selectedListing.images.length ? (
+                  <div className="mt-6 rounded-2xl border border-white/10 bg-slate-950/40 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                      Images
+                    </p>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {selectedListing.images.map((url, index) => (
+                        <a
+                          key={`${url}-${index}`}
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block overflow-hidden rounded-xl border border-white/10"
+                        >
+                          <Image
+                            src={url}
+                            alt=""
+                            width={480}
+                            height={280}
+                            unoptimized
+                            className="h-40 w-full object-cover"
+                          />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
         </div>
       )}
 
