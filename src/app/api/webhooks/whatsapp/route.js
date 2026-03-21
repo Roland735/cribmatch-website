@@ -3498,10 +3498,10 @@ export async function POST(request) {
       const mem = selectionMap.get(phone);
       const r = mem?.results?.find((rr) => getIdFromListing(rr) === id) || null;
       if (r) return { id, code: getShortIdFromListing(r), title: r.title || "Listing", suburb: r.suburb || "", price: r.pricePerMonth || r.price || 0 };
-      return { id, code: "", title: `Listing ${id.slice(0, 8)}`, suburb: "", price: 0 };
+      return { id, code: "", title: "Listing", suburb: "", price: 0 };
     });
     const text = ["💬 Your recent contacts:"].concat(
-      summaries.map((s, i) => `${i + 1}) 🏠 ${s.title} — 📍 ${s.suburb} — 💰 $${s.price}${s.code ? ` — 🏷️ ${s.code}` : ""} — 🆔 ${s.id}`),
+      summaries.map((s, i) => `${i + 1}) 🏠 ${s.title} — 📍 ${s.suburb} — 💰 $${s.price}${s.code ? ` — 🏷️ ${s.code}` : ""}`),
     ).join("\n\n");
     await sendTextWithInstructionHeader(phone, text, "Reply with the number (e.g. 1) to view contact details again.");
     await sendButtonsWithInstructionHeader(phone, "Return to main menu:", [{ id: "menu_main", title: "🏠 Main menu" }], "Tap Main menu.");
@@ -4205,7 +4205,6 @@ async function revealFromObject(listing, phone) {
     const detailsLines = [
       `🏠 Contact for: ${title}`,
       code ? `🏷️ CODE: ${code}` : null,
-      ensuredId ? `🆔 Listing ID: ${ensuredId}` : null,
       suburb ? `📍 Suburb: ${suburb}` : null,
       address ? `📍 Address: ${address}` : null,
       bedrooms ? `🛏️ Bedrooms: ${bedrooms}` : null,
