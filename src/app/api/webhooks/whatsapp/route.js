@@ -12,7 +12,7 @@ import crypto from "crypto";
 import mongoose from "mongoose";
 import { dbConnect, getPricingSettings, WebhookEvent, Listing, Purchase } from "@/lib/db";
 import Message from "@/lib/Message";
-import { getListingById, getListingFacets, getListingByShortId } from "@/lib/getListings";
+import { getListingById, getListingFacets, getListingByShortId, searchListings } from "@/lib/getListings";
 import { supabaseAdmin } from "@/lib/supabase";
 import { initiatePaynowEcocashPayment, normalizeZimbabweMobile, verifyPaynowPayment } from "@/lib/paynowPayment";
 
@@ -48,25 +48,52 @@ function getAppBaseUrl() {
   return "http://localhost:3000";
 }
 
+function toSearchNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function toSearchString(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function toSearchFeatures(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 12);
+  }
+  if (typeof value === "string") {
+    return value.split(",").map((part) => part.trim()).filter(Boolean).slice(0, 12);
+  }
+  return [];
+}
+
+function toSearchBoolean(value) {
+  return value === true || value === 1 || value === "1";
+}
+
 async function searchViaListingsApi(options = {}) {
-  const params = new URLSearchParams();
-  const entries = Object.entries(options || {});
-  for (const [key, rawValue] of entries) {
-    if (rawValue === null || rawValue === undefined || rawValue === "") continue;
-    if (Array.isArray(rawValue)) {
-      if (!rawValue.length) continue;
-      params.set(key, rawValue.join(","));
-      continue;
-    }
-    params.set(key, String(rawValue));
-  }
-  const endpoint = `${getAppBaseUrl()}/api/listings?${params.toString()}`;
-  const response = await fetch(endpoint, { method: "GET" });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(payload?.error || "Failed to search listings");
-  }
-  return payload;
+  const includeAll = toSearchBoolean(options.all);
+  return searchListings({
+    status: "published",
+    approvedOnly: !includeAll,
+    q: toSearchString(options.q),
+    city: toSearchString(options.city),
+    suburb: toSearchString(options.suburb),
+    propertyCategory: toSearchString(options.propertyCategory),
+    propertyType: toSearchString(options.propertyType),
+    minPrice: toSearchNumber(options.minPrice),
+    maxPrice: toSearchNumber(options.maxPrice),
+    minDeposit: toSearchNumber(options.minDeposit),
+    maxDeposit: toSearchNumber(options.maxDeposit),
+    minBeds: toSearchNumber(options.minBeds),
+    maxBeds: toSearchNumber(options.maxBeds),
+    features: toSearchFeatures(options.features),
+    sort: toSearchString(options.sort) || "newest",
+    photos: toSearchBoolean(options.photos),
+    page: toSearchNumber(options.page) ?? 1,
+    perPage: toSearchNumber(options.perPage) ?? 6,
+  });
 }
 async function getPricingForMessaging() {
   try {
@@ -1594,6 +1621,57 @@ function formatListingResultText(listing, indexHint = 0, purchasedIds = new Set(
   return lines.join("\n");
 }
 
+function normalizeListerType(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return "";
+  if (raw === "agent" || raw === "agency") return "agent";
+  if (
+    raw === "direct_landlord" ||
+    raw === "direct-landlord" ||
+    raw === "landlord" ||
+    raw === "owner" ||
+    raw === "direct"
+  ) {
+    return "direct_landlord";
+  }
+  return "";
+}
+
+function inferPreferredListerType(flowData = {}, query = "") {
+  const candidates = [
+    flowData?.lister_type,
+    flowData?.listerType,
+    flowData?.listing_source,
+    flowData?.listingSource,
+  ];
+  for (const candidate of candidates) {
+    const normalized = normalizeListerType(candidate);
+    if (normalized) return normalized;
+  }
+
+  const text = String(query || "").trim().toLowerCase();
+  if (!text) return "";
+  if (/\bagent|agency\b/.test(text)) return "agent";
+  if (/\bdirect landlord|landlord|owner\b/.test(text)) return "direct_landlord";
+  return "";
+}
+
+function calibrateByListerType(listings = [], preferredType = "") {
+  const preferred = normalizeListerType(preferredType);
+  if (!preferred || !Array.isArray(listings) || listings.length <= 1) return Array.isArray(listings) ? listings : [];
+  const top = [];
+  const rest = [];
+  for (const listing of listings) {
+    const listingType = normalizeListerType(listing?.listerType || listing?.lister_type) || "direct_landlord";
+    if (listingType === preferred) {
+      top.push(listing);
+    } else {
+      rest.push(listing);
+    }
+  }
+  return [...top, ...rest];
+}
+
 /* -------------------------
    Flow detection & parsing helpers
 ------------------------- */
@@ -2727,7 +2805,9 @@ export async function POST(request) {
       console.warn("[webhook] flow search error", e);
     }
 
-    const items = (results.listings || []).slice(0, 6);
+    const preferredListerType = inferPreferredListerType(flowData, flowData?.q);
+    const rankedItems = calibrateByListerType(results.listings || [], preferredListerType);
+    const items = rankedItems.slice(0, 6);
     if (!items.length) {
       await sendWithMainMenuButton(phone, "🔍 No matches found for your search.", "Try adjusting filters or a broader search.");
       return NextResponse.json({ ok: true, note: "flow-search-no-results" });
