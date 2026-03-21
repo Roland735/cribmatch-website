@@ -212,6 +212,9 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
   const [saveError, setSaveError] = useState("");
   const [cities, setCities] = useState([]);
   const [suburbsByCity, setSuburbsByCity] = useState({});
+  const [creatorRole, setCreatorRole] = useState("user");
+  const [creatorVerificationStatus, setCreatorVerificationStatus] = useState("none");
+  const [listingCreatorType, setListingCreatorType] = useState("direct_landlord");
   const uploadTasksRef = useRef(new Map());
 
   const cleanedImages = useMemo(() => {
@@ -279,14 +282,25 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
     }
 
     if (hasUploadsInProgress) return "Please wait for image uploads to finish.";
+    if (
+      !editingListingId &&
+      listingCreatorType === "agent" &&
+      !(creatorRole === "agent" && creatorVerificationStatus === "verified")
+    ) {
+      return "Only verified agents can create agent listings.";
+    }
     return "";
   }, [
     bedrooms,
     city,
+    creatorRole,
+    creatorVerificationStatus,
     deposit,
     duration,
+    editingListingId,
     genderPreference,
     hasUploadsInProgress,
+    listingCreatorType,
     numberOfStudents,
     occupancy,
     pricePerMonth,
@@ -537,6 +551,30 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
     if (activeTab === "pricing" && canManagePricing) loadPricing();
   }, [activeTab, canManageMarketing, canManagePricing, canManageReports, loadListings, loadStats, loadReports, loadPricing]);
 
+  useEffect(() => {
+    if (scope !== "mine") return;
+    let active = true;
+    async function loadCreatorProfile() {
+      try {
+        const response = await fetch("/api/agents/register");
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !active) return;
+        const role = typeof payload?.role === "string" ? payload.role : "user";
+        const verificationStatus =
+          typeof payload?.application?.verificationStatus === "string"
+            ? payload.application.verificationStatus
+            : "none";
+        setCreatorRole(role);
+        setCreatorVerificationStatus(verificationStatus);
+      } catch {
+      }
+    }
+    loadCreatorProfile();
+    return () => {
+      active = false;
+    };
+  }, [scope]);
+
   const loadLocationFacets = useCallback(async () => {
     try {
       const response = await fetch("/api/listings/facets");
@@ -619,6 +657,7 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
           images: cleanedImages,
           status: uiToStatus(status),
           approved,
+          listerType: !editingListingId ? listingCreatorType : undefined,
         }),
       });
 
@@ -695,6 +734,7 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
     clearUploads();
     setStatus("active");
     setApproved(false);
+    setListingCreatorType("direct_landlord");
     setSaveError("");
   }
 
@@ -1195,6 +1235,27 @@ Interested? Contact us today!
                 {editingListingId ? "Edit listing" : "Create listing"}
               </p>
               <form className="mt-5 grid gap-4 sm:grid-cols-2" onSubmit={handleSave}>
+                {!editingListingId && scope === "mine" ? (
+                  <div className="sm:col-span-2 rounded-2xl border border-white/10 bg-slate-950/40 p-4">
+                    <label className="block text-sm font-medium text-slate-200" htmlFor="listingCreatorType">
+                      Create listing as
+                    </label>
+                    <select
+                      id="listingCreatorType"
+                      value={listingCreatorType}
+                      onChange={(e) => setListingCreatorType(e.target.value)}
+                      className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+                    >
+                      <option value="direct_landlord">Landlord listing</option>
+                      {creatorRole === "agent" && creatorVerificationStatus === "verified" ? (
+                        <option value="agent">Agent listing</option>
+                      ) : null}
+                    </select>
+                    <p className="mt-2 text-xs text-slate-400">
+                      WhatsApp listings are always saved as landlord listings.
+                    </p>
+                  </div>
+                ) : null}
                 <div className="sm:col-span-2">
                   <label className="block text-sm font-medium text-slate-200" htmlFor="title">
                     Title

@@ -123,4 +123,33 @@ describe("POST /api/listings agent price rule", () => {
     expect(payload.listing.lister_type).toBe("agent");
     expect(payload.listing.agent_rate).toBe(10);
   });
+
+  test("allows verified agent to create landlord listing when explicitly selected", async () => {
+    listingCreateMock.mockResolvedValue({
+      _id: "listing-2",
+      ...basePayload,
+      listerType: "direct_landlord",
+      agentRate: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      toObject() {
+        return this;
+      },
+    });
+
+    const response = await POST(
+      makeRequest({
+        ...basePayload,
+        listerType: "direct_landlord",
+        pricePerMonth: 1300,
+      }),
+    );
+
+    expect(response.status).toBe(201);
+    const createInput = listingCreateMock.mock.calls[0][0];
+    expect(createInput.listerType).toBe("direct_landlord");
+    expect(createInput.agentRate).toBe(null);
+    const payload = await response.json();
+    expect(payload.listing.lister_type).toBe("direct_landlord");
+  });
 });

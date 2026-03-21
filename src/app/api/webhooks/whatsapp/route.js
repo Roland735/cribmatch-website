@@ -2455,6 +2455,7 @@ export async function POST(request) {
       const baseDoc = {
         title,
         listerPhoneNumber,
+        listerType: "direct_landlord",
         suburb,
         propertyCategory: listingTypeNormalized,
         propertyType: propertyTypeByListingType,

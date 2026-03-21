@@ -76,6 +76,7 @@ function normalizeListingPayload(body = {}) {
   const numberOfStudentsRaw = toValidNumber(body?.numberOfStudents);
   const numberOfStudents =
     numberOfStudentsRaw !== null ? Math.floor(numberOfStudentsRaw) : null;
+  const listerType = typeof body?.listerType === "string" ? body.listerType.trim() : "";
 
   return {
     title,
@@ -99,6 +100,7 @@ function normalizeListingPayload(body = {}) {
     genderPreference,
     duration,
     numberOfStudents,
+    listerType,
   };
 }
 
@@ -320,7 +322,14 @@ export async function POST(request) {
   const isAgent = actorRole === "agent";
   const actorVerificationStatus = actor?.agentProfile?.verificationStatus || "none";
   const listingsFrozen = Boolean(actor?.agentProfile?.listingsFrozen);
-  if (isAgent && (listingsFrozen || actorVerificationStatus !== "verified")) {
+  const canCreateAgentListing =
+    isAgent && !listingsFrozen && actorVerificationStatus === "verified";
+  const requestedListerType =
+    payload.listerType === "agent" ||
+      (payload.listerType !== "direct_landlord" && canCreateAgentListing)
+      ? "agent"
+      : "direct_landlord";
+  if (requestedListerType === "agent" && !canCreateAgentListing) {
     return Response.json(
       {
         error:
@@ -340,7 +349,7 @@ export async function POST(request) {
   let approvedAt = approved ? now : null;
   let approvalReason = approved ? "Approved by admin on create" : "Awaiting admin approval";
 
-  if (isAgent) {
+  if (requestedListerType === "agent") {
     listerType = "agent";
     approved = false;
     approvalStatus = "pending";
@@ -382,6 +391,8 @@ export async function POST(request) {
         { status: 400 },
       );
     }
+  } else {
+    listerType = "direct_landlord";
   }
 
   const listing = await Listing.create({
