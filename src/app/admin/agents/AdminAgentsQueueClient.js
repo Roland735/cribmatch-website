@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Image from "next/image";
 
 export default function AdminAgentsQueueClient() {
   const [agents, setAgents] = useState([]);
@@ -101,6 +102,57 @@ export default function AdminAgentsQueueClient() {
             <p>Affiliation proof: {agent.agencyAffiliationProof || "N/A"}</p>
             <p>Commission: {typeof agent.commissionRatePercent === "number" ? `${agent.commissionRatePercent}%` : "N/A"}</p>
             <p>Fixed fee: {typeof agent.fixedFee === "number" ? `USD ${agent.fixedFee}` : "N/A"}</p>
+          </div>
+
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Government ID image
+              </p>
+              {agent.governmentIdImageUrl ? (
+                <a
+                  href={agent.governmentIdImageUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 block"
+                >
+                  <Image
+                    src={agent.governmentIdImageUrl}
+                    alt={`${agent.fullLegalName || agent.id} government ID`}
+                    width={640}
+                    height={320}
+                    unoptimized
+                    className="h-40 w-full rounded-xl object-cover ring-1 ring-white/10"
+                  />
+                </a>
+              ) : (
+                <p className="mt-3 text-xs text-slate-400">No image uploaded.</p>
+              )}
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Profile image
+              </p>
+              {agent.profileImageUrl ? (
+                <a
+                  href={agent.profileImageUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 block"
+                >
+                  <Image
+                    src={agent.profileImageUrl}
+                    alt={`${agent.fullLegalName || agent.id} profile`}
+                    width={640}
+                    height={320}
+                    unoptimized
+                    className="h-40 w-full rounded-xl object-cover ring-1 ring-white/10"
+                  />
+                </a>
+              ) : (
+                <p className="mt-3 text-xs text-slate-400">No image uploaded.</p>
+              )}
+            </div>
           </div>
 
           <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/40 p-3">

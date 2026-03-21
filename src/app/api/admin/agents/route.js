@@ -28,9 +28,11 @@ function normalizeAgent(user) {
     contactEmail: profile?.contactEmail || "",
     contactPhone: profile?.contactPhone || "",
     governmentIdNumber: profile?.governmentIdNumber || "",
+    governmentIdImageUrl: profile?.governmentIdImageUrl || "",
     agencyLicenseNumber: profile?.agencyLicenseNumber || "",
     agencyAffiliationProof: profile?.agencyAffiliationProof || "",
     agencyName: profile?.agencyName || "",
+    profileImageUrl: profile?.profileImageUrl || "",
     commissionRatePercent:
       typeof profile?.commissionRatePercent === "number" ? profile.commissionRatePercent : null,
     fixedFee: typeof profile?.fixedFee === "number" ? profile.fixedFee : null,
