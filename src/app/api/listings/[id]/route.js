@@ -63,7 +63,8 @@ async function getMicroMarketMedianPrice({ city, suburb }) {
     if (!cityNorm) return false;
     return normalizeMarketValue(listing?.city) === cityNorm;
   });
-  return computeMedian(byCity.map((listing) => listing?.pricePerMonth));
+  if (byCity.length) return computeMedian(byCity.map((listing) => listing?.pricePerMonth));
+  return computeMedian(directListings.map((listing) => listing?.pricePerMonth));
 }
 
 export async function GET(_request, { params }) {
@@ -282,20 +283,16 @@ export async function PATCH(request, { params }) {
       city: nextCity,
       suburb: nextSuburb,
     });
-    if (!Number.isFinite(medianDirectPrice)) {
-      return Response.json(
-        { error: "No direct-landlord benchmark found in this micro-market yet" },
-        { status: 400 },
-      );
-    }
-    const maxAllowedAgentPrice = medianDirectPrice * (1 - discountPercent / 100);
-    if (nextPrice > maxAllowedAgentPrice) {
-      return Response.json(
-        {
-          error: `Agent listing must be at least ${discountPercent}% below micro-market median (${medianDirectPrice.toFixed(2)}). Max allowed is ${maxAllowedAgentPrice.toFixed(2)}.`,
-        },
-        { status: 400 },
-      );
+    if (Number.isFinite(medianDirectPrice)) {
+      const maxAllowedAgentPrice = medianDirectPrice * (1 - discountPercent / 100);
+      if (nextPrice > maxAllowedAgentPrice) {
+        return Response.json(
+          {
+            error: `Agent listing must be at least ${discountPercent}% below micro-market median (${medianDirectPrice.toFixed(2)}). Max allowed is ${maxAllowedAgentPrice.toFixed(2)}.`,
+          },
+          { status: 400 },
+        );
+      }
     }
   }
 

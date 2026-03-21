@@ -116,4 +116,25 @@ describe("PATCH /api/listings/[id] approval flow", () => {
     expect(updatePayload.approvalStatus).toBe("approved");
     expect(updatePayload.$push.approvalHistory.status).toBe("approved");
   });
+
+  test("allows editing agent listing when no benchmark data exists", async () => {
+    getServerSessionMock.mockResolvedValue({
+      user: { phoneNumber: "+263771000001", role: "agent" },
+    });
+    findMock.mockReturnValue({
+      select: () => ({
+        limit: () => ({
+          lean: () => Promise.resolve([]),
+        }),
+      }),
+    });
+
+    const response = await PATCH(
+      makePatchRequest({ pricePerMonth: 2500, title: "Updated Listing" }),
+      params(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(findByIdAndUpdateMock).toHaveBeenCalledTimes(1);
+  });
 });
