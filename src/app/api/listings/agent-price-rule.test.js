@@ -152,4 +152,46 @@ describe("POST /api/listings agent price rule", () => {
     const payload = await response.json();
     expect(payload.listing.lister_type).toBe("direct_landlord");
   });
+
+  test("uses broader benchmark when micro-market has no direct-landlord listings", async () => {
+    listingFindMock.mockReturnValue({
+      select: () => ({
+        limit: () => ({
+          lean: () =>
+            Promise.resolve([
+              { city: "Bulawayo", suburb: "Matsheumhlope", pricePerMonth: 900 },
+              { city: "Bulawayo", suburb: "North End", pricePerMonth: 1000 },
+              { city: "Mutare", suburb: "Murambi", pricePerMonth: 800 },
+            ]),
+        }),
+      }),
+    });
+
+    listingCreateMock.mockResolvedValue({
+      _id: "listing-3",
+      ...basePayload,
+      listerType: "agent",
+      agentRate: 10,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      toObject() {
+        return this;
+      },
+    });
+
+    const response = await POST(
+      makeRequest({
+        ...basePayload,
+        listerType: "agent",
+        city: "Harare",
+        suburb: "Greendale",
+        pricePerMonth: 700,
+      }),
+    );
+
+    expect(response.status).toBe(201);
+    expect(listingCreateMock).toHaveBeenCalledTimes(1);
+    const payload = await response.json();
+    expect(payload.listing.lister_type).toBe("agent");
+  });
 });

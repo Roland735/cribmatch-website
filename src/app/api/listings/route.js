@@ -177,7 +177,10 @@ async function getMicroMarketMedianPrice({ city, suburb }) {
     const listingCity = normalizeMarketValue(listing?.city);
     return listingCity === cityNorm;
   });
-  return computeMedian(byCity.map((listing) => listing?.pricePerMonth));
+  if (byCity.length) {
+    return computeMedian(byCity.map((listing) => listing?.pricePerMonth));
+  }
+  return computeMedian(directListings.map((listing) => listing?.pricePerMonth));
 }
 
 export async function GET(request) {
