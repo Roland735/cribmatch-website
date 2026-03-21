@@ -86,4 +86,28 @@ describe("PATCH /api/admin/agents/[id]/status", () => {
     const payload = await response.json();
     expect(payload.agent.verificationStatus).toBe("rejected");
   });
+
+  test("allows admin to unapprove verified agent", async () => {
+    const saveMock = vi.fn().mockResolvedValue(undefined);
+    findByIdMock.mockResolvedValue({
+      _id: "agent-1",
+      role: "agent",
+      agentProfile: {
+        verificationStatus: "verified",
+        listingsFrozen: false,
+      },
+      agentVerificationHistory: [],
+      save: saveMock,
+    });
+
+    const response = await PATCH(
+      makeRequest({ status: "pending_reapproval", reason: "Documents need re-check" }),
+      makeParams(),
+    );
+    expect(response.status).toBe(200);
+    expect(saveMock).toHaveBeenCalledTimes(1);
+    const payload = await response.json();
+    expect(payload.agent.verificationStatus).toBe("pending_reapproval");
+    expect(payload.agent.listingsFrozen).toBe(true);
+  });
 });

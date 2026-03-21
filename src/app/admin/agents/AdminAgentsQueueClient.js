@@ -15,7 +15,7 @@ export default function AdminAgentsQueueClient() {
     try {
       setLoading(true);
       setError("");
-      const response = await fetch("/api/admin/agents?status=pending");
+      const response = await fetch("/api/admin/agents?status=all");
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(payload?.error || "Failed to load agent queue");
@@ -75,10 +75,22 @@ export default function AdminAgentsQueueClient() {
     );
   }
 
+  const pendingAgents = agents.filter(
+    (agent) =>
+      agent?.verificationStatus === "pending_verification" ||
+      agent?.verificationStatus === "pending_reapproval",
+  );
+  const verifiedAgents = agents.filter((agent) => agent?.verificationStatus === "verified");
+
   return (
     <div className="space-y-4">
       {actionError ? <p className="text-sm text-rose-200">{actionError}</p> : null}
-      {agents.map((agent) => (
+      {!pendingAgents.length ? (
+        <div className="rounded-3xl border border-white/10 bg-slate-900/40 p-6">
+          <p className="text-sm text-slate-200">No pending agent applications.</p>
+        </div>
+      ) : null}
+      {pendingAgents.map((agent) => (
         <article
           key={agent.id}
           className="rounded-3xl border border-white/10 bg-slate-900/40 p-6"
@@ -222,6 +234,66 @@ export default function AdminAgentsQueueClient() {
           </div>
         </article>
       ))}
+      {verifiedAgents.length ? (
+        <div className="rounded-3xl border border-emerald-400/20 bg-emerald-400/5 p-6">
+          <p className="text-sm font-semibold text-emerald-100">
+            Verified agents
+          </p>
+          <p className="mt-1 text-xs text-emerald-100/90">
+            Use unapprove to move a verified agent back to pending review.
+          </p>
+          <div className="mt-4 space-y-3">
+            {verifiedAgents.map((agent) => (
+              <article
+                key={`${agent.id}-verified`}
+                className="rounded-2xl border border-white/10 bg-slate-900/40 p-4"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">
+                      {agent.fullLegalName || agent.name || agent.id}
+                    </h3>
+                    <p className="text-xs text-slate-400">{agent.id}</p>
+                  </div>
+                  <span className="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-200 ring-1 ring-inset ring-emerald-400/30">
+                    Verified
+                  </span>
+                </div>
+                <div className="mt-3 grid gap-2 text-sm text-slate-200 sm:grid-cols-2">
+                  <p>Email: {agent.contactEmail || "N/A"}</p>
+                  <p>Phone: {agent.contactPhone || "N/A"}</p>
+                  <p>Agency: {agent.agencyName || "N/A"}</p>
+                  <p>Commission: {typeof agent.commissionRatePercent === "number" ? `${agent.commissionRatePercent}%` : "N/A"}</p>
+                </div>
+                <div className="mt-3">
+                  <label className="block text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    Unapprove reason
+                  </label>
+                  <textarea
+                    value={reasonById[agent.id] || ""}
+                    onChange={(event) =>
+                      setReasonById((current) => ({ ...current, [agent.id]: event.target.value }))
+                    }
+                    rows={2}
+                    className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+                    placeholder="Reason for unapproving this agent"
+                  />
+                </div>
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={() => applyStatus(agent.id, "pending_reapproval")}
+                    disabled={savingId === agent.id}
+                    className="rounded-full border border-amber-400/40 bg-amber-400/10 px-4 py-2 text-xs font-semibold text-amber-100 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Unapprove
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

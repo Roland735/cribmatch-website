@@ -15,7 +15,7 @@ export default async function AdminAgentsPage() {
     <div className="mx-auto max-w-5xl">
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-balance text-3xl font-semibold tracking-tight text-white">
-          Agent verification queue
+          Agent verification management
         </h1>
         <Link
           href="/admin"
@@ -25,7 +25,7 @@ export default async function AdminAgentsPage() {
         </Link>
       </div>
       <p className="mt-2 text-sm text-slate-300">
-        Review pending agent applications and capture status change reasons.
+        Review pending applications, verify or reject, and unapprove verified agents when needed.
       </p>
       <div className="mt-8">
         <AdminAgentsQueueClient />
