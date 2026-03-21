@@ -379,20 +379,16 @@ export async function POST(request) {
       city: payload.city,
       suburb: payload.suburb,
     });
-    if (!Number.isFinite(medianDirectPrice)) {
-      return Response.json(
-        { error: "No direct-landlord benchmark found in this micro-market yet" },
-        { status: 400 },
-      );
-    }
-    const maxAllowedAgentPrice = medianDirectPrice * (1 - discountPercent / 100);
-    if (payload.pricePerMonth > maxAllowedAgentPrice) {
-      return Response.json(
-        {
-          error: `Agent listing must be at least ${discountPercent}% below micro-market median (${medianDirectPrice.toFixed(2)}). Max allowed is ${maxAllowedAgentPrice.toFixed(2)}.`,
-        },
-        { status: 400 },
-      );
+    if (Number.isFinite(medianDirectPrice)) {
+      const maxAllowedAgentPrice = medianDirectPrice * (1 - discountPercent / 100);
+      if (payload.pricePerMonth > maxAllowedAgentPrice) {
+        return Response.json(
+          {
+            error: `Agent listing must be at least ${discountPercent}% below micro-market median (${medianDirectPrice.toFixed(2)}). Max allowed is ${maxAllowedAgentPrice.toFixed(2)}.`,
+          },
+          { status: 400 },
+        );
+      }
     }
   } else {
     listerType = "direct_landlord";

@@ -194,4 +194,41 @@ describe("POST /api/listings agent price rule", () => {
     const payload = await response.json();
     expect(payload.listing.lister_type).toBe("agent");
   });
+
+  test("allows agent listing when no benchmark data exists anywhere", async () => {
+    listingFindMock.mockReturnValue({
+      select: () => ({
+        limit: () => ({
+          lean: () => Promise.resolve([]),
+        }),
+      }),
+    });
+
+    listingCreateMock.mockResolvedValue({
+      _id: "listing-4",
+      ...basePayload,
+      listerType: "agent",
+      agentRate: 10,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      toObject() {
+        return this;
+      },
+    });
+
+    const response = await POST(
+      makeRequest({
+        ...basePayload,
+        listerType: "agent",
+        city: "Gweru",
+        suburb: "Daylesford",
+        pricePerMonth: 2500,
+      }),
+    );
+
+    expect(response.status).toBe(201);
+    expect(listingCreateMock).toHaveBeenCalledTimes(1);
+    const payload = await response.json();
+    expect(payload.listing.lister_type).toBe("agent");
+  });
 });
