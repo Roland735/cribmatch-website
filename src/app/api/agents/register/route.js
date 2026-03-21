@@ -37,6 +37,10 @@ function asOptionalWholeNumber(value) {
   return Math.floor(num);
 }
 
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
 function cleanStringArray(value) {
   if (Array.isArray(value)) {
     return value
@@ -102,11 +106,20 @@ export async function POST(request) {
   ) {
     return Response.json({ error: "Missing required agent registration fields" }, { status: 400 });
   }
+  if (!isValidEmail(contactEmail)) {
+    return Response.json({ error: "Contact email is invalid" }, { status: 400 });
+  }
   if (commissionRatePercent === null && fixedFee === null) {
     return Response.json(
       { error: "Provide either commission rate or fixed fee" },
       { status: 400 },
     );
+  }
+  if (feePreference === "commission" && commissionRatePercent === null) {
+    return Response.json({ error: "Commission model requires commission rate" }, { status: 400 });
+  }
+  if (feePreference === "fixed" && fixedFee === null) {
+    return Response.json({ error: "Fixed-fee model requires fixed fee" }, { status: 400 });
   }
 
   await dbConnect();

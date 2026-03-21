@@ -26,6 +26,38 @@ const INITIAL_FORM = {
   fixedFee: "",
 };
 
+function validateForm(form) {
+  if (!form.fullLegalName.trim()) return "Full legal name is required.";
+  if (!form.contactEmail.trim()) return "Contact email is required.";
+  if (!form.contactPhone.trim()) return "Contact phone is required.";
+  if (!form.governmentIdNumber.trim()) return "Government-issued ID is required.";
+  if (!form.governmentIdImageUrl.trim()) return "Government ID picture is required.";
+  if (!form.agencyName.trim()) return "Agency name is required.";
+
+  const hasRate = form.commissionRatePercent.trim() !== "";
+  const hasFixedFee = form.fixedFee.trim() !== "";
+  if (!hasRate && !hasFixedFee) return "Provide either commission rate or fixed fee.";
+  if (form.feePreference === "commission" && !hasRate) return "Commission model requires commission rate.";
+  if (form.feePreference === "fixed" && !hasFixedFee) return "Fixed-fee model requires fixed fee.";
+
+  if (hasRate) {
+    const rate = Number(form.commissionRatePercent);
+    if (!Number.isFinite(rate) || rate < 0 || rate > 100) return "Commission rate must be between 0 and 100.";
+  }
+  if (hasFixedFee) {
+    const fixedFee = Number(form.fixedFee);
+    if (!Number.isFinite(fixedFee) || fixedFee < 0) return "Fixed fee must be a non-negative number.";
+  }
+  if (form.yearsExperience !== "") {
+    const years = Number(form.yearsExperience);
+    if (!Number.isFinite(years) || years < 0) return "Years of experience must be a non-negative number.";
+  }
+  if (form.websiteUrl && !/^https?:\/\/.+/i.test(form.websiteUrl.trim())) {
+    return "Website URL must start with http:// or https://.";
+  }
+  return "";
+}
+
 export default function AgentRegistrationClient() {
   const [form, setForm] = useState(INITIAL_FORM);
   const [submitting, setSubmitting] = useState(false);
@@ -34,37 +66,7 @@ export default function AgentRegistrationClient() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const formError = useMemo(() => {
-    if (!form.fullLegalName.trim()) return "Full legal name is required.";
-    if (!form.contactEmail.trim()) return "Contact email is required.";
-    if (!form.contactPhone.trim()) return "Contact phone is required.";
-    if (!form.governmentIdNumber.trim()) return "Government-issued ID is required.";
-    if (!form.governmentIdImageUrl.trim()) return "Government ID picture is required.";
-    if (!form.agencyName.trim()) return "Agency name is required.";
-
-    const hasRate = form.commissionRatePercent !== "";
-    const hasFixedFee = form.fixedFee !== "";
-    if (!hasRate && !hasFixedFee) return "Provide either commission rate or fixed fee.";
-    if (form.feePreference === "commission" && !hasRate) return "Commission model requires commission rate.";
-    if (form.feePreference === "fixed" && !hasFixedFee) return "Fixed-fee model requires fixed fee.";
-
-    if (hasRate) {
-      const rate = Number(form.commissionRatePercent);
-      if (!Number.isFinite(rate) || rate < 0 || rate > 100) return "Commission rate must be between 0 and 100.";
-    }
-    if (hasFixedFee) {
-      const fixedFee = Number(form.fixedFee);
-      if (!Number.isFinite(fixedFee) || fixedFee < 0) return "Fixed fee must be a non-negative number.";
-    }
-    if (form.yearsExperience !== "") {
-      const years = Number(form.yearsExperience);
-      if (!Number.isFinite(years) || years < 0) return "Years of experience must be a non-negative number.";
-    }
-    if (form.websiteUrl && !/^https?:\/\/.+/i.test(form.websiteUrl.trim())) {
-      return "Website URL must start with http:// or https://.";
-    }
-    return "";
-  }, [form]);
+  const formError = useMemo(() => validateForm(form), [form]);
 
   function updateField(name, value) {
     setForm((current) => ({ ...current, [name]: value }));
@@ -72,7 +74,12 @@ export default function AgentRegistrationClient() {
 
   async function handleSubmit(event) {
     event.preventDefault();
-    if (formError) return;
+    const currentError = validateForm(form);
+    if (currentError) {
+      setError(currentError);
+      setSuccess("");
+      return;
+    }
 
     setSubmitting(true);
     setError("");
@@ -120,9 +127,9 @@ export default function AgentRegistrationClient() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4 rounded-3xl border border-white/10 bg-slate-900/40 p-6">
-      <Field label="Full legal name *" value={form.fullLegalName} onChange={(value) => updateField("fullLegalName", value)} />
-      <Field label="Contact email *" type="email" value={form.contactEmail} onChange={(value) => updateField("contactEmail", value)} />
-      <Field label="Contact phone *" value={form.contactPhone} onChange={(value) => updateField("contactPhone", value)} />
+      <Field label="Full legal name *" value={form.fullLegalName} onChange={(value) => updateField("fullLegalName", value)} required />
+      <Field label="Contact email *" type="email" value={form.contactEmail} onChange={(value) => updateField("contactEmail", value)} required />
+      <Field label="Contact phone *" value={form.contactPhone} onChange={(value) => updateField("contactPhone", value)} required />
       <Field label="Alternate phone (optional)" value={form.alternatePhone} onChange={(value) => updateField("alternatePhone", value)} />
       <Field label="Office address (optional)" value={form.officeAddress} onChange={(value) => updateField("officeAddress", value)} />
       <Field label="City (optional)" value={form.city} onChange={(value) => updateField("city", value)} />
@@ -141,10 +148,11 @@ export default function AgentRegistrationClient() {
         ]}
       />
       <Field label="Website URL (optional)" value={form.websiteUrl} onChange={(value) => updateField("websiteUrl", value)} />
-      <Field label="Government-issued ID *" value={form.governmentIdNumber} onChange={(value) => updateField("governmentIdNumber", value)} />
+      <Field label="Government-issued ID *" value={form.governmentIdNumber} onChange={(value) => updateField("governmentIdNumber", value)} required />
       <UploadField
         label="Government ID picture *"
         currentUrl={form.governmentIdImageUrl}
+        required
         uploading={uploadingGovIdImage}
         onSelectFile={async (file) => {
           setUploadingGovIdImage(true);
@@ -164,7 +172,7 @@ export default function AgentRegistrationClient() {
         value={form.agencyAffiliationProof}
         onChange={(value) => updateField("agencyAffiliationProof", value)}
       />
-      <Field label="Agency name *" value={form.agencyName} onChange={(value) => updateField("agencyName", value)} />
+      <Field label="Agency name *" value={form.agencyName} onChange={(value) => updateField("agencyName", value)} required />
       <UploadField
         label="Profile picture (optional)"
         currentUrl={form.profileImageUrl}
@@ -209,13 +217,14 @@ export default function AgentRegistrationClient() {
   );
 }
 
-function Field({ label, value, onChange, type = "text" }) {
+function Field({ label, value, onChange, type = "text", required = false }) {
   return (
     <div>
       <label className="block text-sm font-medium text-slate-200">{label}</label>
       <input
         type={type}
         value={value}
+        required={required}
         onChange={(event) => onChange(event.target.value)}
         className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
       />
@@ -242,11 +251,20 @@ function SelectField({ label, value, onChange, options }) {
   );
 }
 
-function UploadField({ label, currentUrl, uploading, onSelectFile }) {
+function UploadField({ label, currentUrl, uploading, onSelectFile, required = false }) {
   return (
     <div>
       <label className="block text-sm font-medium text-slate-200">{label}</label>
       <div className="mt-2 flex items-center gap-3">
+        <input
+          type="text"
+          value={currentUrl}
+          readOnly
+          required={required}
+          tabIndex={-1}
+          aria-hidden="true"
+          className="sr-only"
+        />
         <input
           type="file"
           accept="image/*"

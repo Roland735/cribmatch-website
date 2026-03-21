@@ -105,6 +105,49 @@ describe("POST /api/agents/register", () => {
     expect(saveMock).toHaveBeenCalledTimes(1);
   });
 
+  test("rejects invalid contact email", async () => {
+    const response = await POST(
+      makeRequest({
+        fullLegalName: "Agent One",
+        contactEmail: "not-an-email",
+        contactPhone: "+263771000001",
+        governmentIdNumber: "ID123456",
+        governmentIdImageUrl: "https://example.com/id.jpg",
+        agencyLicenseNumber: "LIC-100",
+        agencyAffiliationProof: "https://example.com/proof.pdf",
+        agencyName: "Prime Realty",
+        commissionRatePercent: 7,
+        fixedFee: null,
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    const payload = await response.json();
+    expect(payload.error).toMatch(/Contact email is invalid/);
+  });
+
+  test("rejects fee model mismatch when fixed selected without fixed fee", async () => {
+    const response = await POST(
+      makeRequest({
+        fullLegalName: "Agent One",
+        contactEmail: "agent@example.com",
+        contactPhone: "+263771000001",
+        governmentIdNumber: "ID123456",
+        governmentIdImageUrl: "https://example.com/id.jpg",
+        agencyLicenseNumber: "LIC-100",
+        agencyAffiliationProof: "https://example.com/proof.pdf",
+        agencyName: "Prime Realty",
+        feePreference: "fixed",
+        commissionRatePercent: 5,
+        fixedFee: null,
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    const payload = await response.json();
+    expect(payload.error).toMatch(/Fixed-fee model requires fixed fee/);
+  });
+
   test("creates pending verification agent application", async () => {
     const saveMock = vi.fn().mockResolvedValue(undefined);
     findByIdMock.mockResolvedValue({
