@@ -7,7 +7,11 @@ import SignOutButton from "../SignOutButton";
 export default async function AgentLayout({ children }) {
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login");
-  if (session?.user?.role !== "agent" && session?.user?.role !== "admin") {
+  if (
+    session?.user?.role !== "agent" &&
+    session?.user?.role !== "admin" &&
+    session?.user?.role !== "user"
+  ) {
     redirect("/user");
   }
 

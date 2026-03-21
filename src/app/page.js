@@ -125,6 +125,12 @@ export default async function Home({ searchParams }) {
               >
                 List a property <span aria-hidden="true">→</span>
               </Link>
+              <Link
+                href="/login?callbackUrl=/agent/register"
+                className="text-sm font-semibold text-amber-200 transition hover:text-amber-100"
+              >
+                Agent sign-up <span aria-hidden="true">→</span>
+              </Link>
               <span className="text-xs text-slate-400">
                 Browse on web, finalize faster on WhatsApp.
               </span>
@@ -277,6 +283,12 @@ export default async function Home({ searchParams }) {
               className="rounded-full border border-white/20 px-5 py-2 text-sm font-semibold text-slate-50 transition hover:border-white/40 hover:bg-white/5"
             >
               See how it works
+            </Link>
+            <Link
+              href="/login?callbackUrl=/agent/register"
+              className="rounded-full border border-amber-300/40 px-5 py-2 text-sm font-semibold text-amber-200 transition hover:border-amber-300/70 hover:bg-amber-300/10"
+            >
+              Agent registration
             </Link>
             <Link
               href="/pricing"
