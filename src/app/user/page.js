@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { authOptions } from "@/lib/auth";
+import { dbConnect, User } from "@/lib/db";
 
 export default async function UserDashboardPage() {
   const session = await getServerSession(authOptions);
@@ -11,6 +12,33 @@ export default async function UserDashboardPage() {
   }
 
   const privilegedHref = session?.user?.role === "admin" ? "/admin" : "/agent";
+  const phoneNumber =
+    typeof session?.user?.phoneNumber === "string" ? session.user.phoneNumber.trim() : "";
+  let agentApplicationStatus = "none";
+  let hasAgentApplication = false;
+
+  if (phoneNumber && process.env.MONGODB_URI) {
+    await dbConnect();
+    const user = await User.findById(phoneNumber).lean();
+    const profile = user?.agentProfile || {};
+    agentApplicationStatus = profile?.verificationStatus || "none";
+    hasAgentApplication =
+      agentApplicationStatus !== "none" ||
+      Boolean(profile?.fullLegalName) ||
+      Boolean(profile?.agencyName);
+  }
+
+  const isPrivileged = session?.user?.role === "agent" || session?.user?.role === "admin";
+  const statusLabel =
+    agentApplicationStatus === "pending_verification"
+      ? "Pending verification"
+      : agentApplicationStatus === "pending_reapproval"
+        ? "Pending re-approval"
+        : agentApplicationStatus === "verified"
+          ? "Verified"
+          : agentApplicationStatus === "rejected"
+            ? "Rejected"
+            : "Not submitted";
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -67,7 +95,7 @@ export default async function UserDashboardPage() {
         </div>
       </div>
 
-      {session?.user?.role === "agent" || session?.user?.role === "admin" ? (
+      {isPrivileged ? (
         <div className="mt-8 rounded-3xl border border-emerald-400/20 bg-emerald-400/10 p-6">
           <p className="text-sm font-semibold text-emerald-100">
             You have {session.user.role} access.
@@ -95,7 +123,7 @@ export default async function UserDashboardPage() {
       ) : null}
 
       <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {session?.user?.role === "user" ? (
+        {session?.user?.role === "user" && !hasAgentApplication ? (
           <div className="rounded-3xl border border-amber-400/20 bg-amber-400/5 p-6 flex flex-col">
             <p className="text-sm font-semibold text-amber-100">Become a verified agent</p>
             <p className="mt-2 text-sm text-slate-300 flex-1">
@@ -107,6 +135,22 @@ export default async function UserDashboardPage() {
                 className="inline-flex items-center justify-center rounded-full bg-amber-300 px-5 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-amber-200 w-full"
               >
                 Start agent sign-up
+              </Link>
+            </div>
+          </div>
+        ) : null}
+        {session?.user?.role === "user" && hasAgentApplication ? (
+          <div className="rounded-3xl border border-emerald-400/20 bg-emerald-400/10 p-6 flex flex-col">
+            <p className="text-sm font-semibold text-emerald-100">Your agent application</p>
+            <p className="mt-2 text-sm text-emerald-100/90 flex-1">
+              Current status: {statusLabel}
+            </p>
+            <div className="mt-4">
+              <Link
+                href="/agent/register"
+                className="inline-flex items-center justify-center rounded-full border border-emerald-300/40 bg-emerald-300/0 px-5 py-2.5 text-sm font-semibold text-emerald-100 transition hover:border-emerald-300/70 hover:bg-emerald-300/10 w-full"
+              >
+                View or update application
               </Link>
             </div>
           </div>
