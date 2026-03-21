@@ -10,6 +10,7 @@ export default function AdminAgentsQueueClient() {
   const [actionError, setActionError] = useState("");
   const [reasonById, setReasonById] = useState({});
   const [savingId, setSavingId] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const loadQueue = useCallback(async () => {
     try {
@@ -75,19 +76,53 @@ export default function AdminAgentsQueueClient() {
     );
   }
 
+  const query = searchQuery.trim().toLowerCase();
+  const matchesQuery = (agent) => {
+    if (!query) return true;
+    const haystack = [
+      agent?.id,
+      agent?.name,
+      agent?.fullLegalName,
+      agent?.contactEmail,
+      agent?.contactPhone,
+      agent?.agencyName,
+      agent?.governmentIdNumber,
+      agent?.agencyLicenseNumber,
+    ]
+      .map((value) => (typeof value === "string" ? value.toLowerCase() : ""))
+      .join(" ");
+    return haystack.includes(query);
+  };
+
   const pendingAgents = agents.filter(
     (agent) =>
+      matchesQuery(agent) &&
       agent?.verificationStatus === "pending_verification" ||
-      agent?.verificationStatus === "pending_reapproval",
+      (matchesQuery(agent) && agent?.verificationStatus === "pending_reapproval"),
   );
-  const verifiedAgents = agents.filter((agent) => agent?.verificationStatus === "verified");
+  const verifiedAgents = agents.filter(
+    (agent) => matchesQuery(agent) && agent?.verificationStatus === "verified",
+  );
 
   return (
     <div className="space-y-4">
       {actionError ? <p className="text-sm text-rose-200">{actionError}</p> : null}
+      <div className="rounded-3xl border border-white/10 bg-slate-900/40 p-4">
+        <label className="block text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Search agents
+        </label>
+        <input
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+          placeholder="Name, phone, agency, email, or ID"
+          className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+        />
+      </div>
       {!pendingAgents.length ? (
         <div className="rounded-3xl border border-white/10 bg-slate-900/40 p-6">
-          <p className="text-sm text-slate-200">No pending agent applications.</p>
+          <p className="text-sm text-slate-200">
+            {query ? "No pending applications match your search." : "No pending agent applications."}
+          </p>
         </div>
       ) : null}
       {pendingAgents.map((agent) => (
@@ -292,6 +327,11 @@ export default function AdminAgentsQueueClient() {
               </article>
             ))}
           </div>
+        </div>
+      ) : null}
+      {!verifiedAgents.length && query ? (
+        <div className="rounded-3xl border border-white/10 bg-slate-900/40 p-6">
+          <p className="text-sm text-slate-200">No verified agents match your search.</p>
         </div>
       ) : null}
     </div>
