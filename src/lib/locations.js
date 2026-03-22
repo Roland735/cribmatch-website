@@ -280,7 +280,6 @@ export function toWhatsappLocationOptions(snapshot, { includeAny = true } = {}) 
   const suburbs = (Array.isArray(safe.suburbs) ? safe.suburbs : []).map((suburb) => ({
     id: suburb.suburb_id,
     title: suburb.suburb_name,
-    city_id: suburb.city_id,
   }));
   if (!includeAny) {
     return { cities, suburbs };

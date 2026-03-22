@@ -1058,12 +1058,30 @@ function toSuburbId(value) {
 }
 
 async function getDynamicLocationOptions() {
-  const snapshot = await getLocationsSnapshot();
-  const options = toWhatsappLocationOptions(snapshot, { includeAny: true });
-  const cities = Array.isArray(options?.cities) && options.cities.length ? options.cities : PREDEFINED_CITIES;
-  const suburbs = Array.isArray(options?.suburbs) && options.suburbs.length ? options.suburbs : PREDEFINED_SUBURBS;
-  const suburbsWithoutAny = suburbs.filter((item) => item?.id !== "any");
-  return { cities, suburbs, suburbsWithoutAny };
+  try {
+    const snapshot = await getLocationsSnapshot();
+    const options = toWhatsappLocationOptions(snapshot, { includeAny: true });
+    const sanitizeOptions = (values) =>
+      (Array.isArray(values) ? values : [])
+        .map((value) => ({
+          id: String(value?.id || "").trim(),
+          title: String(value?.title || "").trim(),
+        }))
+        .filter((value) => value.id && value.title);
+    const cities = sanitizeOptions(options?.cities);
+    const suburbs = sanitizeOptions(options?.suburbs);
+    return {
+      cities: cities.length ? cities : PREDEFINED_CITIES,
+      suburbs: suburbs.length ? suburbs : PREDEFINED_SUBURBS,
+      suburbsWithoutAny: suburbs.filter((item) => item.id !== "any"),
+    };
+  } catch {
+    return {
+      cities: PREDEFINED_CITIES,
+      suburbs: PREDEFINED_SUBURBS,
+      suburbsWithoutAny: PREDEFINED_SUBURBS.filter((item) => item.id !== "any"),
+    };
+  }
 }
 
 function resolveTitleById(id, options = []) {
