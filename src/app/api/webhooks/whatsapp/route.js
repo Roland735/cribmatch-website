@@ -13,6 +13,7 @@ import mongoose from "mongoose";
 import { dbConnect, getPricingSettings, WebhookEvent, Listing, Purchase } from "@/lib/db";
 import Message from "@/lib/Message";
 import { getListingById, getListingFacets, getListingByShortId, searchListings } from "@/lib/getListings";
+import { getLocationsSnapshot, toWhatsappLocationOptions } from "@/lib/locations";
 import { supabaseAdmin } from "@/lib/supabase";
 import { initiatePaynowEcocashPayment, normalizeZimbabweMobile, verifyPaynowPayment } from "@/lib/paynowPayment";
 
@@ -725,15 +726,6 @@ const BOARDING_FEATURES_OPTIONS = [
   { id: "ensuite", title: "Ensuite" },
 ];
 
-const SHOP_SUBURBS = [
-  { id: "any", title: "Any" },
-  { id: "cbd_harare", title: "CBD (Harare)" },
-  { id: "graniteside", title: "Graniteside" },
-  { id: "msasa", title: "Msasa" },
-  { id: "belvedere", title: "Belvedere" },
-  { id: "southerton", title: "Southerton" },
-];
-
 const SHOP_TYPES = [
   { id: "any", title: "Any" },
   { id: "retail_shop", title: "Retail Shop" },
@@ -826,7 +818,6 @@ const CHAIR_FEATURES_OPTIONS = [
   { id: "backup_tank", title: "Backup tank" },
 ];
 
-const LIST_PROPERTY_SUBURBS = PREDEFINED_SUBURBS.filter((s) => s.id !== "any");
 const LIST_PROPERTY_CATEGORIES = [
   { id: "residential", title: "Residential" },
   { id: "commercial", title: "Commercial" },
@@ -1066,6 +1057,15 @@ function toSuburbId(value) {
   return slug || toSlugId(raw);
 }
 
+async function getDynamicLocationOptions() {
+  const snapshot = await getLocationsSnapshot();
+  const options = toWhatsappLocationOptions(snapshot, { includeAny: true });
+  const cities = Array.isArray(options?.cities) && options.cities.length ? options.cities : PREDEFINED_CITIES;
+  const suburbs = Array.isArray(options?.suburbs) && options.suburbs.length ? options.suburbs : PREDEFINED_SUBURBS;
+  const suburbsWithoutAny = suburbs.filter((item) => item?.id !== "any");
+  return { cities, suburbs, suburbsWithoutAny };
+}
+
 function resolveTitleById(id, options = []) {
   const raw = String(id || "").trim();
   if (!raw) return "";
@@ -1182,8 +1182,9 @@ async function sendFlowMessage(phoneNumber, data = {}) {
 async function sendResidentialSearchFlow(phoneNumber, data = {}) {
   const hasId = (list, id) => Array.isArray(list) && list.some((o) => o && o.id === id);
 
-  const cities = PREDEFINED_CITIES;
-  const suburbs = PREDEFINED_SUBURBS;
+  const locationOptions = await getDynamicLocationOptions();
+  const cities = locationOptions.cities;
+  const suburbs = locationOptions.suburbs;
   const propertyCategories = PREDEFINED_PROPERTY_CATEGORIES;
   const propertyTypes = PREDEFINED_PROPERTY_TYPES;
   const bedrooms = PREDEFINED_BEDROOMS;
@@ -1236,8 +1237,9 @@ async function sendResidentialSearchFlow(phoneNumber, data = {}) {
 async function sendBoardingSearchFlow(phoneNumber, data = {}) {
   const hasId = (list, id) => Array.isArray(list) && list.some((o) => o && o.id === id);
 
-  const cities = PREDEFINED_CITIES;
-  const suburbs = PREDEFINED_SUBURBS;
+  const locationOptions = await getDynamicLocationOptions();
+  const cities = locationOptions.cities;
+  const suburbs = locationOptions.suburbs;
   const roomTypes = BOARDING_ROOM_TYPES;
   const occupancyTypes = BOARDING_OCCUPANCY_TYPES;
   const genderPreference = BOARDING_GENDER_PREFERENCE;
@@ -1288,8 +1290,9 @@ async function sendBoardingSearchFlow(phoneNumber, data = {}) {
 async function sendShopSearchFlow(phoneNumber, data = {}) {
   const hasId = (list, id) => Array.isArray(list) && list.some((o) => o && o.id === id);
 
-  const cities = PREDEFINED_CITIES;
-  const suburbs = SHOP_SUBURBS;
+  const locationOptions = await getDynamicLocationOptions();
+  const cities = locationOptions.cities;
+  const suburbs = locationOptions.suburbs;
   const shopTypes = SHOP_TYPES;
   const locationTypes = SHOP_LOCATION_TYPES;
   const sizeRanges = SHOP_SIZE_RANGES;
@@ -1343,8 +1346,9 @@ async function sendShopSearchFlow(phoneNumber, data = {}) {
 async function sendRentAChairSearchFlow(phoneNumber, data = {}) {
   const hasId = (list, id) => Array.isArray(list) && list.some((o) => o && o.id === id);
 
-  const cities = PREDEFINED_CITIES;
-  const suburbs = PREDEFINED_SUBURBS;
+  const locationOptions = await getDynamicLocationOptions();
+  const cities = locationOptions.cities;
+  const suburbs = locationOptions.suburbs;
   const serviceTypes = CHAIR_SERVICE_TYPES;
   const featuresOptions = CHAIR_FEATURES_OPTIONS;
 
@@ -1383,10 +1387,11 @@ async function sendListPropertyFlow(phoneNumber, data = {}) {
     console.warn("[sendListPropertyFlow] no LIST_PROPERTY_FLOW_ID configured.");
     return { error: "no-flow", reason: "no-list-flow-id" };
   }
+  const locationOptions = await getDynamicLocationOptions();
   const payloadData = {
     listingTypes: LISTING_TYPES,
-    cities: PREDEFINED_CITIES,
-    suburbs: PREDEFINED_SUBURBS,
+    cities: locationOptions.cities,
+    suburbs: locationOptions.suburbs,
     propertyTypes: LISTING_PROPERTY_TYPES,
     shopTypes: LISTING_SHOP_TYPES,
     roomTypes: LISTING_ROOM_TYPES,
@@ -1406,7 +1411,7 @@ async function sendListPropertyFlow(phoneNumber, data = {}) {
     contact_phone: "",
     contact_whatsapp: "",
     contact_email: "",
-    selected_city: "harare",
+    selected_city: locationOptions.cities[0]?.id || "harare",
     selected_suburb: "any",
     selected_property_type: "any",
     selected_shop_type: "any",
@@ -2357,6 +2362,9 @@ export async function POST(request) {
     (flowData && (flowData.listing_type || flowData.lister_phone_number || flowData.price_per_month))
   ) {
     try {
+      const locationOptions = await getDynamicLocationOptions();
+      const cityOptions = locationOptions.cities;
+      const suburbOptions = locationOptions.suburbs;
       const cityId = String(flowData.city || flowData.selected_city || "").trim();
       const suburbId = String(flowData.suburb || flowData.selected_suburb || "").trim();
       const listingTypeId = String(flowData.listing_type || "").trim();
@@ -2366,8 +2374,8 @@ export async function POST(request) {
       const serviceTypeId = String(flowData.service_type || "").trim();
       const bedroomsId = String(flowData.bedrooms || "").trim();
 
-      const cityTitle = resolveTitleById(cityId, PREDEFINED_CITIES);
-      const suburbTitle = resolveTitleById(suburbId, PREDEFINED_SUBURBS);
+      const cityTitle = resolveTitleById(cityId, cityOptions);
+      const suburbTitle = resolveTitleById(suburbId, suburbOptions);
       const listingTypeTitle = resolveTitleById(listingTypeId, LISTING_TYPES);
       const propertyTypeTitle = resolveTitleById(propertyTypeId, LISTING_PROPERTY_TYPES);
       const shopTypeTitle = resolveTitleById(shopTypeId, LISTING_SHOP_TYPES);
@@ -2672,10 +2680,14 @@ export async function POST(request) {
         });
       };
 
+      const locationOptions = await getDynamicLocationOptions();
+      const cityOptions = locationOptions.cities;
+      const suburbOptions = locationOptions.suburbs;
+
       if (screenUpper === "BOARDING_SEARCH") {
-        const resolvedCity = resolveTitleById(flowData.city, PREDEFINED_CITIES);
+        const resolvedCity = resolveTitleById(flowData.city, cityOptions);
         const suburbRaw = String(flowData.suburb || "").trim();
-        const resolvedSuburb = suburbRaw === "any" ? "" : resolveTitleById(suburbRaw, PREDEFINED_SUBURBS);
+        const resolvedSuburb = suburbRaw === "any" ? "" : resolveTitleById(suburbRaw, suburbOptions);
 
         const roomTypeId = String(flowData.roomType || flowData.room_type || "").trim();
         const roomTypeTitle = roomTypeId === "any" ? "" : resolveTitleById(roomTypeId, BOARDING_ROOM_TYPES);
@@ -2700,9 +2712,9 @@ export async function POST(request) {
           features: resolvedFeatures,
         });
       } else if (screenUpper === "SHOP_SEARCH") {
-        const resolvedCity = resolveTitleById(flowData.city, PREDEFINED_CITIES);
+        const resolvedCity = resolveTitleById(flowData.city, cityOptions);
         const suburbRaw = String(flowData.suburb || "").trim();
-        const resolvedSuburb = suburbRaw === "any" ? "" : resolveTitleById(suburbRaw, SHOP_SUBURBS);
+        const resolvedSuburb = suburbRaw === "any" ? "" : resolveTitleById(suburbRaw, suburbOptions);
 
         const shopTypeId = String(flowData.shopType || flowData.shop_type || "").trim();
         const shopTypeTitle = shopTypeId === "any" ? "" : resolveTitleById(shopTypeId, SHOP_TYPES);
@@ -2750,9 +2762,9 @@ export async function POST(request) {
           features: resolvedFeatures,
         });
       } else {
-        const resolvedCity = resolveTitleById(flowData.city, PREDEFINED_CITIES);
+        const resolvedCity = resolveTitleById(flowData.city, cityOptions);
         const suburbRaw = String(flowData.suburb || "").trim();
-        const resolvedSuburb = suburbRaw === "any" ? "" : resolveTitleById(suburbRaw, PREDEFINED_SUBURBS);
+        const resolvedSuburb = suburbRaw === "any" ? "" : resolveTitleById(suburbRaw, suburbOptions);
 
         const categoryRaw = flowData.propertyCategory || flowData.property_category || "residential";
         const resolvedPropertyCategory = normalizeCategory(categoryRaw) || "residential";
@@ -2996,6 +3008,9 @@ export async function POST(request) {
       const suburbParts = String(listing.suburb || "").split(",");
       const suburbTitle = suburbParts[0]?.trim();
       const cityTitle = suburbParts[1]?.trim() || "Harare";
+      const locationOptions = await getDynamicLocationOptions();
+      const cityOptions = locationOptions.cities;
+      const suburbOptions = locationOptions.suburbs;
 
       const payloadOverrides = {
         listing_type: listing.propertyCategory || "residential",
@@ -3005,8 +3020,8 @@ export async function POST(request) {
         contact_phone: listing.contactPhone || "",
         contact_whatsapp: listing.contactWhatsApp || "",
         contact_email: listing.contactEmail || "",
-        selected_city: resolveIdByTitle(cityTitle, PREDEFINED_CITIES) || "harare",
-        selected_suburb: resolveIdByTitle(suburbTitle, PREDEFINED_SUBURBS) || "any",
+        selected_city: resolveIdByTitle(cityTitle, cityOptions) || cityOptions[0]?.id || "harare",
+        selected_suburb: resolveIdByTitle(suburbTitle, suburbOptions) || "any",
         selected_property_type: listing.propertyCategory === "residential" ? (resolveIdByTitle(listing.propertyType, PREDEFINED_PROPERTY_TYPES) || "any") : "any",
         selected_shop_type: listing.propertyCategory === "commercial" ? (resolveIdByTitle(listing.propertyType, SHOP_TYPES) || "any") : "any",
         selected_room_type: listing.propertyCategory === "boarding" ? (resolveIdByTitle(listing.propertyType, BOARDING_ROOM_TYPES) || "any") : "any",

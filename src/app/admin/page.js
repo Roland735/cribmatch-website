@@ -28,6 +28,12 @@ export default async function AdminPage() {
         >
           Agent verification queue
         </Link>
+        <Link
+          href="/admin/locations"
+          className="ml-2 inline-flex items-center justify-center rounded-full border border-white/15 px-4 py-2 text-sm font-semibold text-slate-50 transition hover:border-white/30 hover:bg-white/5"
+        >
+          Manage locations
+        </Link>
       </div>
       <AdminClient />
     </div>

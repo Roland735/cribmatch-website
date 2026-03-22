@@ -1,5 +1,6 @@
 import seedListings from "./seedListings.json";
 import { dbConnect, Listing } from "./db";
+import { getLocationsSnapshot } from "./locations";
 
 function normalizeListingDoc(listing) {
   const obj =
@@ -572,119 +573,14 @@ export async function searchPublishedListings(options = {}) {
 }
 
 export async function getListingFacets() {
-  const extraCities = [
-    "Beitbridge",
-    "Bindura",
-    "Bulawayo",
-    "Chegutu",
-    "Chinhoyi",
-    "Chiredzi",
-    "Chipinge",
-    "Chitungwiza",
-    "Gokwe",
-    "Gwanda",
-    "Gweru",
-    "Harare",
-    "Hwange",
-    "Kadoma",
-    "Kariba",
-    "Karoi",
-    "Kwekwe",
-    "Masvingo",
-    "Marondera",
-    "Mutare",
-    "Norton",
-    "Plumtree",
-    "Rusape",
-    "Ruwa",
-    "Victoria Falls",
-    "Zvishavane",
-  ];
-
-  const harareSuburbs = [
-    "Arcadia",
-    "Ardbennie",
-    "Ashdown Park",
-    "Aspindale Park",
-    "Avondale",
-    "Avenues",
-    "Ballas",
-    "Belgravia",
-    "Belvedere",
-    "Bluff Hill",
-    "Borrowdale",
-    "Borrowdale Brooke",
-    "Braeside",
-    "Budiriro",
-    "CBD",
-    "Chadcombe",
-    "Chisipite",
-    "Cleveland",
-    "Colne Valley",
-    "Cranborne",
-    "Crowborough",
-    "Dzivarasekwa",
-    "Eastlea",
-    "Eastview",
-    "Emerald Hill",
-    "Epworth",
-    "Graniteside",
-    "Greendale",
-    "Glen Lorne",
-    "Glen Norah",
-    "Glen View",
-    "Glen Forest",
-    "Gunhill",
-    "Hatcliffe",
-    "Hatfield",
-    "Helensvale",
-    "Highfield",
-    "Highlands",
-    "Hillside",
-    "Hogerty Hill",
-    "Houghton Park",
-    "Kambuzuma",
-    "Kensington",
-    "Komarock",
-    "Kuwadzana",
-    "Letombo Park",
-    "Mabelreign",
-    "Mandara",
-    "Marlborough",
-    "Mbare",
-    "Meyrick Park",
-    "Milton Park",
-    "Mount Hampden",
-    "Mount Pleasant",
-    "Msasa",
-    "Newlands",
-    "Prospect",
-    "Quinnington",
-    "Ridgeview",
-    "Rolf Valley",
-    "Rugare",
-    "Sandton Park",
-    "Sentosa",
-    "Shawasha Hills",
-    "Southerton",
-    "Strathaven",
-    "Sunningdale",
-    "Sunridge",
-    "Tafara",
-    "The Grange",
-    "Tynwald",
-    "Tynwald South",
-    "Vainona",
-    "Warren Park",
-    "Waterfalls",
-    "Westgate",
-    "Westlea",
-    "Willowvale",
-    "Windsor Park",
-    "Workington",
-    "Woodlands",
-    "Zimre Park",
-  ];
+  const locationSnapshot = await getLocationsSnapshot();
+  const fallbackCities = Array.isArray(locationSnapshot?.cities)
+    ? locationSnapshot.cities.map((city) => toSafeString(city?.city_name)).filter(Boolean)
+    : [];
+  const fallbackSuburbsByCity =
+    locationSnapshot?.suburbsByCity && typeof locationSnapshot.suburbsByCity === "object"
+      ? locationSnapshot.suburbsByCity
+      : {};
 
   if (!process.env.MONGODB_URI) {
     const published = seedListings.filter((listing) => {
@@ -750,23 +646,23 @@ export async function getListingFacets() {
     }, {});
 
     const citiesMerged = Array.from(
-      new Set([...cities, ...extraCities].map((value) => toSafeString(value).trim()).filter(Boolean)),
+      new Set([...cities, ...fallbackCities].map((value) => toSafeString(value).trim()).filter(Boolean)),
     ).sort((a, b) => a.localeCompare(b));
 
-    const harareExtras = harareSuburbs
-      .map((name) => `${name}, Harare`)
-      .map((value) => toSafeString(value).trim())
-      .filter(Boolean);
-
-    const suburbsMerged = Array.from(new Set([...suburbs, ...harareExtras])).sort((a, b) =>
-      a.localeCompare(b),
-    );
-
-    const suburbsByCityMerged = { ...suburbsByCity };
-    const harareExisting = Array.isArray(suburbsByCityMerged.Harare) ? suburbsByCityMerged.Harare : [];
-    suburbsByCityMerged.Harare = Array.from(new Set([...harareExisting, ...harareExtras])).sort((a, b) =>
-      a.localeCompare(b),
-    );
+    const suburbsByCityMerged = {};
+    for (const cityName of citiesMerged) {
+      const fromListings = Array.isArray(suburbsByCity[cityName]) ? suburbsByCity[cityName] : [];
+      const fromLocations = Array.isArray(fallbackSuburbsByCity[cityName]) ? fallbackSuburbsByCity[cityName] : [];
+      suburbsByCityMerged[cityName] = mergeStringLists(fromListings, fromLocations);
+    }
+    const suburbsMerged = Array.from(
+      new Set(
+        Object.values(suburbsByCityMerged)
+          .flatMap((list) => (Array.isArray(list) ? list : []))
+          .map((value) => toSafeString(value).trim())
+          .filter(Boolean),
+      ),
+    ).sort((a, b) => a.localeCompare(b));
 
     return {
       cities: citiesMerged,
@@ -860,23 +756,23 @@ export async function getListingFacets() {
   }
 
   const citiesMerged = Array.from(
-    new Set([...cities, ...extraCities].map((value) => toSafeString(value).trim()).filter(Boolean)),
+    new Set([...cities, ...fallbackCities].map((value) => toSafeString(value).trim()).filter(Boolean)),
   ).sort((a, b) => a.localeCompare(b));
 
-  const harareExtras = harareSuburbs
-    .map((name) => `${name}, Harare`)
-    .map((value) => toSafeString(value).trim())
-    .filter(Boolean);
-
-  const suburbsMerged = Array.from(new Set([...suburbs, ...harareExtras])).sort((a, b) =>
-    a.localeCompare(b),
-  );
-
-  const suburbsByCityMerged = { ...suburbsByCity };
-  const harareExisting = Array.isArray(suburbsByCityMerged.Harare) ? suburbsByCityMerged.Harare : [];
-  suburbsByCityMerged.Harare = Array.from(new Set([...harareExisting, ...harareExtras])).sort((a, b) =>
-    a.localeCompare(b),
-  );
+  const suburbsByCityMerged = {};
+  for (const cityName of citiesMerged) {
+    const fromListings = Array.isArray(suburbsByCity[cityName]) ? suburbsByCity[cityName] : [];
+    const fromLocations = Array.isArray(fallbackSuburbsByCity[cityName]) ? fallbackSuburbsByCity[cityName] : [];
+    suburbsByCityMerged[cityName] = mergeStringLists(fromListings, fromLocations);
+  }
+  const suburbsMerged = Array.from(
+    new Set(
+      Object.values(suburbsByCityMerged)
+        .flatMap((list) => (Array.isArray(list) ? list : []))
+        .map((value) => toSafeString(value).trim())
+        .filter(Boolean),
+    ),
+  ).sort((a, b) => a.localeCompare(b));
 
   return {
     cities: citiesMerged,

@@ -49,6 +49,64 @@ function inferCityFromSuburb(suburb) {
   return parts[parts.length - 1];
 }
 
+function normalizeLocationName(value) {
+  return typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
+}
+
+function normalizeLocationKey(value) {
+  return normalizeLocationName(value).toLowerCase();
+}
+
+const LocationCitySchema = new mongoose.Schema(
+  {
+    cityId: { type: String, required: true, trim: true, lowercase: true, unique: true, index: true },
+    cityName: { type: String, required: true, trim: true },
+    cityNameLower: { type: String, required: true, trim: true, lowercase: true, index: true },
+  },
+  { timestamps: true },
+);
+
+LocationCitySchema.pre("validate", function normalizeLocationCity() {
+  this.cityName = normalizeLocationName(this.cityName);
+  this.cityNameLower = normalizeLocationKey(this.cityName);
+});
+
+const LocationSuburbSchema = new mongoose.Schema(
+  {
+    suburbId: { type: String, required: true, trim: true, lowercase: true, unique: true, index: true },
+    suburbName: { type: String, required: true, trim: true },
+    suburbNameLower: { type: String, required: true, trim: true, lowercase: true, index: true },
+    cityId: { type: String, required: true, trim: true, lowercase: true, index: true },
+    cityRef: { type: mongoose.Schema.Types.ObjectId, ref: "LocationCity", required: true, index: true },
+  },
+  { timestamps: true },
+);
+
+LocationSuburbSchema.index({ cityId: 1, suburbNameLower: 1 }, { unique: true });
+
+LocationSuburbSchema.pre("validate", function normalizeLocationSuburb() {
+  this.suburbName = normalizeLocationName(this.suburbName);
+  this.suburbNameLower = normalizeLocationKey(this.suburbName);
+});
+
+const LocationCatalogSchema = new mongoose.Schema(
+  {
+    _id: { type: String, default: "default" },
+    version: { type: Number, required: true, default: 1, min: 1 },
+    updatedAtMs: { type: Number, required: true, default: () => Date.now() },
+  },
+  { timestamps: true },
+);
+
+export const LocationCity =
+  mongoose.models.LocationCity || mongoose.model("LocationCity", LocationCitySchema);
+
+export const LocationSuburb =
+  mongoose.models.LocationSuburb || mongoose.model("LocationSuburb", LocationSuburbSchema);
+
+export const LocationCatalog =
+  mongoose.models.LocationCatalog || mongoose.model("LocationCatalog", LocationCatalogSchema);
+
 const ListingSchema = new mongoose.Schema(
   {
     title: { type: String, required: true, trim: true },

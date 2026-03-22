@@ -8,6 +8,7 @@
     "start": "next start -p 3000",
     "lint": "eslint",
     "seed": "node scripts/seed.mjs",
+    "migrate:locations": "node scripts/migrations/20260322-locations-catalog.mjs",
     "test": "vitest run"
   },
   "dependencies": {

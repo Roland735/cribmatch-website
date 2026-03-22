@@ -37,6 +37,12 @@ export default async function AdminLayout({ children }) {
                 Listings
               </Link>
               <Link
+                href="/admin/locations"
+                className="rounded-xl px-3 py-2 transition hover:bg-white/5 hover:text-white"
+              >
+                Locations
+              </Link>
+              <Link
                 href="/agent"
                 className="rounded-xl px-3 py-2 transition hover:bg-white/5 hover:text-white"
               >

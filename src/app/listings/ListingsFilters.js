@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 function toSafeString(value) {
@@ -30,6 +30,7 @@ function parseCsv(value) {
 }
 
 const ALLOWED_SORTS = new Set(["newest", "price_asc", "price_desc", "beds_asc", "beds_desc"]);
+const LOCATION_CACHE_KEY = "cribmatch.locations.snapshot";
 
 function toNonNegativeNumber(value, { integer = false } = {}) {
   const number = toSafeNumber(value);
@@ -156,6 +157,13 @@ export default function ListingsFilters({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const [runtimeCities, setRuntimeCities] = useState(
+    Array.isArray(cities) ? cities : [],
+  );
+  const [runtimeSuburbsByCity, setRuntimeSuburbsByCity] = useState(
+    suburbsByCity && typeof suburbsByCity === "object" ? suburbsByCity : {},
+  );
+  const currentEtagRef = useRef("");
 
   const derived = useMemo(() => {
     const sortRaw = toSafeString(searchParams.get("sort")) || "newest";
@@ -208,6 +216,79 @@ export default function ListingsFilters({
     setPhotos(derived.photos);
     setSelectedFeatures(derived.selectedFeatures);
   }, [derived]);
+
+  useEffect(() => {
+    setRuntimeCities(Array.isArray(cities) ? cities : []);
+    setRuntimeSuburbsByCity(
+      suburbsByCity && typeof suburbsByCity === "object" ? suburbsByCity : {},
+    );
+  }, [cities, suburbsByCity]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    function applyPayload(payload) {
+      if (!mounted || !payload || typeof payload !== "object") return;
+      const nextCities = Array.isArray(payload.cities)
+        ? payload.cities
+            .map((item) =>
+              typeof item === "string" ? item.trim() : String(item?.city_name || "").trim(),
+            )
+            .filter(Boolean)
+        : [];
+      const nextSuburbsByCity =
+        payload.suburbsByCity && typeof payload.suburbsByCity === "object"
+          ? payload.suburbsByCity
+          : {};
+      if (nextCities.length) {
+        setRuntimeCities(nextCities);
+      }
+      if (Object.keys(nextSuburbsByCity).length) {
+        setRuntimeSuburbsByCity(nextSuburbsByCity);
+      }
+      try {
+        localStorage.setItem(
+          LOCATION_CACHE_KEY,
+          JSON.stringify({
+            cities: nextCities,
+            suburbsByCity: nextSuburbsByCity,
+            savedAt: Date.now(),
+          }),
+        );
+      } catch {
+      }
+    }
+
+    async function refreshLocations() {
+      try {
+        const response = await fetch("/api/locations", {
+          method: "GET",
+          cache: "no-store",
+          headers: currentEtagRef.current ? { "if-none-match": currentEtagRef.current } : {},
+        });
+        if (response.status === 304) return;
+        const etag = response.headers.get("etag");
+        if (etag) currentEtagRef.current = etag;
+        const payload = await response.json().catch(() => ({}));
+        applyPayload(payload);
+      } catch {
+        try {
+          const raw = localStorage.getItem(LOCATION_CACHE_KEY);
+          if (!raw) return;
+          const cached = JSON.parse(raw);
+          applyPayload(cached);
+        } catch {
+        }
+      }
+    }
+
+    refreshLocations();
+    const timer = setInterval(refreshLocations, 15000);
+    return () => {
+      mounted = false;
+      clearInterval(timer);
+    };
+  }, []);
 
   const activeChips = useMemo(() => {
     const chips = [];
@@ -294,9 +375,9 @@ export default function ListingsFilters({
 
   const availableSuburbs = useMemo(() => {
     if (!city.trim()) return [];
-    const list = suburbsByCity?.[city.trim()];
+    const list = runtimeSuburbsByCity?.[city.trim()];
     return Array.isArray(list) ? list : [];
-  }, [city, suburbsByCity]);
+  }, [city, runtimeSuburbsByCity]);
 
   const availablePropertyTypes = useMemo(() => {
     const mapping = propertyTypesByCategory && typeof propertyTypesByCategory === "object"
@@ -397,7 +478,7 @@ export default function ListingsFilters({
             }}
           >
             <option value="">All cities</option>
-            {cities.map((item) => (
+            {runtimeCities.map((item) => (
               <option key={item} value={item}>
                 {item}
               </option>

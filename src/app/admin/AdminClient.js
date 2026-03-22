@@ -611,6 +611,14 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
     }
   }, [activeTab, loadLocationFacets]);
 
+  useEffect(() => {
+    if (activeTab !== "listings") return undefined;
+    const timer = setInterval(() => {
+      loadLocationFacets();
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [activeTab, loadLocationFacets]);
+
   const [isFormOpen, setIsFormOpen] = useState(false);
 
   useEffect(() => {
