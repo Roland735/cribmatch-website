@@ -53,36 +53,48 @@ export default function AdminLocationsClient() {
     setLoading(true);
     setError("");
     try {
-      const [citiesResponse, suburbsResponse, publicResponse] = await Promise.all([
+      const [citiesResult, suburbsResult, publicResult] = await Promise.allSettled([
         fetch("/api/admin/locations/cities", { method: "GET", cache: "no-store" }),
         fetch("/api/admin/locations/suburbs", { method: "GET", cache: "no-store" }),
         fetch("/api/locations", { method: "GET", cache: "no-store" }),
       ]);
+      if (citiesResult.status !== "fulfilled" || suburbsResult.status !== "fulfilled") {
+        throw new Error("Failed to load locations");
+      }
+      const citiesResponse = citiesResult.value;
+      const suburbsResponse = suburbsResult.value;
+      const publicResponse = publicResult.status === "fulfilled" ? publicResult.value : null;
       if (!citiesResponse.ok || !suburbsResponse.ok) throw new Error("Failed to load locations");
       const citiesPayload = await citiesResponse.json().catch(() => ({}));
       const suburbsPayload = await suburbsResponse.json().catch(() => ({}));
-      const publicPayload = await publicResponse.json().catch(() => ({}));
+      const publicPayload =
+        publicResponse && publicResponse.ok
+          ? await publicResponse.json().catch(() => ({}))
+          : {};
 
       const nextCities = Array.isArray(citiesPayload?.cities)
         ? citiesPayload.cities.map((city) => ({
-            city_id: toSafeString(city?.city_id),
-            city_name: toSafeString(city?.city_name),
-            active: city?.active !== false,
-          }))
+          city_id: toSafeString(city?.city_id),
+          city_name: toSafeString(city?.city_name),
+          active: city?.active !== false,
+        }))
         : [];
       const nextSuburbs = Array.isArray(suburbsPayload?.suburbs)
         ? suburbsPayload.suburbs.map((suburb) => ({
-            suburb_id: toSafeString(suburb?.suburb_id),
-            suburb_name: toSafeString(suburb?.suburb_name),
-            city_id: toSafeString(suburb?.city_id),
-            city_name: toSafeString(suburb?.city_name),
-            active: suburb?.active !== false,
-          }))
+          suburb_id: toSafeString(suburb?.suburb_id),
+          suburb_name: toSafeString(suburb?.suburb_name),
+          city_id: toSafeString(suburb?.city_id),
+          city_name: toSafeString(suburb?.city_name),
+          active: suburb?.active !== false,
+        }))
         : [];
 
       setCities(nextCities);
       setSuburbs(nextSuburbs);
-      setVersion(Number(publicPayload?.version || 0));
+      setVersion((current) => {
+        const next = Number(publicPayload?.version || 0);
+        return next > 0 ? next : current;
+      });
       if (!selectedCityId && nextCities[0]?.city_id) {
         setSelectedCityId(nextCities[0].city_id);
       }
@@ -129,7 +141,18 @@ export default function AdminLocationsClient() {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(toSafeString(payload?.error) || "Could not create city");
       setNewCityName("");
-      await loadLocations();
+      const createdCity = payload?.city;
+      if (createdCity && typeof createdCity === "object") {
+        setCities((current) => {
+          const cityId = toSafeString(createdCity?.city_id);
+          const cityName = toSafeString(createdCity?.city_name);
+          if (!cityId || !cityName) return current;
+          const filtered = current.filter((city) => city.city_id !== cityId);
+          return [...filtered, { city_id: cityId, city_name: cityName, active: createdCity?.active !== false }]
+            .sort((a, b) => a.city_name.localeCompare(b.city_name));
+        });
+      }
+      await loadLocations().catch(() => null);
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "Could not create city");
     } finally {
@@ -190,7 +213,32 @@ export default function AdminLocationsClient() {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(toSafeString(payload?.error) || "Could not create suburb");
       setNewSuburbName("");
-      await loadLocations();
+      const createdSuburb = payload?.suburb;
+      if (createdSuburb && typeof createdSuburb === "object") {
+        setSuburbs((current) => {
+          const suburbId = toSafeString(createdSuburb?.suburb_id);
+          const suburbName = toSafeString(createdSuburb?.suburb_name);
+          const cityId = toSafeString(createdSuburb?.city_id);
+          const cityName = toSafeString(createdSuburb?.city_name);
+          if (!suburbId || !suburbName || !cityId) return current;
+          const filtered = current.filter((suburb) => suburb.suburb_id !== suburbId);
+          return [
+            ...filtered,
+            {
+              suburb_id: suburbId,
+              suburb_name: suburbName,
+              city_id: cityId,
+              city_name: cityName,
+              active: createdSuburb?.active !== false,
+            },
+          ].sort((a, b) => {
+            const byCity = a.city_id.localeCompare(b.city_id);
+            if (byCity !== 0) return byCity;
+            return a.suburb_name.localeCompare(b.suburb_name);
+          });
+        });
+      }
+      await loadLocations().catch(() => null);
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "Could not create suburb");
     } finally {
