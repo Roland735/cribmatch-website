@@ -137,4 +137,30 @@ describe("PATCH /api/listings/[id] approval flow", () => {
     expect(response.status).toBe(200);
     expect(findByIdAndUpdateMock).toHaveBeenCalledTimes(1);
   });
+
+  test("allows admin approval even when legacy property type is invalid", async () => {
+    getServerSessionMock.mockResolvedValue({
+      user: { phoneNumber: "+263770000001", role: "admin" },
+    });
+    findByIdMock.mockResolvedValueOnce({
+      _id: "abc123",
+      listerPhoneNumber: "+263771000001",
+      propertyCategory: "residential",
+      propertyType: "Legacy Flat",
+      title: "Listing",
+      city: "Harare",
+      suburb: "Avondale",
+      pricePerMonth: 800,
+      deposit: 100,
+      bedrooms: 2,
+      listerType: "agent",
+    });
+
+    const response = await PATCH(makePatchRequest({ approved: true }), params());
+
+    expect(response.status).toBe(200);
+    expect(findByIdAndUpdateMock).toHaveBeenCalledTimes(1);
+    const updatePayload = findByIdAndUpdateMock.mock.calls[0][1];
+    expect(updatePayload.approved).toBe(true);
+  });
 });

@@ -219,6 +219,36 @@ export async function PATCH(request, { params }) {
     update.marketedAt = body.marketed ? new Date() : null;
   }
 
+  const hasListingFieldChanges =
+    propertyCategoryRaw ||
+    propertyTypeRaw ||
+    typeof body?.title === "string" ||
+    typeof body?.city === "string" ||
+    typeof body?.suburb === "string" ||
+    typeof body?.pricePerMonth === "number" ||
+    typeof body?.deposit === "number" ||
+    typeof body?.bedrooms === "number" ||
+    typeof body?.description === "string" ||
+    Array.isArray(body?.features) ||
+    Array.isArray(body?.images) ||
+    typeof body?.contactName === "string" ||
+    typeof body?.contactPhone === "string" ||
+    typeof body?.contactWhatsApp === "string" ||
+    typeof body?.contactEmail === "string" ||
+    typeof body?.occupancy === "string" ||
+    typeof body?.genderPreference === "string" ||
+    typeof body?.duration === "string" ||
+    typeof body?.numberOfStudents === "number";
+
+  if (!hasListingFieldChanges) {
+    update.updatedAt = now;
+    const moderated = await Listing.findByIdAndUpdate(id, update, { new: true });
+    if (!moderated) {
+      return Response.json({ error: "Not found" }, { status: 404 });
+    }
+    return Response.json({ listing: serializeListing(moderated) });
+  }
+
   const nextCategoryValidated = typeof update.propertyCategory === "string" ? update.propertyCategory : existing.propertyCategory;
   const nextAllowedTypes = KNOWN_PROPERTY_TYPES_BY_CATEGORY[nextCategoryValidated] || [];
   const nextTypeValidated = typeof update.propertyType === "string" ? update.propertyType : existing.propertyType;

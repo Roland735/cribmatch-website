@@ -769,6 +769,9 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
           current ? { ...current, status: nextStatus } : current,
         );
       }
+    } else {
+      const data = await response.json().catch(() => ({}));
+      alert(data?.error || "Failed to update status");
     }
   }
 
@@ -786,6 +789,9 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
           current ? { ...current, approved: nextApproved } : current,
         );
       }
+    } else {
+      const data = await response.json().catch(() => ({}));
+      alert(data?.error || "Failed to update approval");
     }
   }
 
