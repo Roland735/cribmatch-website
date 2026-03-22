@@ -4,24 +4,10 @@ import { MongoClient } from "mongodb";
 
 const DEFAULT_CITIES = [
   "Harare",
-  "Chitungwiza",
-  "Bulawayo",
-  "Mutare",
-  "Gweru",
-  "Masvingo",
-  "Victoria Falls",
-  "Norton",
 ];
 
 const DEFAULT_SUBURBS_BY_CITY = {
   Harare: ["Borrowdale", "Mount Pleasant", "Avondale", "Highlands", "Belgravia", "Mabelreign", "Eastlea", "Chisipite", "Glen Lorne", "Greendale", "Gunhill"],
-  Chitungwiza: ["Chitungwiza Central", "Zengeza", "Seke", "St Mary's"],
-  Bulawayo: ["Hillside", "Entumbane", "Famona", "Burnside", "Belmont", "Nkulumane"],
-  Mutare: ["Dangamvura", "Sakubva", "Morningside", "Fern Valley"],
-  Gweru: ["Mkoba", "Ascot"],
-  Masvingo: ["Mucheke"],
-  "Victoria Falls": ["Victoria Falls Town"],
-  Norton: ["Norton Town"],
 };
 
 function parseEnvLine(line) {
@@ -97,25 +83,15 @@ async function main() {
   const locationSuburbs = db.collection("locationsuburbs");
   const locationCatalogs = db.collection("locationcatalogs");
 
-  const [listingCities, listingSuburbs] = await Promise.all([
-    listings.distinct("city", {}),
-    listings.distinct("suburb", {}),
-  ]);
+  const listingSuburbs = await listings.distinct("suburb", {});
 
   const citySet = new Set(DEFAULT_CITIES.map((city) => normalizeName(city)).filter(Boolean));
-  for (const city of Array.isArray(listingCities) ? listingCities : []) {
-    const normalized = normalizeName(city);
-    if (normalized) citySet.add(normalized);
-  }
-  for (const suburbLine of Array.isArray(listingSuburbs) ? listingSuburbs : []) {
-    const parsed = parseSuburbAndCity(suburbLine);
-    if (parsed.city) citySet.add(parsed.city);
-  }
 
   const cityDocs = Array.from(citySet).map((cityName) => ({
     cityId: toSlug(cityName),
     cityName,
     cityNameLower: cityName.toLowerCase(),
+    active: true,
   })).filter((city) => city.cityId && city.cityName);
 
   if (cityDocs.length) {
@@ -135,6 +111,8 @@ async function main() {
   const cityRefById = new Map(cityRows.map((row) => [row.cityId, row]));
   const defaultCityId = toSlug("Harare");
 
+  await locationCities.updateMany({ cityId: { $ne: defaultCityId } }, { $set: { active: false } });
+
   const suburbByKey = new Map();
   for (const [cityName, suburbs] of Object.entries(DEFAULT_SUBURBS_BY_CITY)) {
     const cityId = toSlug(cityName);
@@ -149,6 +127,7 @@ async function main() {
     const suburbName = normalizeName(parsed.suburb);
     if (!suburbName) continue;
     const cityId = toSlug(parsed.city || "Harare");
+    if (cityId !== defaultCityId) continue;
     suburbByKey.set(`${cityId}:${suburbName.toLowerCase()}`, { cityId, suburbName });
   }
 
@@ -161,6 +140,7 @@ async function main() {
       suburbNameLower: entry.suburbName.toLowerCase(),
       cityId: cityRef.cityId,
       cityRef: cityRef._id,
+      active: cityRef.cityId === defaultCityId,
     };
   }).filter(Boolean);
 
@@ -176,6 +156,8 @@ async function main() {
       { ordered: false },
     );
   }
+
+  await locationSuburbs.updateMany({ cityId: { $ne: defaultCityId } }, { $set: { active: false } });
 
   await locationCatalogs.updateOne(
     { _id: "default" },

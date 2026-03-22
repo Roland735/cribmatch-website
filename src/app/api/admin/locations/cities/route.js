@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { dbConnect, LocationCity } from "@/lib/db";
-import { bumpLocationsVersion, getLocationsSnapshot, invalidateLocationsCache } from "@/lib/locations";
+import { bumpLocationsVersion, invalidateLocationsCache } from "@/lib/locations";
 
 export const runtime = "nodejs";
 
@@ -27,8 +27,18 @@ export async function GET() {
   if (!(await requireAdmin())) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const snapshot = await getLocationsSnapshot({ skipCache: true });
-  return Response.json({ version: snapshot.version, cities: snapshot.cities });
+  await dbConnect();
+  const cities = await LocationCity.find({}, { cityId: 1, cityName: 1, active: 1, _id: 0 })
+    .sort({ cityNameLower: 1 })
+    .lean()
+    .exec();
+  return Response.json({
+    cities: (Array.isArray(cities) ? cities : []).map((city) => ({
+      city_id: city.cityId,
+      city_name: city.cityName,
+      active: city.active !== false,
+    })),
+  });
 }
 
 export async function POST(request) {
@@ -38,6 +48,7 @@ export async function POST(request) {
 
   const body = await request.json().catch(() => ({}));
   const cityName = normalizeName(body?.city_name || body?.cityName);
+  const active = body?.active !== false;
   if (!cityName) {
     return Response.json({ error: "City name is required" }, { status: 400 });
   }
@@ -66,6 +77,7 @@ export async function POST(request) {
     cityId,
     cityName,
     cityNameLower: cityName.toLowerCase(),
+    active,
   });
 
   await bumpLocationsVersion();

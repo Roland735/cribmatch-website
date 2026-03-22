@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 const getServerSessionMock = vi.fn();
 const dbConnectMock = vi.fn();
 const findOneMock = vi.fn();
+const findMock = vi.fn();
 const createMock = vi.fn();
-const getLocationsSnapshotMock = vi.fn();
 const bumpLocationsVersionMock = vi.fn();
 const invalidateLocationsCacheMock = vi.fn();
 
@@ -16,12 +16,12 @@ vi.mock("@/lib/db", () => ({
   dbConnect: (...args) => dbConnectMock(...args),
   LocationCity: {
     findOne: (...args) => findOneMock(...args),
+    find: (...args) => findMock(...args),
     create: (...args) => createMock(...args),
   },
 }));
 
 vi.mock("@/lib/locations", () => ({
-  getLocationsSnapshot: (...args) => getLocationsSnapshotMock(...args),
   bumpLocationsVersion: (...args) => bumpLocationsVersionMock(...args),
   invalidateLocationsCache: (...args) => invalidateLocationsCacheMock(...args),
 }));
@@ -41,14 +41,17 @@ describe("admin city locations route", () => {
 
   test("returns city list for admins", async () => {
     getServerSessionMock.mockResolvedValue({ user: { role: "admin" } });
-    getLocationsSnapshotMock.mockResolvedValue({
-      version: 2,
-      cities: [{ city_id: "harare", city_name: "Harare" }],
+    findMock.mockReturnValue({
+      sort: () => ({
+        lean: () => ({
+          exec: () => Promise.resolve([{ cityId: "harare", cityName: "Harare", active: true }]),
+        }),
+      }),
     });
     const response = await GET();
     expect(response.status).toBe(200);
     const payload = await response.json();
-    expect(payload.version).toBe(2);
+    expect(Array.isArray(payload.cities)).toBe(true);
     expect(payload.cities[0].city_name).toBe("Harare");
   });
 

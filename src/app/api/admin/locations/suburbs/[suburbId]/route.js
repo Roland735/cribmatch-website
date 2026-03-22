@@ -31,6 +31,7 @@ export async function GET(_request, { params }) {
       suburb_name: suburb.suburbName,
       city_id: suburb.cityId,
       city_name: city?.cityName || "",
+      active: suburb.active !== false,
     },
   });
 }
@@ -43,10 +44,16 @@ export async function PATCH(request, { params }) {
   const body = await request.json().catch(() => ({}));
   const suburbName = normalizeName(body?.suburb_name || body?.suburbName);
   const cityId = normalizeName(body?.city_id || body?.cityId).toLowerCase();
-  if (!suburbName) {
+  const hasSuburbName = typeof body?.suburb_name === "string" || typeof body?.suburbName === "string";
+  const hasCityId = typeof body?.city_id === "string" || typeof body?.cityId === "string";
+  const hasActive = typeof body?.active === "boolean";
+  if (!hasSuburbName && !hasCityId && !hasActive) {
+    return Response.json({ error: "Provide suburb_name, city_id, or active" }, { status: 400 });
+  }
+  if (hasSuburbName && !suburbName) {
     return Response.json({ error: "Suburb name is required" }, { status: 400 });
   }
-  if (!cityId) {
+  if (hasCityId && !cityId) {
     return Response.json({ error: "City ID is required" }, { status: 400 });
   }
 
@@ -55,26 +62,36 @@ export async function PATCH(request, { params }) {
   if (!suburb) {
     return Response.json({ error: "Suburb not found" }, { status: 404 });
   }
-  const city = await LocationCity.findOne({ cityId }).lean().exec();
-  if (!city?._id) {
-    return Response.json({ error: "City not found" }, { status: 404 });
+  let city = await LocationCity.findOne({ cityId: suburb.cityId }).lean().exec();
+  if (hasCityId || hasSuburbName) {
+    const targetCityId = hasCityId ? cityId : suburb.cityId;
+    city = await LocationCity.findOne({ cityId: targetCityId }).lean().exec();
+    if (!city?._id) {
+      return Response.json({ error: "City not found" }, { status: 404 });
+    }
+    const duplicate = await LocationSuburb.findOne({
+      cityId: targetCityId,
+      suburbNameLower: (hasSuburbName ? suburbName : suburb.suburbName).toLowerCase(),
+      suburbId: { $ne: suburbId },
+    })
+      .lean()
+      .exec();
+    if (duplicate) {
+      return Response.json({ error: "Suburb already exists in this city" }, { status: 409 });
+    }
   }
 
-  const duplicate = await LocationSuburb.findOne({
-    cityId,
-    suburbNameLower: suburbName.toLowerCase(),
-    suburbId: { $ne: suburbId },
-  })
-    .lean()
-    .exec();
-  if (duplicate) {
-    return Response.json({ error: "Suburb already exists in this city" }, { status: 409 });
+  if (hasSuburbName) {
+    suburb.suburbName = suburbName;
+    suburb.suburbNameLower = suburbName.toLowerCase();
   }
-
-  suburb.suburbName = suburbName;
-  suburb.suburbNameLower = suburbName.toLowerCase();
-  suburb.cityId = cityId;
-  suburb.cityRef = city._id;
+  if (hasCityId && city?._id) {
+    suburb.cityId = cityId;
+    suburb.cityRef = city._id;
+  }
+  if (hasActive) {
+    suburb.active = body.active;
+  }
   await suburb.save();
 
   await bumpLocationsVersion();
@@ -86,7 +103,8 @@ export async function PATCH(request, { params }) {
       suburb_id: suburb.suburbId,
       suburb_name: suburb.suburbName,
       city_id: suburb.cityId,
-      city_name: city.cityName,
+      city_name: city?.cityName || "",
+      active: suburb.active !== false,
     },
   });
 }

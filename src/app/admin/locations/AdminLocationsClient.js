@@ -13,6 +13,8 @@ export default function AdminLocationsClient() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [selectedCityIds, setSelectedCityIds] = useState(new Set());
+  const [selectedSuburbIds, setSelectedSuburbIds] = useState(new Set());
 
   const [newCityName, setNewCityName] = useState("");
   const [editingCityId, setEditingCityId] = useState("");
@@ -51,26 +53,36 @@ export default function AdminLocationsClient() {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/locations", { method: "GET", cache: "no-store" });
-      if (!response.ok) throw new Error("Failed to load locations");
-      const payload = await response.json().catch(() => ({}));
-      const nextCities = Array.isArray(payload?.cities)
-        ? payload.cities.map((city) => ({
+      const [citiesResponse, suburbsResponse, publicResponse] = await Promise.all([
+        fetch("/api/admin/locations/cities", { method: "GET", cache: "no-store" }),
+        fetch("/api/admin/locations/suburbs", { method: "GET", cache: "no-store" }),
+        fetch("/api/locations", { method: "GET", cache: "no-store" }),
+      ]);
+      if (!citiesResponse.ok || !suburbsResponse.ok) throw new Error("Failed to load locations");
+      const citiesPayload = await citiesResponse.json().catch(() => ({}));
+      const suburbsPayload = await suburbsResponse.json().catch(() => ({}));
+      const publicPayload = await publicResponse.json().catch(() => ({}));
+
+      const nextCities = Array.isArray(citiesPayload?.cities)
+        ? citiesPayload.cities.map((city) => ({
             city_id: toSafeString(city?.city_id),
             city_name: toSafeString(city?.city_name),
+            active: city?.active !== false,
           }))
         : [];
-      const nextSuburbs = Array.isArray(payload?.suburbs)
-        ? payload.suburbs.map((suburb) => ({
+      const nextSuburbs = Array.isArray(suburbsPayload?.suburbs)
+        ? suburbsPayload.suburbs.map((suburb) => ({
             suburb_id: toSafeString(suburb?.suburb_id),
             suburb_name: toSafeString(suburb?.suburb_name),
             city_id: toSafeString(suburb?.city_id),
             city_name: toSafeString(suburb?.city_name),
+            active: suburb?.active !== false,
           }))
         : [];
+
       setCities(nextCities);
       setSuburbs(nextSuburbs);
-      setVersion(Number(payload?.version || 0));
+      setVersion(Number(publicPayload?.version || 0));
       if (!selectedCityId && nextCities[0]?.city_id) {
         setSelectedCityId(nextCities[0].city_id);
       }
@@ -112,12 +124,10 @@ export default function AdminLocationsClient() {
       const response = await fetch("/api/admin/locations/cities", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ city_name: cityName }),
+        body: JSON.stringify({ city_name: cityName, active: true }),
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(toSafeString(payload?.error) || "Could not create city");
-      }
+      if (!response.ok) throw new Error(toSafeString(payload?.error) || "Could not create city");
       setNewCityName("");
       await loadLocations();
     } catch (createError) {
@@ -139,9 +149,7 @@ export default function AdminLocationsClient() {
         body: JSON.stringify({ city_name: cityName }),
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(toSafeString(payload?.error) || "Could not update city");
-      }
+      if (!response.ok) throw new Error(toSafeString(payload?.error) || "Could not update city");
       setEditingCityId("");
       setEditingCityName("");
       await loadLocations();
@@ -156,13 +164,9 @@ export default function AdminLocationsClient() {
     setSaving(true);
     setError("");
     try {
-      const response = await fetch(`/api/admin/locations/cities/${cityId}`, {
-        method: "DELETE",
-      });
+      const response = await fetch(`/api/admin/locations/cities/${cityId}`, { method: "DELETE" });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(toSafeString(payload?.error) || "Could not delete city");
-      }
+      if (!response.ok) throw new Error(toSafeString(payload?.error) || "Could not delete city");
       await loadLocations();
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : "Could not delete city");
@@ -181,12 +185,10 @@ export default function AdminLocationsClient() {
       const response = await fetch("/api/admin/locations/suburbs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ city_id: selectedCityId, suburb_name: suburbName }),
+        body: JSON.stringify({ city_id: selectedCityId, suburb_name: suburbName, active: true }),
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(toSafeString(payload?.error) || "Could not create suburb");
-      }
+      if (!response.ok) throw new Error(toSafeString(payload?.error) || "Could not create suburb");
       setNewSuburbName("");
       await loadLocations();
     } catch (createError) {
@@ -205,15 +207,10 @@ export default function AdminLocationsClient() {
       const response = await fetch(`/api/admin/locations/suburbs/${suburbId}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          city_id: editingSuburbCityId,
-          suburb_name: suburbName,
-        }),
+        body: JSON.stringify({ city_id: editingSuburbCityId, suburb_name: suburbName }),
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(toSafeString(payload?.error) || "Could not update suburb");
-      }
+      if (!response.ok) throw new Error(toSafeString(payload?.error) || "Could not update suburb");
       setEditingSuburbId("");
       setEditingSuburbName("");
       setEditingSuburbCityId("");
@@ -229,13 +226,9 @@ export default function AdminLocationsClient() {
     setSaving(true);
     setError("");
     try {
-      const response = await fetch(`/api/admin/locations/suburbs/${suburbId}`, {
-        method: "DELETE",
-      });
+      const response = await fetch(`/api/admin/locations/suburbs/${suburbId}`, { method: "DELETE" });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(toSafeString(payload?.error) || "Could not delete suburb");
-      }
+      if (!response.ok) throw new Error(toSafeString(payload?.error) || "Could not delete suburb");
       await loadLocations();
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : "Could not delete suburb");
@@ -243,6 +236,88 @@ export default function AdminLocationsClient() {
       setSaving(false);
     }
   }
+
+  async function toggleCityActive(cityId, nextActive) {
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/admin/locations/cities/${cityId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ active: nextActive }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(toSafeString(payload?.error) || "Could not update city status");
+      await loadLocations();
+    } catch (statusError) {
+      setError(statusError instanceof Error ? statusError.message : "Could not update city status");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function toggleSuburbActive(suburbId, nextActive) {
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/admin/locations/suburbs/${suburbId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ active: nextActive }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(toSafeString(payload?.error) || "Could not update suburb status");
+      await loadLocations();
+    } catch (statusError) {
+      setError(statusError instanceof Error ? statusError.message : "Could not update suburb status");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function runBulk(target, action, ids = []) {
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch("/api/admin/locations/bulk", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ target, action, ids }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(toSafeString(payload?.error) || "Bulk action failed");
+      setSelectedCityIds(new Set());
+      setSelectedSuburbIds(new Set());
+      await loadLocations();
+    } catch (bulkError) {
+      setError(bulkError instanceof Error ? bulkError.message : "Bulk action failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function toggleCitySelection(cityId) {
+    setSelectedCityIds((current) => {
+      const next = new Set(current);
+      if (next.has(cityId)) next.delete(cityId);
+      else next.add(cityId);
+      return next;
+    });
+  }
+
+  function toggleSuburbSelection(suburbId) {
+    setSelectedSuburbIds((current) => {
+      const next = new Set(current);
+      if (next.has(suburbId)) next.delete(suburbId);
+      else next.add(suburbId);
+      return next;
+    });
+  }
+
+  const selectedCityList = Array.from(selectedCityIds);
+  const selectedSuburbList = Array.from(selectedSuburbIds);
+  const activeCitiesCount = cities.filter((city) => city.active !== false).length;
+  const activeSuburbsCount = suburbs.filter((suburb) => suburb.active !== false).length;
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
@@ -253,7 +328,9 @@ export default function AdminLocationsClient() {
             Version {version || 1}
           </span>
         </div>
-
+        <p className="mb-4 text-xs text-slate-400">
+          Active cities: {activeCitiesCount} / {cities.length}
+        </p>
         <form onSubmit={createCity} className="mb-4 flex gap-2">
           <input
             value={newCityName}
@@ -269,6 +346,41 @@ export default function AdminLocationsClient() {
             Add
           </button>
         </form>
+
+        <div className="mb-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => runBulk("cities", "activate", selectedCityList)}
+            disabled={saving || !selectedCityList.length}
+            className="rounded-lg border border-emerald-400/40 px-3 py-1 text-xs font-semibold text-emerald-200 disabled:opacity-60"
+          >
+            Activate selected
+          </button>
+          <button
+            type="button"
+            onClick={() => runBulk("cities", "deactivate", selectedCityList)}
+            disabled={saving || !selectedCityList.length}
+            className="rounded-lg border border-amber-400/40 px-3 py-1 text-xs font-semibold text-amber-200 disabled:opacity-60"
+          >
+            Deactivate selected
+          </button>
+          <button
+            type="button"
+            onClick={() => runBulk("cities", "delete", selectedCityList)}
+            disabled={saving || !selectedCityList.length}
+            className="rounded-lg border border-rose-400/40 px-3 py-1 text-xs font-semibold text-rose-300 disabled:opacity-60"
+          >
+            Delete selected
+          </button>
+          <button
+            type="button"
+            onClick={() => runBulk("cities", "harare_only", [])}
+            disabled={saving}
+            className="rounded-lg border border-violet-400/40 px-3 py-1 text-xs font-semibold text-violet-200 disabled:opacity-60"
+          >
+            Keep Harare only
+          </button>
+        </div>
 
         <div className="space-y-2">
           {cities.map((city) => (
@@ -301,11 +413,31 @@ export default function AdminLocationsClient() {
                 </div>
               ) : (
                 <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-semibold text-white">{city.city_name}</p>
-                    <p className="text-xs text-slate-400">{city.city_id}</p>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedCityIds.has(city.city_id)}
+                      onChange={() => toggleCitySelection(city.city_id)}
+                    />
+                    <div>
+                      <p className="text-sm font-semibold text-white">{city.city_name}</p>
+                      <p className="text-xs text-slate-400">{city.city_id}</p>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${city.active !== false ? "bg-emerald-500/20 text-emerald-200" : "bg-amber-500/20 text-amber-200"}`}
+                    >
+                      {city.active !== false ? "Active" : "Inactive"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => toggleCityActive(city.city_id, city.active === false)}
+                      disabled={saving}
+                      className="rounded-lg border border-white/15 px-3 py-1 text-xs font-semibold text-slate-200"
+                    >
+                      {city.active !== false ? "Deactivate" : "Activate"}
+                    </button>
                     <button
                       type="button"
                       onClick={() => {
@@ -334,6 +466,9 @@ export default function AdminLocationsClient() {
 
       <section className="rounded-2xl border border-white/10 bg-slate-900/50 p-5">
         <h2 className="mb-4 text-lg font-semibold text-white">Suburbs</h2>
+        <p className="mb-4 text-xs text-slate-400">
+          Active suburbs: {activeSuburbsCount} / {suburbs.length}
+        </p>
         <form onSubmit={createSuburb} className="mb-4 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
           <select
             value={selectedCityId}
@@ -361,6 +496,33 @@ export default function AdminLocationsClient() {
             Add
           </button>
         </form>
+
+        <div className="mb-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => runBulk("suburbs", "activate", selectedSuburbList)}
+            disabled={saving || !selectedSuburbList.length}
+            className="rounded-lg border border-emerald-400/40 px-3 py-1 text-xs font-semibold text-emerald-200 disabled:opacity-60"
+          >
+            Activate selected
+          </button>
+          <button
+            type="button"
+            onClick={() => runBulk("suburbs", "deactivate", selectedSuburbList)}
+            disabled={saving || !selectedSuburbList.length}
+            className="rounded-lg border border-amber-400/40 px-3 py-1 text-xs font-semibold text-amber-200 disabled:opacity-60"
+          >
+            Deactivate selected
+          </button>
+          <button
+            type="button"
+            onClick={() => runBulk("suburbs", "delete", selectedSuburbList)}
+            disabled={saving || !selectedSuburbList.length}
+            className="rounded-lg border border-rose-400/40 px-3 py-1 text-xs font-semibold text-rose-300 disabled:opacity-60"
+          >
+            Delete selected
+          </button>
+        </div>
 
         <div className="space-y-3">
           {cities.map((city) => {
@@ -411,8 +573,33 @@ export default function AdminLocationsClient() {
                         </>
                       ) : (
                         <>
-                          <p className="text-sm text-slate-100">{suburb.suburb_name}</p>
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="checkbox"
+                              checked={selectedSuburbIds.has(suburb.suburb_id)}
+                              onChange={() => toggleSuburbSelection(suburb.suburb_id)}
+                            />
+                            <div>
+                              <p className="text-sm text-slate-100">{suburb.suburb_name}</p>
+                              <p className="text-xs text-slate-500">
+                                {cityNameById.get(suburb.city_id) || suburb.city_id}
+                              </p>
+                            </div>
+                          </div>
                           <div className="flex items-center gap-2">
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${suburb.active !== false ? "bg-emerald-500/20 text-emerald-200" : "bg-amber-500/20 text-amber-200"}`}
+                            >
+                              {suburb.active !== false ? "Active" : "Inactive"}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => toggleSuburbActive(suburb.suburb_id, suburb.active === false)}
+                              disabled={saving}
+                              className="rounded-lg border border-white/15 px-3 py-1 text-xs font-semibold text-slate-200"
+                            >
+                              {suburb.active !== false ? "Deactivate" : "Activate"}
+                            </button>
                             <button
                               type="button"
                               onClick={() => {

@@ -1,32 +1,7 @@
 import { dbConnect, LocationCatalog, LocationCity, LocationSuburb } from "@/lib/db";
 
 const FALLBACK_CITY_NAMES = [
-  "Beitbridge",
-  "Bindura",
-  "Bulawayo",
-  "Chegutu",
-  "Chinhoyi",
-  "Chiredzi",
-  "Chipinge",
-  "Chitungwiza",
-  "Gokwe",
-  "Gwanda",
-  "Gweru",
   "Harare",
-  "Hwange",
-  "Kadoma",
-  "Kariba",
-  "Karoi",
-  "Kwekwe",
-  "Masvingo",
-  "Marondera",
-  "Mutare",
-  "Norton",
-  "Plumtree",
-  "Rusape",
-  "Ruwa",
-  "Victoria Falls",
-  "Zvishavane",
 ];
 
 const HARARE_SUBURBS = [
@@ -116,13 +91,6 @@ const HARARE_SUBURBS = [
 
 const FALLBACK_SUBURBS_BY_CITY = {
   Harare: HARARE_SUBURBS,
-  Chitungwiza: ["Chitungwiza Central", "Zengeza", "Seke", "St Mary's"],
-  Bulawayo: ["Hillside", "Entumbane", "Famona", "Burnside", "Belmont", "Nkulumane"],
-  Mutare: ["Dangamvura", "Sakubva", "Morningside", "Fern Valley"],
-  Gweru: ["Mkoba", "Ascot"],
-  Masvingo: ["Mucheke"],
-  "Victoria Falls": ["Victoria Falls Town"],
-  Norton: ["Norton Town"],
 };
 
 function toSafeString(value) {
@@ -252,8 +220,17 @@ async function loadLocationsFromDatabase() {
   if (!process.env.MONGODB_URI) return null;
   await dbConnect();
   const [citiesRows, suburbsRows, catalog] = await Promise.all([
-    LocationCity.find({}, { cityId: 1, cityName: 1, _id: 0 }).sort({ cityNameLower: 1 }).lean().exec(),
-    LocationSuburb.find({}, { suburbId: 1, suburbName: 1, cityId: 1, _id: 0 })
+    LocationCity.find(
+      { $or: [{ active: true }, { active: { $exists: false } }] },
+      { cityId: 1, cityName: 1, _id: 0 },
+    )
+      .sort({ cityNameLower: 1 })
+      .lean()
+      .exec(),
+    LocationSuburb.find(
+      { $or: [{ active: true }, { active: { $exists: false } }] },
+      { suburbId: 1, suburbName: 1, cityId: 1, _id: 0 },
+    )
       .sort({ cityId: 1, suburbNameLower: 1 })
       .lean()
       .exec(),

@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { dbConnect, LocationCity, LocationSuburb } from "@/lib/db";
-import { bumpLocationsVersion, getLocationsSnapshot, invalidateLocationsCache } from "@/lib/locations";
+import { bumpLocationsVersion, invalidateLocationsCache } from "@/lib/locations";
 
 export const runtime = "nodejs";
 
@@ -27,10 +27,30 @@ export async function GET() {
   if (!(await requireAdmin())) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const snapshot = await getLocationsSnapshot({ skipCache: true });
+  await dbConnect();
+  const rows = await LocationSuburb.find(
+    {},
+    { suburbId: 1, suburbName: 1, cityId: 1, active: 1, _id: 0 },
+  )
+    .sort({ cityId: 1, suburbNameLower: 1 })
+    .lean()
+    .exec();
+  const cityIds = Array.from(new Set((rows || []).map((item) => item?.cityId).filter(Boolean)));
+  const cityRows = await LocationCity.find(
+    { cityId: { $in: cityIds } },
+    { cityId: 1, cityName: 1, _id: 0 },
+  )
+    .lean()
+    .exec();
+  const cityNameById = new Map((cityRows || []).map((city) => [city.cityId, city.cityName]));
   return Response.json({
-    version: snapshot.version,
-    suburbs: snapshot.suburbs,
+    suburbs: (Array.isArray(rows) ? rows : []).map((suburb) => ({
+      suburb_id: suburb.suburbId,
+      suburb_name: suburb.suburbName,
+      city_id: suburb.cityId,
+      city_name: cityNameById.get(suburb.cityId) || "",
+      active: suburb.active !== false,
+    })),
   });
 }
 
@@ -41,6 +61,7 @@ export async function POST(request) {
   const body = await request.json().catch(() => ({}));
   const cityId = normalizeName(body?.city_id || body?.cityId).toLowerCase();
   const suburbName = normalizeName(body?.suburb_name || body?.suburbName);
+  const active = body?.active !== false;
   if (!cityId) {
     return Response.json({ error: "City ID is required" }, { status: 400 });
   }
@@ -79,6 +100,7 @@ export async function POST(request) {
     suburbNameLower: suburbName.toLowerCase(),
     cityId,
     cityRef: city._id,
+    active,
   });
 
   await bumpLocationsVersion();
@@ -92,6 +114,7 @@ export async function POST(request) {
         suburb_name: created.suburbName,
         city_id: created.cityId,
         city_name: city.cityName,
+        active: created.active !== false,
       },
     },
     { status: 201 },

@@ -62,6 +62,7 @@ const LocationCitySchema = new mongoose.Schema(
     cityId: { type: String, required: true, trim: true, lowercase: true, unique: true, index: true },
     cityName: { type: String, required: true, trim: true },
     cityNameLower: { type: String, required: true, trim: true, lowercase: true, index: true },
+    active: { type: Boolean, default: true, index: true },
   },
   { timestamps: true },
 );
@@ -78,6 +79,7 @@ const LocationSuburbSchema = new mongoose.Schema(
     suburbNameLower: { type: String, required: true, trim: true, lowercase: true, index: true },
     cityId: { type: String, required: true, trim: true, lowercase: true, index: true },
     cityRef: { type: mongoose.Schema.Types.ObjectId, ref: "LocationCity", required: true, index: true },
+    active: { type: Boolean, default: true, index: true },
   },
   { timestamps: true },
 );

@@ -26,17 +26,18 @@ export async function GET(_request, { params }) {
   }
   const suburbs = await LocationSuburb.find(
     { cityId },
-    { suburbId: 1, suburbName: 1, cityId: 1, _id: 1 },
+    { suburbId: 1, suburbName: 1, cityId: 1, active: 1, _id: 1 },
   )
     .sort({ suburbNameLower: 1 })
     .lean()
     .exec();
   return Response.json({
-    city: { city_id: city.cityId, city_name: city.cityName },
+    city: { city_id: city.cityId, city_name: city.cityName, active: city.active !== false },
     suburbs: suburbs.map((suburb) => ({
       suburb_id: suburb.suburbId,
       suburb_name: suburb.suburbName,
       city_id: suburb.cityId,
+      active: suburb.active !== false,
     })),
   });
 }
@@ -48,7 +49,12 @@ export async function PATCH(request, { params }) {
   const cityId = normalizeName(params?.cityId).toLowerCase();
   const body = await request.json().catch(() => ({}));
   const cityName = normalizeName(body?.city_name || body?.cityName);
-  if (!cityName) {
+  const hasCityName = typeof body?.city_name === "string" || typeof body?.cityName === "string";
+  const hasActive = typeof body?.active === "boolean";
+  if (!hasCityName && !hasActive) {
+    return Response.json({ error: "Provide city_name or active" }, { status: 400 });
+  }
+  if (hasCityName && !cityName) {
     return Response.json({ error: "City name is required" }, { status: 400 });
   }
 
@@ -58,18 +64,28 @@ export async function PATCH(request, { params }) {
     return Response.json({ error: "City not found" }, { status: 404 });
   }
 
-  const duplicate = await LocationCity.findOne({
-    cityNameLower: cityName.toLowerCase(),
-    cityId: { $ne: cityId },
-  })
-    .lean()
-    .exec();
-  if (duplicate) {
-    return Response.json({ error: "City already exists" }, { status: 409 });
+  if (hasCityName) {
+    const duplicate = await LocationCity.findOne({
+      cityNameLower: cityName.toLowerCase(),
+      cityId: { $ne: cityId },
+    })
+      .lean()
+      .exec();
+    if (duplicate) {
+      return Response.json({ error: "City already exists" }, { status: 409 });
+    }
   }
 
-  existing.cityName = cityName;
-  existing.cityNameLower = cityName.toLowerCase();
+  if (hasCityName) {
+    existing.cityName = cityName;
+    existing.cityNameLower = cityName.toLowerCase();
+  }
+  if (hasActive) {
+    existing.active = body.active;
+    if (body.active === false) {
+      await LocationSuburb.updateMany({ cityId }, { $set: { active: false } });
+    }
+  }
   await existing.save();
   await bumpLocationsVersion();
   invalidateLocationsCache();
@@ -79,6 +95,7 @@ export async function PATCH(request, { params }) {
     city: {
       city_id: existing.cityId,
       city_name: existing.cityName,
+      active: existing.active !== false,
     },
   });
 }
