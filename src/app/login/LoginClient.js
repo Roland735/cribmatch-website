@@ -97,7 +97,7 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
         setFirstCode("");
         setFirstOtpSent(false);
         setMode("first");
-        setErrorMessage("Set your web password first using Set password.");
+        setErrorMessage("Create your password first with WhatsApp verification.");
         setStatus("idle");
         return;
       }
@@ -114,13 +114,54 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
       if (phonePassword.includes("@")) {
         setErrorMessage("Use your account password, not your email address.");
       } else {
-        setErrorMessage("Invalid phone number or password. First time on website? Choose Set password.");
+        setErrorMessage("Invalid phone number or password. You can also sign in with WhatsApp.");
       }
       setStatus("idle");
       return;
     }
 
     window.location.assign(response?.url || "/dashboard");
+  }
+
+  async function handleWhatsappSignInFromSignIn() {
+    setStatus("loading");
+    resetMessages();
+    const trimmedPhone = String(phoneNumber || "").trim();
+    if (!trimmedPhone) {
+      setErrorMessage("Enter your phone number first.");
+      setStatus("idle");
+      return;
+    }
+
+    try {
+      const statusResponse = await fetch("/api/auth/password-status", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ phoneNumber: trimmedPhone }),
+      });
+      const statusPayload = await statusResponse.json().catch(() => ({}));
+      if (!statusResponse.ok) {
+        throw new Error(statusPayload?.error || "Could not prepare WhatsApp sign-in.");
+      }
+
+      if (!statusPayload?.accountExists && !statusPayload?.historyExists) {
+        setMode("register");
+        setErrorMessage("No account found for that number. Create your account first.");
+        return;
+      }
+
+      setFirstPhoneNumber(trimmedPhone);
+      setFirstCode("");
+      setFirstOtpSent(false);
+      setMode("first");
+      await sendOtp(trimmedPhone, "first_web_login");
+      setFirstOtpSent(true);
+      setSuccessMessage("Verification code sent to WhatsApp. Create your password to continue.");
+    } catch (error) {
+      setErrorMessage(error?.message || "Could not start WhatsApp sign-in.");
+    } finally {
+      setStatus("idle");
+    }
   }
 
   async function handleSendRegisterOtp(event) {
@@ -136,7 +177,16 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
       setRegisterOtpSent(true);
       setSuccessMessage("Verification code sent to your WhatsApp.");
     } catch (error) {
-      setErrorMessage(error?.message || "Could not send the verification code.");
+      const message = error?.message || "Could not send the verification code.";
+      if (message.toLowerCase().includes("already registered")) {
+        setFirstPhoneNumber(registerPhoneNumber);
+        setFirstCode("");
+        setFirstOtpSent(false);
+        setMode("first");
+        setErrorMessage("This number is already registered. Sign in with WhatsApp below.");
+      } else {
+        setErrorMessage(message);
+      }
     } finally {
       setStatus("idle");
     }
@@ -288,7 +338,7 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
               : "rounded-xl px-3 py-2 text-xs font-semibold text-slate-300 transition hover:bg-white/5"
           }
         >
-          Set password
+          WhatsApp login
         </button>
         <button
           type="button"
@@ -341,6 +391,15 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
             ) : null}
           </div>
           {errorMessage ? <p className="text-sm font-medium text-rose-200">{errorMessage}</p> : null}
+          {successMessage ? <p className="text-sm font-medium text-emerald-200">{successMessage}</p> : null}
+          <button
+            type="button"
+            onClick={handleWhatsappSignInFromSignIn}
+            disabled={disabled}
+            className="inline-flex w-full items-center justify-center rounded-full border border-white/15 bg-white/0 px-5 py-2.5 text-sm font-semibold text-slate-50 transition hover:border-white/30 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Sign in with WhatsApp
+          </button>
           <button
             type="submit"
             disabled={disabled}
@@ -488,7 +547,7 @@ export default function LoginClient({ callbackUrl = "/dashboard" }) {
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-200" htmlFor="firstPassword">
-              Set your password
+              Create password
             </label>
             <input
               id="firstPassword"

@@ -208,7 +208,7 @@ export async function POST(request) {
   }
   if (purpose === "first_web_login") {
     const historyExists = await hasWhatsappHistory(phoneCandidates, digitsCandidates);
-    if (!historyExists) {
+    if (!existingUser && !historyExists) {
       return Response.json(
         { error: "No previous WhatsApp activity found for this number" },
         { status: 404 },
