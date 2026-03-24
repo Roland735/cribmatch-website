@@ -81,6 +81,7 @@ async function searchViaListingsApi(options = {}) {
     q: toSearchString(options.q),
     city: toSearchString(options.city),
     suburb: toSearchString(options.suburb),
+    listerType: toSearchString(options.listerType),
     propertyCategory: toSearchString(options.propertyCategory),
     propertyType: toSearchString(options.propertyType),
     minPrice: toSearchNumber(options.minPrice),
@@ -2733,6 +2734,8 @@ export async function POST(request) {
     };
 
     let results = { listings: [], total: 0 };
+    let primarySearchOptions = null;
+    let sharedSearchCriteria = { q: "", minPrice: null, maxPrice: null };
     try {
       const screenUpper = String(effectiveScreen || "").toUpperCase();
 
@@ -2749,6 +2752,7 @@ export async function POST(request) {
         page: requestedResultsPage,
         perPage: 6,
       };
+      sharedSearchCriteria = { q, minPrice, maxPrice };
 
       const runSearch = async (extraOptions) => {
         // 1. Strict Search (Approved Only)
@@ -2835,13 +2839,14 @@ export async function POST(request) {
           .filter(Boolean)
           .slice(0, 12);
 
-        results = await runSearch({
+        primarySearchOptions = {
           city: resolvedCity || "",
           suburb: resolvedSuburb || "",
           propertyCategory: "boarding",
           propertyType: roomTypeTitle || "",
           features: resolvedFeatures,
-        });
+        };
+        results = await runSearch(primarySearchOptions);
       } else if (screenUpper === "SHOP_SEARCH") {
         const resolvedCity = resolveTitleById(effectiveFlowData.city, cityOptions);
         const suburbRaw = String(effectiveFlowData.suburb || "").trim();
@@ -2867,12 +2872,13 @@ export async function POST(request) {
           .filter(Boolean)
           .slice(0, 12);
 
-        results = await runSearchWithPropertyTypeCandidates({
+        primarySearchOptions = {
           city: resolvedCity || "",
           suburb: resolvedSuburb || "",
           propertyCategory: "commercial",
           features: resolvedFeatures,
-        }, shopTypeCandidates);
+        };
+        results = await runSearchWithPropertyTypeCandidates(primarySearchOptions, shopTypeCandidates);
       } else if (screenUpper === "RENT_A_CHAIR_SEARCH") {
         const serviceTypeId = String(effectiveFlowData.serviceType || effectiveFlowData.service_type || "").trim();
         const serviceTypeTitle = serviceTypeId === "any" ? "" : resolveTitleById(serviceTypeId, CHAIR_SERVICE_TYPES);
@@ -2889,13 +2895,14 @@ export async function POST(request) {
           .filter(Boolean)
           .slice(0, 12);
 
-        results = await runSearch({
+        primarySearchOptions = {
           city: "",
           suburb: "",
           propertyCategory: "rent_a_chair",
           propertyType: serviceTypeTitle || "",
           features: resolvedFeatures,
-        });
+        };
+        results = await runSearch(primarySearchOptions);
       } else {
         const resolvedCity = resolveTitleById(effectiveFlowData.city, cityOptions);
         const suburbRaw = String(effectiveFlowData.suburb || "").trim();
@@ -2931,20 +2938,45 @@ export async function POST(request) {
           .filter(Boolean)
           .slice(0, 12);
 
-        results = await runSearchWithPropertyTypeCandidates({
+        primarySearchOptions = {
           city: resolvedCity || "",
           suburb: resolvedSuburb || "",
           propertyCategory: resolvedPropertyCategory,
           minBeds: minBedsSafe,
           features: resolvedFeatures,
-        }, propertyTypeCandidates);
+        };
+        results = await runSearchWithPropertyTypeCandidates(primarySearchOptions, propertyTypeCandidates);
       }
     } catch (e) {
       console.warn("[webhook] flow search error", e);
     }
 
     const preferredListerType = inferPreferredListerType(effectiveFlowData, effectiveFlowData?.q);
-    const rankedItems = calibrateByListerType(results.listings || [], preferredListerType);
+    let rankedItems = calibrateByListerType(results.listings || [], preferredListerType);
+    const hasAgentInRankedItems = rankedItems.some(
+      (listing) => normalizeListerType(listing?.listerType || listing?.lister_type) === "agent"
+    );
+    if (!hasAgentInRankedItems && preferredListerType !== "direct_landlord" && primarySearchOptions) {
+      const agentOnlyResults = await searchViaListingsApi({
+        ...primarySearchOptions,
+        q: sharedSearchCriteria.q || "",
+        minPrice: sharedSearchCriteria.minPrice,
+        maxPrice: sharedSearchCriteria.maxPrice,
+        page: requestedResultsPage,
+        perPage: 6,
+        listerType: "agent",
+      }).catch(() => ({ listings: [] }));
+      const agentListings = Array.isArray(agentOnlyResults?.listings) ? agentOnlyResults.listings : [];
+      if (agentListings.length) {
+        const mergedById = new Map();
+        for (const listing of [...agentListings, ...rankedItems]) {
+          const listingId = getIdFromListing(listing);
+          if (!listingId || mergedById.has(listingId)) continue;
+          mergedById.set(listingId, listing);
+        }
+        rankedItems = Array.from(mergedById.values());
+      }
+    }
     const items = rankedItems.slice(0, 6);
     if (!items.length) {
       await sendWithMainMenuButton(phone, "🔍 No matches found for your search.", "Try adjusting filters or a broader search.");

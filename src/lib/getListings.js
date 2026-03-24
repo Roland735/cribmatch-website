@@ -296,6 +296,7 @@ export async function searchListings({
   q = "",
   city = "",
   suburb = "",
+  listerType = "",
   propertyCategory = "",
   propertyType = "",
   minPrice = null,
@@ -317,6 +318,7 @@ export async function searchListings({
   const normalizedQuery = normalizeText(safeQuery);
   const normalizedCity = normalizeText(city);
   const normalizedSuburb = normalizeText(suburb);
+  const normalizedListerType = normalizeText(listerType);
   const normalizedCategory = normalizeText(propertyCategory);
   const normalizedType = normalizeText(safePropertyType);
   const normalizedTypeAliases =
@@ -355,6 +357,14 @@ export async function searchListings({
       }
       if (normalizedStatus === "published" && approvedOnly && listing.approved === false) {
         return false;
+      }
+      if (normalizedListerType) {
+        const rawListingListerType = normalizeText(listing.listerType || listing.lister_type || "direct_landlord");
+        const listingListerType =
+          rawListingListerType === "agent" || rawListingListerType === "agency"
+            ? "agent"
+            : "direct_landlord";
+        if (listingListerType !== normalizedListerType) return false;
       }
       if (normalizedCategory) {
         const listingCategory = normalizeText(listing.propertyCategory);
@@ -476,6 +486,12 @@ export async function searchListings({
 
   if (normalizedCategory) {
     mongoQuery.propertyCategory = normalizedCategory;
+  }
+
+  if (normalizedListerType === "agent") {
+    mongoQuery.listerType = { $in: [/^agent$/i, /^agency$/i] };
+  } else if (normalizedListerType === "direct_landlord") {
+    mongoQuery.listerType = { $nin: [/^agent$/i, /^agency$/i] };
   }
 
   if (normalizedType) {
