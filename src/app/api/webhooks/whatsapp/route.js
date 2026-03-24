@@ -1979,6 +1979,12 @@ export async function POST(request) {
   // normalize user input
   const userRaw = String(parsedText || "").trim();
   const cmd = userRaw.toLowerCase();
+  const isSearchMoreCommand =
+    cmd === "search_more" ||
+    cmd === "more results" ||
+    cmd === "more result" ||
+    cmd === "next page" ||
+    cmd === "next";
   const paymentPendingButtons = [
     { id: "refresh_status", title: "🔄 Refresh status" },
     { id: "menu_main", title: "🏠 Main menu" },
@@ -2376,14 +2382,34 @@ export async function POST(request) {
   let effectiveScreen = screen;
   let requestedResultsPage = 1;
 
-  if (cmd === "search_more") {
-    const lastFlowData = lastMeta?.flowData && typeof lastMeta.flowData === "object" ? lastMeta.flowData : null;
-    const lastFlowScreen = String(lastMeta?.flowScreen || "").trim().toUpperCase();
-    const lastFlowPageRaw = Number(lastMeta?.flowPage || 1);
+  if (isSearchMoreCommand) {
+    let searchMeta = lastMeta;
+    if (
+      dbAvailable &&
+      typeof Message?.findOne === "function" &&
+      (!searchMeta?.flowData || !searchMeta?.flowScreen)
+    ) {
+      const latestSearchDoc = await Message.findOne({
+        phone,
+        "meta.flowData": { $exists: true },
+        "meta.flowScreen": { $exists: true },
+      })
+        .sort({ createdAt: -1 })
+        .lean()
+        .exec()
+        .catch(() => null);
+      if (latestSearchDoc?.meta) {
+        searchMeta = latestSearchDoc.meta;
+      }
+    }
+
+    const lastFlowData = searchMeta?.flowData && typeof searchMeta.flowData === "object" ? searchMeta.flowData : null;
+    const lastFlowScreen = String(searchMeta?.flowScreen || "").trim().toUpperCase();
+    const lastFlowPageRaw = Number(searchMeta?.flowPage || 1);
     const lastFlowPage = Number.isFinite(lastFlowPageRaw) && lastFlowPageRaw >= 1 ? Math.floor(lastFlowPageRaw) : 1;
-    const lastFlowTotalRaw = Number(lastMeta?.flowTotal || 0);
+    const lastFlowTotalRaw = Number(searchMeta?.flowTotal || 0);
     const lastFlowTotal = Number.isFinite(lastFlowTotalRaw) && lastFlowTotalRaw >= 0 ? Math.floor(lastFlowTotalRaw) : 0;
-    const lastFlowPerPageRaw = Number(lastMeta?.flowPerPage || 6);
+    const lastFlowPerPageRaw = Number(searchMeta?.flowPerPage || 6);
     const lastFlowPerPage = Number.isFinite(lastFlowPerPageRaw) && lastFlowPerPageRaw >= 1 ? Math.floor(lastFlowPerPageRaw) : 6;
     const maxPages = lastFlowTotal > 0 ? Math.ceil(lastFlowTotal / lastFlowPerPage) : 1;
 
@@ -2644,7 +2670,7 @@ export async function POST(request) {
   }
 
   if (
-    cmd === "search_more" ||
+    isSearchMoreCommand ||
     ["SEARCH", "BOARDING_SEARCH", "SHOP_SEARCH", "RENT_A_CHAIR_SEARCH"].includes(String(effectiveScreen || "").toUpperCase()) ||
     (effectiveFlowData && (effectiveFlowData.city || effectiveFlowData.q || effectiveFlowData.min_price || effectiveFlowData.max_price))
   ) {
