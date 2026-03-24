@@ -594,6 +594,7 @@ const PREDEFINED_PROPERTY_CATEGORIES = [
 ];
 
 const PREDEFINED_PROPERTY_TYPES = [
+  { id: "any", title: "Any" },
   { id: "house", title: "House" },
   { id: "flat", title: "Flat" },
   { id: "studio", title: "Studio" },
@@ -1213,7 +1214,7 @@ async function sendResidentialSearchFlow(phoneNumber, data = {}) {
   const selected_city = hasId(cities, String(data.selected_city || "harare")) ? String(data.selected_city || "harare") : (cities[0]?.id || "harare");
   const selected_suburb = hasId(suburbs, String(data.selected_suburb || "any")) ? String(data.selected_suburb || "any") : "any";
   const selected_category = "residential";
-  const selected_type = hasId(propertyTypes, String(data.selected_type || "house")) ? String(data.selected_type || "house") : (propertyTypes[0]?.id || "house");
+  const selected_type = hasId(propertyTypes, String(data.selected_type || "any")) ? String(data.selected_type || "any") : (propertyTypes[0]?.id || "any");
   const selected_bedrooms = hasId(bedrooms, String(data.selected_bedrooms || "any")) ? String(data.selected_bedrooms || "any") : "any";
   const selected_total_rooms = hasId(totalRooms, String(data.selected_total_rooms || "any")) ? String(data.selected_total_rooms || "any") : "any";
   const selected_deposit = hasId(depositOptions, String(data.selected_deposit || "any")) ? String(data.selected_deposit || "any") : "any";
