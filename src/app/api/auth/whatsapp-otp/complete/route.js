@@ -6,6 +6,8 @@ import { hashPassword, normalizePhoneNumber, normalizePhoneNumberCandidates } fr
 export const runtime = "nodejs";
 
 const MAX_VERIFY_ATTEMPTS = 6;
+const MIN_PASSWORD_LENGTH = 8;
+const MAX_PASSWORD_LENGTH = 128;
 
 function digitsOnly(value) {
   return String(value || "").replace(/[^\d]/g, "");
@@ -61,11 +63,18 @@ export async function POST(request) {
   if (!phoneNumber) {
     return Response.json({ error: "Phone number is required" }, { status: 400 });
   }
-  if (!code || code.length < 4) {
-    return Response.json({ error: "Verification code is required" }, { status: 400 });
+  if (!/^\d{6}$/.test(code)) {
+    return Response.json({ error: "Verification code must be 6 digits" }, { status: 400 });
   }
-  if (typeof password !== "string" || password.length < 8) {
-    return Response.json({ error: "Password must be at least 8 characters" }, { status: 400 });
+  if (
+    typeof password !== "string" ||
+    password.length < MIN_PASSWORD_LENGTH ||
+    password.length > MAX_PASSWORD_LENGTH
+  ) {
+    return Response.json(
+      { error: `Password must be ${MIN_PASSWORD_LENGTH}-${MAX_PASSWORD_LENGTH} characters` },
+      { status: 400 },
+    );
   }
 
   await dbConnect();

@@ -2,6 +2,11 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import crypto from "crypto";
 import { dbConnect, User } from "@/lib/db";
 
+const MIN_PASSWORD_LENGTH = 8;
+const MAX_PASSWORD_LENGTH = 128;
+const MAX_LOGIN_FAILURES = 5;
+const LOGIN_LOCK_MINUTES = 15;
+
 export function normalizePhoneNumber(value) {
   if (typeof value !== "string") return "";
   const trimmed = value.trim();
@@ -87,11 +92,21 @@ export async function hashPassword(password) {
 
 export async function verifyPassword(password, stored) {
   if (!stored?.salt || !stored?.hash) return false;
-  if (typeof password !== "string" || password.length < 8) return false;
+  if (
+    typeof password !== "string" ||
+    password.length < MIN_PASSWORD_LENGTH ||
+    password.length > MAX_PASSWORD_LENGTH
+  ) {
+    return false;
+  }
   const derivedKey = await scryptAsync(password, stored.salt);
   const storedHash = Buffer.from(stored.hash, "base64");
   if (storedHash.length !== derivedKey.length) return false;
   return crypto.timingSafeEqual(storedHash, derivedKey);
+}
+
+function isSeedLoginEnabled() {
+  return process.env.ALLOW_SEED_LOGIN === "true";
 }
 
 export function getSeedCredentialProfile(value) {
@@ -148,10 +163,18 @@ function seedUserFromProfile(seedProfile) {
 export async function authorizePhoneCredentials(credentials) {
   const phoneNumber = normalizePhoneNumber(credentials?.phoneNumber);
   const password = credentials?.password;
-  if (!phoneNumber || typeof password !== "string") return null;
+  if (
+    !phoneNumber ||
+    typeof password !== "string" ||
+    password.length < MIN_PASSWORD_LENGTH ||
+    password.length > MAX_PASSWORD_LENGTH
+  ) {
+    return null;
+  }
 
   const seedProfile = getSeedCredentialProfile(phoneNumber);
-  const isSeedPassword = Boolean(seedProfile && password === seedProfile.plainPassword);
+  const allowSeedLogin = isSeedLoginEnabled();
+  const isSeedPassword = Boolean(allowSeedLogin && seedProfile && password === seedProfile.plainPassword);
   if (!process.env.MONGODB_URI) {
     return isSeedPassword ? seedUserFromProfile(seedProfile) : null;
   }
@@ -161,15 +184,36 @@ export async function authorizePhoneCredentials(credentials) {
   let user = await User.findOne({ _id: { $in: candidates } });
 
   if (user) {
+    if (user.lockedUntil && new Date(user.lockedUntil).getTime() > Date.now()) {
+      return null;
+    }
     const ok = await verifyPassword(password, user.password);
     if (!ok) {
-      if (!isSeedPassword) return null;
+      if (!isSeedPassword) {
+        const nextFailures = Number(user.failedLoginAttempts || 0) + 1;
+        user.failedLoginAttempts = nextFailures;
+        user.lastFailedLoginAt = new Date();
+        if (nextFailures >= MAX_LOGIN_FAILURES) {
+          user.lockedUntil = new Date(Date.now() + LOGIN_LOCK_MINUTES * 60 * 1000);
+          user.failedLoginAttempts = 0;
+        }
+        await user.save();
+        return null;
+      }
       const passwordRecord = await hashPassword(seedProfile.plainPassword);
       user.password = passwordRecord;
       if (!user.name) user.name = seedProfile.name;
       if (!user.role) user.role = seedProfile.role;
       user.whatsappVerified = true;
       user.whatsappVerifiedAt = user.whatsappVerifiedAt || new Date();
+      user.failedLoginAttempts = 0;
+      user.lockedUntil = null;
+      user.lastFailedLoginAt = null;
+      await user.save();
+    } else if (user.failedLoginAttempts || user.lockedUntil || user.lastFailedLoginAt) {
+      user.failedLoginAttempts = 0;
+      user.lockedUntil = null;
+      user.lastFailedLoginAt = null;
       await user.save();
     }
   } else {

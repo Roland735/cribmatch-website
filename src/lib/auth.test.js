@@ -20,17 +20,24 @@ describe("seed credentials", () => {
 
 describe("authorize fallback without database", () => {
   const originalMongoUri = process.env.MONGODB_URI;
+  const originalSeedLogin = process.env.ALLOW_SEED_LOGIN;
 
   afterEach(() => {
     if (typeof originalMongoUri === "string" && originalMongoUri.length) {
       process.env.MONGODB_URI = originalMongoUri;
-      return;
+    } else {
+      delete process.env.MONGODB_URI;
     }
-    delete process.env.MONGODB_URI;
+    if (typeof originalSeedLogin === "string" && originalSeedLogin.length) {
+      process.env.ALLOW_SEED_LOGIN = originalSeedLogin;
+    } else {
+      delete process.env.ALLOW_SEED_LOGIN;
+    }
   });
 
   test("allows seed login when MONGODB_URI is missing", async () => {
     delete process.env.MONGODB_URI;
+    process.env.ALLOW_SEED_LOGIN = "true";
     const user = await authorizePhoneCredentials({
       phoneNumber: "+263771000001",
       password: "agent12345",
@@ -41,9 +48,20 @@ describe("authorize fallback without database", () => {
 
   test("rejects wrong password when MONGODB_URI is missing", async () => {
     delete process.env.MONGODB_URI;
+    process.env.ALLOW_SEED_LOGIN = "true";
     const user = await authorizePhoneCredentials({
       phoneNumber: "+263771000001",
       password: "wrong-password",
+    });
+    expect(user).toBeNull();
+  });
+
+  test("rejects seed login when ALLOW_SEED_LOGIN is not enabled", async () => {
+    delete process.env.MONGODB_URI;
+    delete process.env.ALLOW_SEED_LOGIN;
+    const user = await authorizePhoneCredentials({
+      phoneNumber: "+263771000001",
+      password: "agent12345",
     });
     expect(user).toBeNull();
   });

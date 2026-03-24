@@ -257,6 +257,9 @@ const UserSchema = new mongoose.Schema(
     },
     whatsappVerified: { type: Boolean, default: false, index: true },
     whatsappVerifiedAt: { type: Date, default: null },
+    failedLoginAttempts: { type: Number, default: 0, min: 0 },
+    lastFailedLoginAt: { type: Date, default: null },
+    lockedUntil: { type: Date, default: null, index: true },
     adminContactNumber: { type: String, default: "", trim: true },
     agentProfile: {
       fullLegalName: { type: String, default: "", trim: true },

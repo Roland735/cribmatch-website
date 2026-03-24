@@ -7,6 +7,7 @@ export const runtime = "nodejs";
 
 const OTP_TTL_MINUTES = 10;
 const OTP_SEND_COOLDOWN_SECONDS = 45;
+const MAX_SENDS_PER_CHALLENGE = 5;
 
 function digitsOnly(value) {
   return String(value || "").replace(/[^\d]/g, "");
@@ -227,10 +228,23 @@ export async function POST(request) {
       );
     }
   }
+  if (
+    existingChallenge?.sendCount >= MAX_SENDS_PER_CHALLENGE &&
+    new Date(existingChallenge.expiresAt).getTime() > now
+  ) {
+    return Response.json(
+      { error: "Too many code requests. Please wait for the current code to expire." },
+      { status: 429 },
+    );
+  }
 
   const code = createOtpCode();
   const codeRecord = await hashOtp(code);
   const expiresAt = new Date(now + OTP_TTL_MINUTES * 60 * 1000);
+  const challengeExpired = existingChallenge
+    ? new Date(existingChallenge.expiresAt).getTime() <= now
+    : true;
+  const nextSendCount = challengeExpired ? 1 : Number(existingChallenge?.sendCount || 0) + 1;
 
   const sendResult = await sendTemplateCode(phoneNumber, code);
   if (!sendResult.ok) {
@@ -246,9 +260,9 @@ export async function POST(request) {
         expiresAt,
         usedAt: null,
         attempts: 0,
+        sendCount: nextSendCount,
         lastSentAt: new Date(),
       },
-      $inc: { sendCount: 1 },
     },
     { upsert: true, setDefaultsOnInsert: true, new: true },
   );
