@@ -2372,9 +2372,38 @@ export async function POST(request) {
   ------------------------- */
   const flowData = getFlowDataFromPayload(payload);
   const screen = detectRequestedScreen(payload);
+  let effectiveFlowData = flowData;
+  let effectiveScreen = screen;
+  let requestedResultsPage = 1;
+
+  if (cmd === "search_more") {
+    const lastFlowData = lastMeta?.flowData && typeof lastMeta.flowData === "object" ? lastMeta.flowData : null;
+    const lastFlowScreen = String(lastMeta?.flowScreen || "").trim().toUpperCase();
+    const lastFlowPageRaw = Number(lastMeta?.flowPage || 1);
+    const lastFlowPage = Number.isFinite(lastFlowPageRaw) && lastFlowPageRaw >= 1 ? Math.floor(lastFlowPageRaw) : 1;
+    const lastFlowTotalRaw = Number(lastMeta?.flowTotal || 0);
+    const lastFlowTotal = Number.isFinite(lastFlowTotalRaw) && lastFlowTotalRaw >= 0 ? Math.floor(lastFlowTotalRaw) : 0;
+    const lastFlowPerPageRaw = Number(lastMeta?.flowPerPage || 6);
+    const lastFlowPerPage = Number.isFinite(lastFlowPerPageRaw) && lastFlowPerPageRaw >= 1 ? Math.floor(lastFlowPerPageRaw) : 6;
+    const maxPages = lastFlowTotal > 0 ? Math.ceil(lastFlowTotal / lastFlowPerPage) : 1;
+
+    if (!lastFlowData || !lastFlowScreen) {
+      await sendWithMainMenuButton(phone, "⚠️ No previous search found.", "Run a new search first, then tap More results.");
+      return NextResponse.json({ ok: true, note: "search-more-no-context" });
+    }
+
+    if (lastFlowPage >= maxPages) {
+      await sendWithMainMenuButton(phone, "✅ You have reached the end of results.", "Tap Main menu to start a new search.");
+      return NextResponse.json({ ok: true, note: "search-more-end-reached" });
+    }
+
+    effectiveFlowData = lastFlowData;
+    effectiveScreen = lastFlowScreen;
+    requestedResultsPage = lastFlowPage + 1;
+  }
 
   if (payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.interactive?.type === "nfm_reply") {
-    console.log("[webhook] nfm_reply received:", JSON.stringify({ screen, flowData }, null, 2));
+    console.log("[webhook] nfm_reply received:", JSON.stringify({ screen: effectiveScreen, flowData: effectiveFlowData }, null, 2));
   }
 
   if (
@@ -2615,10 +2644,11 @@ export async function POST(request) {
   }
 
   if (
-    ["SEARCH", "BOARDING_SEARCH", "SHOP_SEARCH", "RENT_A_CHAIR_SEARCH"].includes(String(screen || "").toUpperCase()) ||
-    (flowData && (flowData.city || flowData.q || flowData.min_price || flowData.max_price))
+    cmd === "search_more" ||
+    ["SEARCH", "BOARDING_SEARCH", "SHOP_SEARCH", "RENT_A_CHAIR_SEARCH"].includes(String(effectiveScreen || "").toUpperCase()) ||
+    (effectiveFlowData && (effectiveFlowData.city || effectiveFlowData.q || effectiveFlowData.min_price || effectiveFlowData.max_price))
   ) {
-    console.log("[webhook] flow search submission:", screen, flowData);
+    console.log("[webhook] flow search submission:", effectiveScreen, effectiveFlowData, "page:", requestedResultsPage);
 
     const extractNumber = (value) => {
       const raw = String(value ?? "").replace(/,/g, " ").trim();
@@ -2678,18 +2708,19 @@ export async function POST(request) {
 
     let results = { listings: [], total: 0 };
     try {
-      const screenUpper = String(screen || "").toUpperCase();
+      const screenUpper = String(effectiveScreen || "").toUpperCase();
 
-      const minPrice = extractNumber(flowData.min_price);
-      const maxPriceRaw = extractNumber(flowData.max_price);
+      const minPrice = extractNumber(effectiveFlowData.min_price);
+      const maxPriceRaw = extractNumber(effectiveFlowData.max_price);
       // Treat 0 as "no max price" to avoid filtering out everything by default
       const maxPrice = (maxPriceRaw === 0) ? null : maxPriceRaw;
-      const q = String(flowData.q || "").trim();
+      const q = String(effectiveFlowData.q || "").trim();
 
       const baseSearchOptions = {
         q,
         minPrice,
         maxPrice,
+        page: requestedResultsPage,
         perPage: 6,
       };
 
@@ -2759,16 +2790,16 @@ export async function POST(request) {
       const suburbOptions = locationOptions.suburbs;
 
       if (screenUpper === "BOARDING_SEARCH") {
-        const resolvedCity = resolveTitleById(flowData.city, cityOptions);
-        const suburbRaw = String(flowData.suburb || "").trim();
+        const resolvedCity = resolveTitleById(effectiveFlowData.city, cityOptions);
+        const suburbRaw = String(effectiveFlowData.suburb || "").trim();
         const resolvedSuburb = suburbRaw === "any" ? "" : resolveTitleById(suburbRaw, suburbOptions);
 
-        const roomTypeId = String(flowData.roomType || flowData.room_type || "").trim();
+        const roomTypeId = String(effectiveFlowData.roomType || effectiveFlowData.room_type || "").trim();
         const roomTypeTitle = roomTypeId === "any" ? "" : resolveTitleById(roomTypeId, BOARDING_ROOM_TYPES);
 
         const featuresRaw =
-          (Array.isArray(flowData.features) ? flowData.features : null) ||
-          (Array.isArray(flowData.boarding_features) ? flowData.boarding_features : null) ||
+          (Array.isArray(effectiveFlowData.features) ? effectiveFlowData.features : null) ||
+          (Array.isArray(effectiveFlowData.boarding_features) ? effectiveFlowData.boarding_features : null) ||
           [];
         const resolvedFeatures = featuresRaw
           .map((fid) => String(fid || "").trim())
@@ -2786,11 +2817,11 @@ export async function POST(request) {
           features: resolvedFeatures,
         });
       } else if (screenUpper === "SHOP_SEARCH") {
-        const resolvedCity = resolveTitleById(flowData.city, cityOptions);
-        const suburbRaw = String(flowData.suburb || "").trim();
+        const resolvedCity = resolveTitleById(effectiveFlowData.city, cityOptions);
+        const suburbRaw = String(effectiveFlowData.suburb || "").trim();
         const resolvedSuburb = suburbRaw === "any" ? "" : resolveTitleById(suburbRaw, suburbOptions);
 
-        const shopTypeId = String(flowData.shopType || flowData.shop_type || "").trim();
+        const shopTypeId = String(effectiveFlowData.shopType || effectiveFlowData.shop_type || "").trim();
         const shopTypeTitle = shopTypeId === "any" ? "" : resolveTitleById(shopTypeId, SHOP_TYPES);
         const shopTypeCandidates = buildPropertyTypeCandidates({
           propertyTypeId: shopTypeId,
@@ -2799,8 +2830,8 @@ export async function POST(request) {
         });
 
         const featuresRaw =
-          (Array.isArray(flowData.features) ? flowData.features : null) ||
-          (Array.isArray(flowData.commercial_features) ? flowData.commercial_features : null) ||
+          (Array.isArray(effectiveFlowData.features) ? effectiveFlowData.features : null) ||
+          (Array.isArray(effectiveFlowData.commercial_features) ? effectiveFlowData.commercial_features : null) ||
           [];
         const resolvedFeatures = featuresRaw
           .map((fid) => String(fid || "").trim())
@@ -2817,12 +2848,12 @@ export async function POST(request) {
           features: resolvedFeatures,
         }, shopTypeCandidates);
       } else if (screenUpper === "RENT_A_CHAIR_SEARCH") {
-        const serviceTypeId = String(flowData.serviceType || flowData.service_type || "").trim();
+        const serviceTypeId = String(effectiveFlowData.serviceType || effectiveFlowData.service_type || "").trim();
         const serviceTypeTitle = serviceTypeId === "any" ? "" : resolveTitleById(serviceTypeId, CHAIR_SERVICE_TYPES);
 
         const featuresRaw =
-          (Array.isArray(flowData.features) ? flowData.features : null) ||
-          (Array.isArray(flowData.chair_features) ? flowData.chair_features : null) ||
+          (Array.isArray(effectiveFlowData.features) ? effectiveFlowData.features : null) ||
+          (Array.isArray(effectiveFlowData.chair_features) ? effectiveFlowData.chair_features : null) ||
           [];
         const resolvedFeatures = featuresRaw
           .map((fid) => String(fid || "").trim())
@@ -2840,14 +2871,14 @@ export async function POST(request) {
           features: resolvedFeatures,
         });
       } else {
-        const resolvedCity = resolveTitleById(flowData.city, cityOptions);
-        const suburbRaw = String(flowData.suburb || "").trim();
+        const resolvedCity = resolveTitleById(effectiveFlowData.city, cityOptions);
+        const suburbRaw = String(effectiveFlowData.suburb || "").trim();
         const resolvedSuburb = suburbRaw === "any" ? "" : resolveTitleById(suburbRaw, suburbOptions);
 
-        const categoryRaw = flowData.propertyCategory || flowData.property_category || "residential";
+        const categoryRaw = effectiveFlowData.propertyCategory || effectiveFlowData.property_category || "residential";
         const resolvedPropertyCategory = normalizeCategory(categoryRaw) || "residential";
 
-        const propertyTypeId = String(flowData.propertyType || flowData.property_type || "").trim();
+        const propertyTypeId = String(effectiveFlowData.propertyType || effectiveFlowData.property_type || "").trim();
         const resolvedPropertyType = propertyTypeId ? resolveTitleById(propertyTypeId, PREDEFINED_PROPERTY_TYPES) : "";
         const propertyTypeCandidates = buildPropertyTypeCandidates({
           propertyTypeId,
@@ -2855,7 +2886,7 @@ export async function POST(request) {
           categoryHint: resolvedPropertyCategory,
         });
 
-        const bedroomsRaw = String(flowData.bedrooms || "").trim();
+        const bedroomsRaw = String(effectiveFlowData.bedrooms || "").trim();
         const minBeds =
           bedroomsRaw === "any" || bedroomsRaw === ""
             ? null
@@ -2863,8 +2894,8 @@ export async function POST(request) {
         const minBedsSafe = Number.isFinite(minBeds) ? minBeds : null;
 
         const featuresRaw =
-          (Array.isArray(flowData.features) ? flowData.features : null) ||
-          (Array.isArray(flowData.residential_features) ? flowData.residential_features : null) ||
+          (Array.isArray(effectiveFlowData.features) ? effectiveFlowData.features : null) ||
+          (Array.isArray(effectiveFlowData.residential_features) ? effectiveFlowData.residential_features : null) ||
           [];
         const resolvedFeatures = featuresRaw
           .map((fid) => String(fid || "").trim())
@@ -2886,7 +2917,7 @@ export async function POST(request) {
       console.warn("[webhook] flow search error", e);
     }
 
-    const preferredListerType = inferPreferredListerType(flowData, flowData?.q);
+    const preferredListerType = inferPreferredListerType(effectiveFlowData, effectiveFlowData?.q);
     const rankedItems = calibrateByListerType(results.listings || [], preferredListerType);
     const items = rankedItems.slice(0, 6);
     if (!items.length) {
@@ -2901,9 +2932,16 @@ export async function POST(request) {
     const numbered = ensuredItems.map((l, i) => formatListingResultText(l, i, purchasedIds)).filter(Boolean).join("\n\n");
 
     await saveSearchContext(phone, ids, ensuredItems, dbAvailable);
-    let msgText = `👇 Reply with the number (e.g. 1) to get contact details, or type a listing CODE (e.g. H4WH).\n\n${numbered}`.trim();
+    const totalResults = typeof results?.total === "number" ? results.total : ensuredItems.length;
+    const currentPage = typeof results?.page === "number" ? results.page : requestedResultsPage;
+    const perPageCurrent = typeof results?.perPage === "number" ? results.perPage : 6;
+    const showingStart = ((currentPage - 1) * perPageCurrent) + 1;
+    const showingEnd = Math.min(totalResults, showingStart + ensuredItems.length - 1);
+    const hasMoreResults = totalResults > currentPage * perPageCurrent;
+    let msgText = `Results ${showingStart}-${showingEnd} of ${totalResults}\n\n👇 Reply with the number (e.g. 1) to get contact details, or type a listing CODE (e.g. H4WH).\n\n${numbered}`.trim();
 
     const navButtons = [
+      ...(hasMoreResults ? [{ id: "search_more", title: "More Results" }] : []),
       { id: "menu_search", title: "Return to Search" },
       { id: "menu_main", title: "Main Menu" }
     ];
@@ -2937,7 +2975,11 @@ export async function POST(request) {
           "meta.state": "AWAITING_LIST_SELECTION",
           "meta.listingIds": ids,
           "meta.resultObjects": ensuredItems,
-          "meta.flowData": flowData
+          "meta.flowData": effectiveFlowData,
+          "meta.flowScreen": String(effectiveScreen || "").toUpperCase(),
+          "meta.flowPage": currentPage,
+          "meta.flowPerPage": perPageCurrent,
+          "meta.flowTotal": totalResults
         }
       }).catch(() => null);
     }
