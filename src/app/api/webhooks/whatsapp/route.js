@@ -2635,6 +2635,46 @@ export async function POST(request) {
       return raw;
     };
 
+    const buildPropertyTypeCandidates = ({ propertyTypeId, fallbackTitle, categoryHint }) => {
+      const id = String(propertyTypeId || "").trim().toLowerCase();
+      const category = String(categoryHint || "").trim().toLowerCase();
+      const candidates = [];
+      const pushUnique = (...values) => {
+        for (const value of values) {
+          const normalized = String(value || "").trim();
+          if (!normalized) continue;
+          if (normalized.toLowerCase() === "any") continue;
+          if (!candidates.some((item) => item.toLowerCase() === normalized.toLowerCase())) {
+            candidates.push(normalized);
+          }
+        }
+      };
+
+      pushUnique(fallbackTitle);
+
+      if (id === "house") pushUnique("House");
+      if (id === "flat") pushUnique("Apartment", "Garden flat", "Flat");
+      if (id === "studio") pushUnique("Apartment", "Studio", "Room");
+      if (id === "cottage") pushUnique("Cottage");
+      if (id === "townhouse") pushUnique("Townhouse");
+      if (id === "office" || id === "office_space") pushUnique("Office", "Office Space");
+      if (id === "retail" || id === "retail_shop") pushUnique("Retail warehouse", "Shop", "Retail", "Retail Shop");
+      if (id === "warehouse") pushUnique("Warehouse");
+      if (id === "restaurant_space") pushUnique("Shop", "Restaurant Space");
+      if (id === "single_room" || id === "shared_room" || id === "dormitory" || id === "ensuite_room") {
+        pushUnique("Room", "Student accommodation", "Boarding house", "Boarding house (university)");
+      }
+
+      if (category === "commercial") {
+        pushUnique("Shop", "Office", "Retail warehouse");
+      }
+      if (category === "residential" && (id === "any" || !id)) {
+        pushUnique("House", "Apartment", "Townhouse", "Cottage", "Garden flat");
+      }
+
+      return candidates;
+    };
+
     let results = { listings: [], total: 0 };
     try {
       const screenUpper = String(screen || "").toUpperCase();
@@ -2699,6 +2739,20 @@ export async function POST(request) {
         });
       };
 
+      const runSearchWithPropertyTypeCandidates = async (extraOptions, propertyTypeCandidates = []) => {
+        const normalizedCandidates = Array.isArray(propertyTypeCandidates)
+          ? propertyTypeCandidates.map((value) => String(value || "").trim()).filter(Boolean)
+          : [];
+        if (!normalizedCandidates.length) {
+          return runSearch({ ...extraOptions, propertyType: "" });
+        }
+        for (const candidate of normalizedCandidates) {
+          const result = await runSearch({ ...extraOptions, propertyType: candidate });
+          if ((result?.listings || []).length) return result;
+        }
+        return runSearch({ ...extraOptions, propertyType: "" });
+      };
+
       const locationOptions = await getDynamicLocationOptions();
       const cityOptions = locationOptions.cities;
       const suburbOptions = locationOptions.suburbs;
@@ -2737,6 +2791,11 @@ export async function POST(request) {
 
         const shopTypeId = String(flowData.shopType || flowData.shop_type || "").trim();
         const shopTypeTitle = shopTypeId === "any" ? "" : resolveTitleById(shopTypeId, SHOP_TYPES);
+        const shopTypeCandidates = buildPropertyTypeCandidates({
+          propertyTypeId: shopTypeId,
+          fallbackTitle: shopTypeTitle,
+          categoryHint: "commercial",
+        });
 
         const featuresRaw =
           (Array.isArray(flowData.features) ? flowData.features : null) ||
@@ -2750,13 +2809,12 @@ export async function POST(request) {
           .filter(Boolean)
           .slice(0, 12);
 
-        results = await runSearch({
+        results = await runSearchWithPropertyTypeCandidates({
           city: resolvedCity || "",
           suburb: resolvedSuburb || "",
           propertyCategory: "commercial",
-          propertyType: shopTypeTitle || "",
           features: resolvedFeatures,
-        });
+        }, shopTypeCandidates);
       } else if (screenUpper === "RENT_A_CHAIR_SEARCH") {
         const serviceTypeId = String(flowData.serviceType || flowData.service_type || "").trim();
         const serviceTypeTitle = serviceTypeId === "any" ? "" : resolveTitleById(serviceTypeId, CHAIR_SERVICE_TYPES);
@@ -2790,6 +2848,11 @@ export async function POST(request) {
 
         const propertyTypeId = String(flowData.propertyType || flowData.property_type || "").trim();
         const resolvedPropertyType = propertyTypeId ? resolveTitleById(propertyTypeId, PREDEFINED_PROPERTY_TYPES) : "";
+        const propertyTypeCandidates = buildPropertyTypeCandidates({
+          propertyTypeId,
+          fallbackTitle: resolvedPropertyType,
+          categoryHint: resolvedPropertyCategory,
+        });
 
         const bedroomsRaw = String(flowData.bedrooms || "").trim();
         const minBeds =
@@ -2810,14 +2873,13 @@ export async function POST(request) {
           .filter(Boolean)
           .slice(0, 12);
 
-        results = await runSearch({
+        results = await runSearchWithPropertyTypeCandidates({
           city: resolvedCity || "",
           suburb: resolvedSuburb || "",
           propertyCategory: resolvedPropertyCategory,
-          propertyType: resolvedPropertyType || "",
           minBeds: minBedsSafe,
           features: resolvedFeatures,
-        });
+        }, propertyTypeCandidates);
       }
     } catch (e) {
       console.warn("[webhook] flow search error", e);
