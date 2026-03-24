@@ -154,7 +154,7 @@ export default function ListingUnlockPaymentClient({
         </p>
         {listerType === "agent" ? (
           <p className="mt-2 text-xs leading-relaxed text-amber-100/90">
-            This unlock fee is separate from agent charges{typeof agentRate === "number" ? ` (${agentRate}% agent fee)` : ""}.
+            This unlock price is separate from agent charges{typeof agentRate === "number" ? ` (${agentRate}% agent fee)` : ""}.
           </p>
         ) : null}
       </div>

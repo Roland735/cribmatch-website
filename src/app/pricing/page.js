@@ -2,8 +2,12 @@ import { getPricingSettings } from "@/lib/db";
 
 export default async function Pricing() {
   const pricing = await getPricingSettings({ ensurePersisted: true });
-  const unlockPrice = Number(pricing?.contactUnlockPriceUsd || 0);
-  const landlordPrice = Number(pricing?.landlordListingPriceUsd || 0);
+  const landlordUnlockPrice = Number(
+    pricing?.landlordContactUnlockPriceUsd ?? pricing?.contactUnlockPriceUsd ?? 0,
+  );
+  const agentUnlockPrice = Number(
+    pricing?.agentContactUnlockPriceUsd ?? pricing?.contactUnlockPriceUsd ?? 0,
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-50">
@@ -26,31 +30,29 @@ export default async function Pricing() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-base font-semibold text-white">
-                  Landlord listing fee
+                  Landlord listing contact unlock price
                 </h2>
                 <p className="mt-2 text-sm text-slate-300">
-                  Cost for landlords or agents to publish one listing.
+                  Cost to unlock landlord contact details for one listing.
                 </p>
               </div>
               <div className="text-right">
-                <p className="text-3xl font-semibold text-white">
-                  {landlordPrice === 0 ? "Free" : `$${landlordPrice.toFixed(2)}`}
-                </p>
-                <p className="text-xs text-slate-400">Per listing</p>
+                <p className="text-3xl font-semibold text-white">${landlordUnlockPrice.toFixed(2)}</p>
+                <p className="text-xs text-slate-400">USD / listing</p>
               </div>
             </div>
             <div className="mt-6 grid gap-2 text-sm text-slate-300">
               <p className="flex items-start gap-2">
                 <span className="text-emerald-300">•</span>
-                One-time fee per listing
+                Unlocks phone, WhatsApp, and email details
               </p>
               <p className="flex items-start gap-2">
                 <span className="text-emerald-300">•</span>
-                Visible on web and WhatsApp
+                One-time payment per listing
               </p>
               <p className="flex items-start gap-2">
                 <span className="text-emerald-300">•</span>
-                Updated centrally by admin
+                Works on web and WhatsApp
               </p>
             </div>
             <a
@@ -67,14 +69,14 @@ export default async function Pricing() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-base font-semibold text-white">
-                  Contact unlock fee
+                  Agent listing contact unlock price
                 </h2>
                 <p className="mt-2 text-sm text-emerald-100/90">
-                  Cost for renters to unlock contact details for one listing.
+                  Cost to unlock agent-managed listing contacts.
                 </p>
               </div>
               <div className="text-right">
-                <p className="text-3xl font-semibold text-white">${unlockPrice.toFixed(2)}</p>
+                <p className="text-3xl font-semibold text-white">${agentUnlockPrice.toFixed(2)}</p>
                 <p className="text-xs text-emerald-100/80">USD / listing</p>
               </div>
             </div>

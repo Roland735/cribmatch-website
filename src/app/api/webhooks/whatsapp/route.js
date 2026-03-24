@@ -108,14 +108,12 @@ async function getPricingForMessaging() {
       agentContactUnlockPriceUsd: Number(
         pricing?.agentContactUnlockPriceUsd ?? pricing?.contactUnlockPriceUsd ?? 2.5,
       ),
-      landlordListingPriceUsd: Number(pricing?.landlordListingPriceUsd ?? 0),
     };
   } catch {
     return {
       contactUnlockPriceUsd: 2.5,
       landlordContactUnlockPriceUsd: 2.5,
       agentContactUnlockPriceUsd: 2.5,
-      landlordListingPriceUsd: 0,
     };
   }
 }
@@ -3484,12 +3482,12 @@ export async function POST(request) {
   // list a property
   if (cmd === "list" || cmd === "list a property" || cmd === "menu_list") {
     const pricing = await getPricingForMessaging();
-    const listingFeeText = Number(pricing.landlordListingPriceUsd) <= 0
-      ? "Current listing fee: Free."
-      : `Current listing fee: USD ${formatUsd(pricing.landlordListingPriceUsd)} per listing.`;
+    const unlockPricingText =
+      `Contact unlock prices: Landlord listing USD ${formatUsd(pricing.landlordContactUnlockPriceUsd)}, ` +
+      `Agent listing USD ${formatUsd(pricing.agentContactUnlockPriceUsd)}.`;
     const flowResp = await sendListPropertyFlow(phone, {
       headerText: "📝 List a property",
-      bodyText: `Ready to list your property? Fill out the form below to get started.\n\n${listingFeeText}\nRequired fields are marked.`,
+      bodyText: `Ready to list your property? Fill out the form below to get started.\n\n${unlockPricingText}\nRequired fields are marked.`,
       footerText: "Open Listing Form",
       flow_cta: "📝 Create Listing",
     }).catch((e) => ({ error: e }));

@@ -21,13 +21,14 @@ export async function PATCH(request) {
   }
 
   const body = await request.json().catch(() => ({}));
+  const hasContactUnlockPrice = body?.contactUnlockPriceUsd !== undefined;
   const contactUnlockPriceUsd = Number(body?.contactUnlockPriceUsd);
   const landlordContactUnlockPriceUsd = Number(body?.landlordContactUnlockPriceUsd);
   const agentContactUnlockPriceUsd = Number(body?.agentContactUnlockPriceUsd);
-  const landlordListingPriceUsd = Number(body?.landlordListingPriceUsd);
+  const hasAgentDiscount = body?.agentPriceDiscountPercent !== undefined;
   const agentPriceDiscountPercent = Number(body?.agentPriceDiscountPercent);
 
-  if (!Number.isFinite(contactUnlockPriceUsd) || contactUnlockPriceUsd < 0) {
+  if (hasContactUnlockPrice && (!Number.isFinite(contactUnlockPriceUsd) || contactUnlockPriceUsd < 0)) {
     return Response.json({ error: "Unlock price must be a non-negative number" }, { status: 400 });
   }
   if (!Number.isFinite(landlordContactUnlockPriceUsd) || landlordContactUnlockPriceUsd < 0) {
@@ -36,23 +37,24 @@ export async function PATCH(request) {
   if (!Number.isFinite(agentContactUnlockPriceUsd) || agentContactUnlockPriceUsd < 0) {
     return Response.json({ error: "Agent unlock price must be a non-negative number" }, { status: 400 });
   }
-  if (!Number.isFinite(landlordListingPriceUsd) || landlordListingPriceUsd < 0) {
-    return Response.json({ error: "Landlord listing price must be a non-negative number" }, { status: 400 });
-  }
   if (
-    !Number.isFinite(agentPriceDiscountPercent) ||
-    agentPriceDiscountPercent < 0 ||
-    agentPriceDiscountPercent > 100
+    hasAgentDiscount &&
+    (
+      !Number.isFinite(agentPriceDiscountPercent) ||
+      agentPriceDiscountPercent < 0 ||
+      agentPriceDiscountPercent > 100
+    )
   ) {
     return Response.json({ error: "Agent discount must be between 0 and 100" }, { status: 400 });
   }
 
   const pricing = await updatePricingSettings({
-    contactUnlockPriceUsd,
+    contactUnlockPriceUsd: hasContactUnlockPrice
+      ? contactUnlockPriceUsd
+      : landlordContactUnlockPriceUsd,
     landlordContactUnlockPriceUsd,
     agentContactUnlockPriceUsd,
-    landlordListingPriceUsd,
-    agentPriceDiscountPercent,
+    ...(hasAgentDiscount ? { agentPriceDiscountPercent } : {}),
   });
 
   return Response.json({ ok: true, pricing });
