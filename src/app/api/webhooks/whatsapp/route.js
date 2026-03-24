@@ -1587,8 +1587,9 @@ function formatListingResultText(listing, indexHint = 0, purchasedIds = new Set(
       : typeof ensured?.lister_type === "string"
         ? ensured.lister_type
         : "direct_landlord";
+  const listerType = normalizeListerType(listerTypeRaw) || "direct_landlord";
   const listerLabel =
-    listerTypeRaw === "agent" ? "🏢 Agent Listing" : "🏠 Direct Landlord";
+    listerType === "agent" ? "🏢 Agent Listing" : "🏠 Direct Landlord";
   const agentRate =
     typeof ensured?.agentRate === "number"
       ? ensured.agentRate
@@ -1612,7 +1613,7 @@ function formatListingResultText(listing, indexHint = 0, purchasedIds = new Set(
   const lines = [
     `${indexHint + 1}) ${listerLabel} ${title} — 📍 ${suburb} — 💰 $${price}`,
     shortId ? `🏷️ CODE: ${shortId}` : null,
-    listerTypeRaw === "agent" && agentRate !== null ? `Agent fee: ${agentRate}%` : null,
+    listerType === "agent" && agentRate !== null ? `Agent fee: ${agentRate}%` : null,
     purchasedIds.has(String(id)) ? "✅ Already purchased — contact is unlocked" : null,
   ].filter(Boolean);
 

@@ -5,6 +5,23 @@ import { getLocationsSnapshot } from "./locations";
 function normalizeListingDoc(listing) {
   const obj =
     typeof listing?.toObject === "function" ? listing.toObject() : listing;
+  const listerTypeRaw =
+    typeof obj?.listerType === "string" && obj.listerType
+      ? obj.listerType
+      : typeof obj?.lister_type === "string" && obj.lister_type
+        ? obj.lister_type
+        : "";
+  const listerTypeNormalized = String(listerTypeRaw).trim().toLowerCase();
+  const listerType =
+    listerTypeNormalized === "agent" || listerTypeNormalized === "agency"
+      ? "agent"
+      : "direct_landlord";
+  const agentRate =
+    typeof obj?.agentRate === "number"
+      ? obj.agentRate
+      : typeof obj?.agent_rate === "number"
+        ? obj.agent_rate
+        : null;
   const inferredCity = inferCityFromSuburb(obj?.suburb);
   const cityValue = toSafeString(obj?.city).trim() || inferredCity;
   const propertyCategory =
@@ -19,16 +36,10 @@ function normalizeListingDoc(listing) {
     propertyType: normalizedPropertyType,
     city: cityValue,
     shortId: typeof obj?.shortId === "string" ? obj.shortId : "",
-    listerType:
-      typeof obj?.listerType === "string" && obj.listerType
-        ? obj.listerType
-        : "direct_landlord",
-    lister_type:
-      typeof obj?.listerType === "string" && obj.listerType
-        ? obj.listerType
-        : "direct_landlord",
-    agentRate: typeof obj?.agentRate === "number" ? obj.agentRate : null,
-    agent_rate: typeof obj?.agentRate === "number" ? obj.agentRate : null,
+    listerType,
+    lister_type: listerType,
+    agentRate,
+    agent_rate: agentRate,
     _id: obj?._id?.toString?.() ?? obj?._id,
     createdAt: obj?.createdAt?.toISOString?.() ?? obj?.createdAt,
     updatedAt: obj?.updatedAt?.toISOString?.() ?? obj?.updatedAt,
@@ -58,11 +69,23 @@ function withSeedShortId(listing, indexHint = 0) {
   ]
     .filter((v) => v !== undefined && v !== null)
     .join("|");
-  const listerType =
+  const listerTypeRaw =
     typeof listing?.listerType === "string" && listing.listerType
       ? listing.listerType
+      : typeof listing?.lister_type === "string" && listing.lister_type
+        ? listing.lister_type
+        : "";
+  const listerTypeNormalized = String(listerTypeRaw).trim().toLowerCase();
+  const listerType =
+    listerTypeNormalized === "agent" || listerTypeNormalized === "agency"
+      ? "agent"
       : "direct_landlord";
-  const agentRate = typeof listing?.agentRate === "number" ? listing.agentRate : null;
+  const agentRate =
+    typeof listing?.agentRate === "number"
+      ? listing.agentRate
+      : typeof listing?.agent_rate === "number"
+        ? listing.agent_rate
+        : null;
   return {
     ...listing,
     shortId: stableShortIdSeed(seed),
