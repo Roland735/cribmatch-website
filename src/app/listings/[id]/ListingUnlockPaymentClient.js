@@ -109,7 +109,14 @@ export default function ListingUnlockPaymentClient({
         const response = await fetch("/api/pricing");
         const payload = await response.json().catch(() => ({}));
         if (!active || !response.ok) return;
-        const amount = Number(payload?.pricing?.contactUnlockPriceUsd);
+        const normalizedListerType = String(listerType || "").trim().toLowerCase();
+        const amountRaw =
+          normalizedListerType === "agent"
+            ? payload?.pricing?.agentContactUnlockPriceUsd
+            : payload?.pricing?.landlordContactUnlockPriceUsd;
+        const amount = Number(
+          amountRaw ?? payload?.pricing?.contactUnlockPriceUsd,
+        );
         if (Number.isFinite(amount)) {
           setUnlockPriceUsd(amount);
         }
@@ -120,7 +127,7 @@ export default function ListingUnlockPaymentClient({
     return () => {
       active = false;
     };
-  }, []);
+  }, [listerType]);
 
   useEffect(() => {
     if (!transactionId) return undefined;

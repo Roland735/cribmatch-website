@@ -10,7 +10,7 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import mongoose from "mongoose";
-import { dbConnect, getPricingSettings, WebhookEvent, Listing, Purchase } from "@/lib/db";
+import { dbConnect, getPricingSettings, getUnlockPriceForListingType, WebhookEvent, Listing, Purchase } from "@/lib/db";
 import Message from "@/lib/Message";
 import { getListingById, getListingFacets, getListingByShortId, searchListings } from "@/lib/getListings";
 import { getLocationsSnapshot, toWhatsappLocationOptions } from "@/lib/locations";
@@ -102,10 +102,21 @@ async function getPricingForMessaging() {
     const pricing = await getPricingSettings();
     return {
       contactUnlockPriceUsd: Number(pricing?.contactUnlockPriceUsd ?? 2.5),
+      landlordContactUnlockPriceUsd: Number(
+        pricing?.landlordContactUnlockPriceUsd ?? pricing?.contactUnlockPriceUsd ?? 2.5,
+      ),
+      agentContactUnlockPriceUsd: Number(
+        pricing?.agentContactUnlockPriceUsd ?? pricing?.contactUnlockPriceUsd ?? 2.5,
+      ),
       landlordListingPriceUsd: Number(pricing?.landlordListingPriceUsd ?? 0),
     };
   } catch {
-    return { contactUnlockPriceUsd: 2.5, landlordListingPriceUsd: 0 };
+    return {
+      contactUnlockPriceUsd: 2.5,
+      landlordContactUnlockPriceUsd: 2.5,
+      agentContactUnlockPriceUsd: 2.5,
+      landlordListingPriceUsd: 0,
+    };
   }
 }
 function _safeGet(obj, path) { try { return path.reduce((o, k) => (o && o[k] != null ? o[k] : undefined), obj); } catch (e) { return undefined; } }
@@ -4161,6 +4172,10 @@ async function startListingPaymentFlow({ phone, listing, dbAvailable, savedMsg, 
     const listingCode = getShortIdFromListing(listing);
     const listingLabel = listingCode ? `${listing.title || "Listing"} (${listingCode})` : (listing.title || "Listing");
     const pricing = await getPricingForMessaging();
+    const unlockAmount = getUnlockPriceForListingType(
+      pricing,
+      normalizeListerType(listing?.listerType || listing?.lister_type) || "direct_landlord",
+    );
     const listingType = normalizeListerType(listing?.listerType || listing?.lister_type) || "direct_landlord";
     const agentRate =
       typeof listing?.agentRate === "number"
@@ -4174,7 +4189,7 @@ async function startListingPaymentFlow({ phone, listing, dbAvailable, savedMsg, 
         : "";
     await sendInteractiveButtons(
       phone,
-      `🔒 To unlock contact details for ${listingLabel}, pay USD ${formatUsd(pricing.contactUnlockPriceUsd)} via PayNow EcoCash.${agentFeeLine}\n\nReply with your EcoCash number (e.g. 0771234567).`,
+      `🔒 To unlock contact details for ${listingLabel}, pay USD ${formatUsd(unlockAmount)} via PayNow EcoCash.${agentFeeLine}\n\nReply with your EcoCash number (e.g. 0771234567).`,
       [{ id: "menu_main", title: "🏠 Main menu" }],
       { headerText: "PayNow EcoCash" }
     );

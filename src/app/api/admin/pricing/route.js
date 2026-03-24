@@ -22,11 +22,19 @@ export async function PATCH(request) {
 
   const body = await request.json().catch(() => ({}));
   const contactUnlockPriceUsd = Number(body?.contactUnlockPriceUsd);
+  const landlordContactUnlockPriceUsd = Number(body?.landlordContactUnlockPriceUsd);
+  const agentContactUnlockPriceUsd = Number(body?.agentContactUnlockPriceUsd);
   const landlordListingPriceUsd = Number(body?.landlordListingPriceUsd);
   const agentPriceDiscountPercent = Number(body?.agentPriceDiscountPercent);
 
   if (!Number.isFinite(contactUnlockPriceUsd) || contactUnlockPriceUsd < 0) {
     return Response.json({ error: "Unlock price must be a non-negative number" }, { status: 400 });
+  }
+  if (!Number.isFinite(landlordContactUnlockPriceUsd) || landlordContactUnlockPriceUsd < 0) {
+    return Response.json({ error: "Landlord unlock price must be a non-negative number" }, { status: 400 });
+  }
+  if (!Number.isFinite(agentContactUnlockPriceUsd) || agentContactUnlockPriceUsd < 0) {
+    return Response.json({ error: "Agent unlock price must be a non-negative number" }, { status: 400 });
   }
   if (!Number.isFinite(landlordListingPriceUsd) || landlordListingPriceUsd < 0) {
     return Response.json({ error: "Landlord listing price must be a non-negative number" }, { status: 400 });
@@ -41,6 +49,8 @@ export async function PATCH(request) {
 
   const pricing = await updatePricingSettings({
     contactUnlockPriceUsd,
+    landlordContactUnlockPriceUsd,
+    agentContactUnlockPriceUsd,
     landlordListingPriceUsd,
     agentPriceDiscountPercent,
   });

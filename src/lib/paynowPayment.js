@@ -1,6 +1,6 @@
 // /lib/paynowEcocash.js
 import crypto from "crypto";
-import { dbConnect, getPricingSettings, PaymentTransaction } from "@/lib/db";
+import { dbConnect, getPricingSettings, getUnlockPriceForListingType, PaymentTransaction } from "@/lib/db";
 
 const PAYNOW_INTEGRATION_ID = process.env.PAYNOW_INTEGRATION_ID || "22925";
 const PAYNOW_INTEGRATION_KEY = process.env.PAYNOW_INTEGRATION_KEY || "290c9058-50a4-4bbf-b999-d07c2cd46c44";
@@ -200,10 +200,12 @@ export async function initiatePaynowEcocashPayment({ phone, payerMobile, listing
   const listingId = String(listing?._id || listing?.id || "");
   const listingCode = String(listing?.shortId || "").toUpperCase();
   const listingTitle = String(listing?.title || "Property listing");
+  const listingType = String(listing?.listerType || listing?.lister_type || "direct_landlord");
   const reference = buildReference(listingCode);
   const pricing = await getPricingSettings();
-  const amountCandidate = Number.isFinite(Number(pricing?.contactUnlockPriceUsd))
-    ? Number(pricing.contactUnlockPriceUsd)
+  const unlockByType = getUnlockPriceForListingType(pricing, listingType);
+  const amountCandidate = Number.isFinite(Number(unlockByType))
+    ? Number(unlockByType)
     : (Number.isFinite(CONTACT_UNLOCK_AMOUNT) ? CONTACT_UNLOCK_AMOUNT : 2.5);
   const amount = Number.parseFloat(amountCandidate.toFixed(2));
   if (!Number.isFinite(amount) || amount <= 0) {

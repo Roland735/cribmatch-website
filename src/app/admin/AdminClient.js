@@ -177,11 +177,15 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
   const [generatedPost, setGeneratedPost] = useState(null); // { id, text }
   const [pricing, setPricing] = useState({
     contactUnlockPriceUsd: 2.5,
+    landlordContactUnlockPriceUsd: 2.5,
+    agentContactUnlockPriceUsd: 2.5,
     landlordListingPriceUsd: 0,
     agentPriceDiscountPercent: 5,
   });
   const [pricingForm, setPricingForm] = useState({
     contactUnlockPriceUsd: "2.50",
+    landlordContactUnlockPriceUsd: "2.50",
+    agentContactUnlockPriceUsd: "2.50",
     landlordListingPriceUsd: "0.00",
     agentPriceDiscountPercent: "5.00",
   });
@@ -529,12 +533,20 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
       }
       const nextPricing = {
         contactUnlockPriceUsd: Number(data?.pricing?.contactUnlockPriceUsd ?? 2.5),
+        landlordContactUnlockPriceUsd: Number(
+          data?.pricing?.landlordContactUnlockPriceUsd ?? data?.pricing?.contactUnlockPriceUsd ?? 2.5,
+        ),
+        agentContactUnlockPriceUsd: Number(
+          data?.pricing?.agentContactUnlockPriceUsd ?? data?.pricing?.contactUnlockPriceUsd ?? 2.5,
+        ),
         landlordListingPriceUsd: Number(data?.pricing?.landlordListingPriceUsd ?? 0),
         agentPriceDiscountPercent: Number(data?.pricing?.agentPriceDiscountPercent ?? 5),
       };
       setPricing(nextPricing);
       setPricingForm({
         contactUnlockPriceUsd: formatUsdAmount(nextPricing.contactUnlockPriceUsd),
+        landlordContactUnlockPriceUsd: formatUsdAmount(nextPricing.landlordContactUnlockPriceUsd),
+        agentContactUnlockPriceUsd: formatUsdAmount(nextPricing.agentContactUnlockPriceUsd),
         landlordListingPriceUsd: formatUsdAmount(nextPricing.landlordListingPriceUsd),
         agentPriceDiscountPercent: formatUsdAmount(nextPricing.agentPriceDiscountPercent),
       });
@@ -811,10 +823,18 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
     setPricingError("");
     try {
       const contactUnlockPriceUsd = Number(pricingForm.contactUnlockPriceUsd);
+      const landlordContactUnlockPriceUsd = Number(pricingForm.landlordContactUnlockPriceUsd);
+      const agentContactUnlockPriceUsd = Number(pricingForm.agentContactUnlockPriceUsd);
       const landlordListingPriceUsd = Number(pricingForm.landlordListingPriceUsd);
       const agentPriceDiscountPercent = Number(pricingForm.agentPriceDiscountPercent);
       if (!Number.isFinite(contactUnlockPriceUsd) || contactUnlockPriceUsd < 0) {
         throw new Error("Unlock price must be a non-negative number.");
+      }
+      if (!Number.isFinite(landlordContactUnlockPriceUsd) || landlordContactUnlockPriceUsd < 0) {
+        throw new Error("Landlord unlock price must be a non-negative number.");
+      }
+      if (!Number.isFinite(agentContactUnlockPriceUsd) || agentContactUnlockPriceUsd < 0) {
+        throw new Error("Agent unlock price must be a non-negative number.");
       }
       if (!Number.isFinite(landlordListingPriceUsd) || landlordListingPriceUsd < 0) {
         throw new Error("Landlord listing price must be a non-negative number.");
@@ -830,7 +850,13 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
       const response = await fetch("/api/admin/pricing", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ contactUnlockPriceUsd, landlordListingPriceUsd, agentPriceDiscountPercent }),
+        body: JSON.stringify({
+          contactUnlockPriceUsd,
+          landlordContactUnlockPriceUsd,
+          agentContactUnlockPriceUsd,
+          landlordListingPriceUsd,
+          agentPriceDiscountPercent,
+        }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -838,6 +864,12 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
       }
       const nextPricing = {
         contactUnlockPriceUsd: Number(data?.pricing?.contactUnlockPriceUsd ?? contactUnlockPriceUsd),
+        landlordContactUnlockPriceUsd: Number(
+          data?.pricing?.landlordContactUnlockPriceUsd ?? landlordContactUnlockPriceUsd,
+        ),
+        agentContactUnlockPriceUsd: Number(
+          data?.pricing?.agentContactUnlockPriceUsd ?? agentContactUnlockPriceUsd,
+        ),
         landlordListingPriceUsd: Number(data?.pricing?.landlordListingPriceUsd ?? landlordListingPriceUsd),
         agentPriceDiscountPercent: Number(
           data?.pricing?.agentPriceDiscountPercent ?? agentPriceDiscountPercent,
@@ -846,6 +878,8 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
       setPricing(nextPricing);
       setPricingForm({
         contactUnlockPriceUsd: formatUsdAmount(nextPricing.contactUnlockPriceUsd),
+        landlordContactUnlockPriceUsd: formatUsdAmount(nextPricing.landlordContactUnlockPriceUsd),
+        agentContactUnlockPriceUsd: formatUsdAmount(nextPricing.agentContactUnlockPriceUsd),
         landlordListingPriceUsd: formatUsdAmount(nextPricing.landlordListingPriceUsd),
         agentPriceDiscountPercent: formatUsdAmount(nextPricing.agentPriceDiscountPercent),
       });
@@ -2181,10 +2215,10 @@ Interested? Contact us today!
               Set prices once and sync them across web checkout and WhatsApp flows.
             </p>
 
-            <div className="mt-6 grid gap-4 sm:grid-cols-3">
+            <div className="mt-6 grid gap-4 sm:grid-cols-5">
               <div>
                 <label className="block text-sm font-medium text-slate-200" htmlFor="contactUnlockPriceUsd">
-                  Unlock contact details (USD per listing)
+                  Default unlock fee (USD)
                 </label>
                 <input
                   id="contactUnlockPriceUsd"
@@ -2192,6 +2226,38 @@ Interested? Contact us today!
                   value={pricingForm.contactUnlockPriceUsd}
                   onChange={(event) =>
                     setPricingForm((current) => ({ ...current, contactUnlockPriceUsd: event.target.value }))
+                  }
+                  className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+                  placeholder="2.50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-200" htmlFor="landlordContactUnlockPriceUsd">
+                  Landlord unlock fee (USD)
+                </label>
+                <input
+                  id="landlordContactUnlockPriceUsd"
+                  inputMode="decimal"
+                  value={pricingForm.landlordContactUnlockPriceUsd}
+                  onChange={(event) =>
+                    setPricingForm((current) => ({ ...current, landlordContactUnlockPriceUsd: event.target.value }))
+                  }
+                  className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+                  placeholder="2.50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-200" htmlFor="agentContactUnlockPriceUsd">
+                  Agent unlock fee (USD)
+                </label>
+                <input
+                  id="agentContactUnlockPriceUsd"
+                  inputMode="decimal"
+                  value={pricingForm.agentContactUnlockPriceUsd}
+                  onChange={(event) =>
+                    setPricingForm((current) => ({ ...current, agentContactUnlockPriceUsd: event.target.value }))
                   }
                   className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
                   placeholder="2.50"
@@ -2237,7 +2303,7 @@ Interested? Contact us today!
 
             <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs text-slate-400">
-                Current: Unlock ${formatUsdAmount(pricing.contactUnlockPriceUsd)} • Landlord ${formatUsdAmount(pricing.landlordListingPriceUsd)} • Agent discount {formatUsdAmount(pricing.agentPriceDiscountPercent)}%
+                Current: Default unlock ${formatUsdAmount(pricing.contactUnlockPriceUsd)} • Landlord unlock ${formatUsdAmount(pricing.landlordContactUnlockPriceUsd)} • Agent unlock ${formatUsdAmount(pricing.agentContactUnlockPriceUsd)} • Landlord listing ${formatUsdAmount(pricing.landlordListingPriceUsd)} • Agent discount {formatUsdAmount(pricing.agentPriceDiscountPercent)}%
               </p>
               <button
                 type="button"

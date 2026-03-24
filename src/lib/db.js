@@ -458,6 +458,8 @@ export const Report = mongoose.models.Report || mongoose.model("Report", ReportS
 
 const DEFAULT_PRICING_SETTINGS = {
   contactUnlockPriceUsd: 2.5,
+  landlordContactUnlockPriceUsd: 2.5,
+  agentContactUnlockPriceUsd: 2.5,
   landlordListingPriceUsd: 0,
   agentPriceDiscountPercent: 5,
 };
@@ -466,6 +468,8 @@ const PricingSettingsSchema = new mongoose.Schema(
   {
     _id: { type: String, default: "default" },
     contactUnlockPriceUsd: { type: Number, required: true, min: 0, default: DEFAULT_PRICING_SETTINGS.contactUnlockPriceUsd },
+    landlordContactUnlockPriceUsd: { type: Number, required: true, min: 0, default: DEFAULT_PRICING_SETTINGS.landlordContactUnlockPriceUsd },
+    agentContactUnlockPriceUsd: { type: Number, required: true, min: 0, default: DEFAULT_PRICING_SETTINGS.agentContactUnlockPriceUsd },
     landlordListingPriceUsd: { type: Number, required: true, min: 0, default: DEFAULT_PRICING_SETTINGS.landlordListingPriceUsd },
     agentPriceDiscountPercent: { type: Number, required: true, min: 0, max: 100, default: DEFAULT_PRICING_SETTINGS.agentPriceDiscountPercent },
   },
@@ -481,6 +485,18 @@ function normalizeMoney(value, fallback) {
   return Math.round(amount * 100) / 100;
 }
 
+export function getUnlockPriceForListingType(pricing = {}, listerType = "direct_landlord") {
+  const normalizedType = String(listerType || "").trim().toLowerCase();
+  const fallback = normalizeMoney(
+    pricing?.contactUnlockPriceUsd,
+    DEFAULT_PRICING_SETTINGS.contactUnlockPriceUsd,
+  );
+  if (normalizedType === "agent" || normalizedType === "agency") {
+    return normalizeMoney(pricing?.agentContactUnlockPriceUsd, fallback);
+  }
+  return normalizeMoney(pricing?.landlordContactUnlockPriceUsd, fallback);
+}
+
 export async function getPricingSettings({ ensurePersisted = false } = {}) {
   await dbConnect();
   if (ensurePersisted) {
@@ -489,6 +505,8 @@ export async function getPricingSettings({ ensurePersisted = false } = {}) {
       {
         $setOnInsert: {
           contactUnlockPriceUsd: DEFAULT_PRICING_SETTINGS.contactUnlockPriceUsd,
+          landlordContactUnlockPriceUsd: DEFAULT_PRICING_SETTINGS.landlordContactUnlockPriceUsd,
+          agentContactUnlockPriceUsd: DEFAULT_PRICING_SETTINGS.agentContactUnlockPriceUsd,
           landlordListingPriceUsd: DEFAULT_PRICING_SETTINGS.landlordListingPriceUsd,
           agentPriceDiscountPercent: DEFAULT_PRICING_SETTINGS.agentPriceDiscountPercent,
         },
@@ -499,6 +517,20 @@ export async function getPricingSettings({ ensurePersisted = false } = {}) {
       contactUnlockPriceUsd: normalizeMoney(
         persisted?.contactUnlockPriceUsd,
         DEFAULT_PRICING_SETTINGS.contactUnlockPriceUsd,
+      ),
+      landlordContactUnlockPriceUsd: normalizeMoney(
+        persisted?.landlordContactUnlockPriceUsd,
+        normalizeMoney(
+          persisted?.contactUnlockPriceUsd,
+          DEFAULT_PRICING_SETTINGS.landlordContactUnlockPriceUsd,
+        ),
+      ),
+      agentContactUnlockPriceUsd: normalizeMoney(
+        persisted?.agentContactUnlockPriceUsd,
+        normalizeMoney(
+          persisted?.contactUnlockPriceUsd,
+          DEFAULT_PRICING_SETTINGS.agentContactUnlockPriceUsd,
+        ),
       ),
       landlordListingPriceUsd: normalizeMoney(
         persisted?.landlordListingPriceUsd,
@@ -517,6 +549,20 @@ export async function getPricingSettings({ ensurePersisted = false } = {}) {
       existing?.contactUnlockPriceUsd,
       DEFAULT_PRICING_SETTINGS.contactUnlockPriceUsd,
     ),
+    landlordContactUnlockPriceUsd: normalizeMoney(
+      existing?.landlordContactUnlockPriceUsd,
+      normalizeMoney(
+        existing?.contactUnlockPriceUsd,
+        DEFAULT_PRICING_SETTINGS.landlordContactUnlockPriceUsd,
+      ),
+    ),
+    agentContactUnlockPriceUsd: normalizeMoney(
+      existing?.agentContactUnlockPriceUsd,
+      normalizeMoney(
+        existing?.contactUnlockPriceUsd,
+        DEFAULT_PRICING_SETTINGS.agentContactUnlockPriceUsd,
+      ),
+    ),
     landlordListingPriceUsd: normalizeMoney(
       existing?.landlordListingPriceUsd,
       DEFAULT_PRICING_SETTINGS.landlordListingPriceUsd,
@@ -531,6 +577,14 @@ export async function getPricingSettings({ ensurePersisted = false } = {}) {
 export async function updatePricingSettings(input = {}) {
   const current = await getPricingSettings({ ensurePersisted: true });
   const contactUnlockPriceUsd = normalizeMoney(input?.contactUnlockPriceUsd, current.contactUnlockPriceUsd);
+  const landlordContactUnlockPriceUsd = normalizeMoney(
+    input?.landlordContactUnlockPriceUsd,
+    current.landlordContactUnlockPriceUsd,
+  );
+  const agentContactUnlockPriceUsd = normalizeMoney(
+    input?.agentContactUnlockPriceUsd,
+    current.agentContactUnlockPriceUsd,
+  );
   const landlordListingPriceUsd = normalizeMoney(input?.landlordListingPriceUsd, current.landlordListingPriceUsd);
   const agentPriceDiscountPercent = normalizeMoney(
     input?.agentPriceDiscountPercent,
@@ -542,6 +596,8 @@ export async function updatePricingSettings(input = {}) {
     {
       $set: {
         contactUnlockPriceUsd,
+        landlordContactUnlockPriceUsd,
+        agentContactUnlockPriceUsd,
         landlordListingPriceUsd,
         agentPriceDiscountPercent,
       },
@@ -553,6 +609,14 @@ export async function updatePricingSettings(input = {}) {
     contactUnlockPriceUsd: normalizeMoney(
       saved?.contactUnlockPriceUsd,
       DEFAULT_PRICING_SETTINGS.contactUnlockPriceUsd,
+    ),
+    landlordContactUnlockPriceUsd: normalizeMoney(
+      saved?.landlordContactUnlockPriceUsd,
+      DEFAULT_PRICING_SETTINGS.landlordContactUnlockPriceUsd,
+    ),
+    agentContactUnlockPriceUsd: normalizeMoney(
+      saved?.agentContactUnlockPriceUsd,
+      DEFAULT_PRICING_SETTINGS.agentContactUnlockPriceUsd,
     ),
     landlordListingPriceUsd: normalizeMoney(
       saved?.landlordListingPriceUsd,
