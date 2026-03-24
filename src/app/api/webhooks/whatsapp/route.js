@@ -1697,6 +1697,22 @@ function calibrateByListerType(listings = [], preferredType = "") {
   return [...top, ...rest];
 }
 
+function sortListingsByLatest(listings = []) {
+  if (!Array.isArray(listings) || listings.length <= 1) return Array.isArray(listings) ? listings : [];
+  const toTimestamp = (value) => {
+    if (!value) return 0;
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    const time = new Date(value).getTime();
+    return Number.isFinite(time) ? time : 0;
+  };
+  return [...listings].sort((a, b) => {
+    const aTs = toTimestamp(a?.createdAt);
+    const bTs = toTimestamp(b?.createdAt);
+    if (bTs !== aTs) return bTs - aTs;
+    return 0;
+  });
+}
+
 /* -------------------------
    Flow detection & parsing helpers
 ------------------------- */
@@ -2977,7 +2993,8 @@ export async function POST(request) {
         rankedItems = Array.from(mergedById.values());
       }
     }
-    const items = rankedItems.slice(0, 6);
+    const latestRankedItems = sortListingsByLatest(rankedItems);
+    const items = latestRankedItems.slice(0, 6);
     if (!items.length) {
       await sendWithMainMenuButton(phone, "🔍 No matches found for your search.", "Try adjusting filters or a broader search.");
       return NextResponse.json({ ok: true, note: "flow-search-no-results" });
@@ -4144,9 +4161,20 @@ async function startListingPaymentFlow({ phone, listing, dbAvailable, savedMsg, 
     const listingCode = getShortIdFromListing(listing);
     const listingLabel = listingCode ? `${listing.title || "Listing"} (${listingCode})` : (listing.title || "Listing");
     const pricing = await getPricingForMessaging();
+    const listingType = normalizeListerType(listing?.listerType || listing?.lister_type) || "direct_landlord";
+    const agentRate =
+      typeof listing?.agentRate === "number"
+        ? listing.agentRate
+        : typeof listing?.agent_rate === "number"
+          ? listing.agent_rate
+          : null;
+    const agentFeeLine =
+      listingType === "agent"
+        ? `\n\nℹ️ This payment only unlocks contact details. Agent fee${agentRate !== null ? ` (${agentRate}%)` : ""} is separate and paid directly to the agent if you proceed.`
+        : "";
     await sendInteractiveButtons(
       phone,
-      `🔒 To unlock contact details for ${listingLabel}, pay USD ${formatUsd(pricing.contactUnlockPriceUsd)} via PayNow EcoCash.\n\nReply with your EcoCash number (e.g. 0771234567).`,
+      `🔒 To unlock contact details for ${listingLabel}, pay USD ${formatUsd(pricing.contactUnlockPriceUsd)} via PayNow EcoCash.${agentFeeLine}\n\nReply with your EcoCash number (e.g. 0771234567).`,
       [{ id: "menu_main", title: "🏠 Main menu" }],
       { headerText: "PayNow EcoCash" }
     );

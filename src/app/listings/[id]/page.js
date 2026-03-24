@@ -322,7 +322,11 @@ export default async function ListingDetail({ params }) {
                   </Link>
                 </div>
               ) : !canSeeDetails ? (
-                <ListingUnlockPaymentClient listingId={String(listing._id)} />
+                <ListingUnlockPaymentClient
+                  listingId={String(listing._id)}
+                  listerType={listerType}
+                  agentRate={agentRate}
+                />
               ) : (
                 <>
                   <p className="mt-3 text-lg font-semibold text-emerald-50">

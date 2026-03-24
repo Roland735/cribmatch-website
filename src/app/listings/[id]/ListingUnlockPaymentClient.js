@@ -4,7 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import PhoneNumberInput from "@/app/PhoneNumberInput";
 
-export default function ListingUnlockPaymentClient({ listingId }) {
+export default function ListingUnlockPaymentClient({
+  listingId,
+  listerType = "direct_landlord",
+  agentRate = null,
+}) {
   const router = useRouter();
   const [unlockPriceUsd, setUnlockPriceUsd] = useState(2.5);
   const [payerMobile, setPayerMobile] = useState("");
@@ -141,6 +145,11 @@ export default function ListingUnlockPaymentClient({ listingId }) {
         <p className="text-sm leading-relaxed text-amber-200">
           You haven&apos;t unlocked this listing yet. Pay USD {unlockPriceUsd.toFixed(2)} via Paynow EcoCash to view phone, WhatsApp, and email.
         </p>
+        {listerType === "agent" ? (
+          <p className="mt-2 text-xs leading-relaxed text-amber-100/90">
+            This unlock fee is separate from agent charges{typeof agentRate === "number" ? ` (${agentRate}% agent fee)` : ""}.
+          </p>
+        ) : null}
       </div>
 
       <div className="space-y-2">
