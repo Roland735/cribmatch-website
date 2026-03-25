@@ -216,6 +216,7 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
   const [creatorRole, setCreatorRole] = useState("user");
   const [creatorVerificationStatus, setCreatorVerificationStatus] = useState("none");
   const [listingCreatorType, setListingCreatorType] = useState("direct_landlord");
+  const [listingOwnerName, setListingOwnerName] = useState("");
   const [listingOwnerPhone, setListingOwnerPhone] = useState("");
   const uploadTasksRef = useRef(new Map());
 
@@ -673,6 +674,7 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
           images: cleanedImages,
           status: uiToStatus(status),
           approved,
+          contactName: !editingListingId && scope === "all" ? listingOwnerName.trim() || undefined : undefined,
           listerType: !editingListingId ? listingCreatorType : undefined,
           listerPhoneNumber:
             !editingListingId && scope === "all" ? listingOwnerPhone.trim() || undefined : undefined,
@@ -720,6 +722,7 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
     setStatus(statusToUi(listing.status));
     setApproved(listing.approved || false);
     setListingCreatorType(listing.listerType === "agent" ? "agent" : "direct_landlord");
+    setListingOwnerName(typeof listing.contactName === "string" ? listing.contactName : "");
     setListingOwnerPhone(
       typeof listing.listerPhoneNumber === "string" ? listing.listerPhoneNumber : "",
     );
@@ -757,6 +760,7 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
     setStatus("active");
     setApproved(false);
     setListingCreatorType("direct_landlord");
+    setListingOwnerName("");
     setListingOwnerPhone("");
     setSaveError("");
   }
@@ -1305,6 +1309,16 @@ Interested? Contact us today!
                     </p>
                     {scope === "all" ? (
                       <div className="mt-4">
+                        <label className="block text-sm font-medium text-slate-200" htmlFor="listingOwnerName">
+                          Contact name (optional)
+                        </label>
+                        <input
+                          id="listingOwnerName"
+                          value={listingOwnerName}
+                          onChange={(e) => setListingOwnerName(e.target.value)}
+                          className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+                          placeholder="Tariro Moyo"
+                        />
                         <label className="block text-sm font-medium text-slate-200" htmlFor="listingOwnerPhone">
                           Listing owner phone (optional)
                         </label>
@@ -1316,7 +1330,7 @@ Interested? Contact us today!
                           placeholder="0771234567"
                         />
                         <p className="mt-2 text-xs text-slate-400">
-                          Leave blank to assign the listing to your admin account.
+                          Leave both fields blank to assign the listing to your admin account.
                         </p>
                       </div>
                     ) : null}
