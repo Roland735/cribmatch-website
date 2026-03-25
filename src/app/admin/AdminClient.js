@@ -216,6 +216,7 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
   const [creatorRole, setCreatorRole] = useState("user");
   const [creatorVerificationStatus, setCreatorVerificationStatus] = useState("none");
   const [listingCreatorType, setListingCreatorType] = useState("direct_landlord");
+  const [listingOwnerPhone, setListingOwnerPhone] = useState("");
   const uploadTasksRef = useRef(new Map());
 
   const cleanedImages = useMemo(() => {
@@ -285,6 +286,7 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
     if (hasUploadsInProgress) return "Please wait for image uploads to finish.";
     if (
       !editingListingId &&
+      scope === "mine" &&
       listingCreatorType === "agent" &&
       !(creatorRole === "agent" && creatorVerificationStatus === "verified")
     ) {
@@ -307,6 +309,7 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
     pricePerMonth,
     propertyCategory,
     propertyType,
+    scope,
     suburb,
     title,
   ]);
@@ -671,6 +674,8 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
           status: uiToStatus(status),
           approved,
           listerType: !editingListingId ? listingCreatorType : undefined,
+          listerPhoneNumber:
+            !editingListingId && scope === "all" ? listingOwnerPhone.trim() || undefined : undefined,
         }),
       });
 
@@ -714,6 +719,10 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
     setSelectedFeatures(listing.features || []);
     setStatus(statusToUi(listing.status));
     setApproved(listing.approved || false);
+    setListingCreatorType(listing.listerType === "agent" ? "agent" : "direct_landlord");
+    setListingOwnerPhone(
+      typeof listing.listerPhoneNumber === "string" ? listing.listerPhoneNumber : "",
+    );
     setImageUploads(
       (listing.images || []).map((url) => ({
         id: randomId(),
@@ -748,6 +757,7 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
     setStatus("active");
     setApproved(false);
     setListingCreatorType("direct_landlord");
+    setListingOwnerPhone("");
     setSaveError("");
   }
 
@@ -1272,7 +1282,7 @@ Interested? Contact us today!
                 {editingListingId ? "Edit listing" : "Create listing"}
               </p>
               <form className="mt-5 grid gap-4 sm:grid-cols-2" onSubmit={handleSave}>
-                {!editingListingId && scope === "mine" ? (
+                {!editingListingId && (scope === "mine" || scope === "all") ? (
                   <div className="sm:col-span-2 rounded-2xl border border-white/10 bg-slate-950/40 p-4">
                     <label className="block text-sm font-medium text-slate-200" htmlFor="listingCreatorType">
                       Create listing as
@@ -1284,13 +1294,32 @@ Interested? Contact us today!
                       className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
                     >
                       <option value="direct_landlord">Landlord listing</option>
-                      {creatorRole === "agent" && creatorVerificationStatus === "verified" ? (
+                      {scope === "all" || (creatorRole === "agent" && creatorVerificationStatus === "verified") ? (
                         <option value="agent">Agent listing</option>
                       ) : null}
                     </select>
                     <p className="mt-2 text-xs text-slate-400">
-                      WhatsApp listings are always saved as landlord listings.
+                      {scope === "all"
+                        ? "Choose whether this listing is treated as an agent or direct landlord listing."
+                        : "WhatsApp listings are always saved as landlord listings."}
                     </p>
+                    {scope === "all" ? (
+                      <div className="mt-4">
+                        <label className="block text-sm font-medium text-slate-200" htmlFor="listingOwnerPhone">
+                          Listing owner phone (optional)
+                        </label>
+                        <input
+                          id="listingOwnerPhone"
+                          value={listingOwnerPhone}
+                          onChange={(e) => setListingOwnerPhone(e.target.value)}
+                          className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+                          placeholder="0771234567"
+                        />
+                        <p className="mt-2 text-xs text-slate-400">
+                          Leave blank to assign the listing to your admin account.
+                        </p>
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
                 <div className="sm:col-span-2">

@@ -303,15 +303,20 @@ export async function POST(request) {
     );
   }
 
-  const listerPhoneNumber =
+  const sessionPhoneNumber =
     typeof session?.user?.phoneNumber === "string" ? session.user.phoneNumber.trim() : "";
   const isAdmin = session?.user?.role === "admin";
-  if (!listerPhoneNumber) {
+  if (!sessionPhoneNumber) {
     return Response.json({ error: "Missing lister phone number" }, { status: 400 });
   }
 
   const body = await request.json();
   const payload = normalizeListingPayload(body);
+  const requestedListerPhoneNumber =
+    typeof body?.listerPhoneNumber === "string" ? body.listerPhoneNumber.trim() : "";
+  const listerPhoneNumber = isAdmin && requestedListerPhoneNumber
+    ? requestedListerPhoneNumber
+    : sessionPhoneNumber;
   const validationError = validateListingPayload(payload);
   if (validationError) {
     return Response.json({ error: validationError }, { status: 400 });
@@ -320,18 +325,22 @@ export async function POST(request) {
   const now = new Date();
 
   await dbConnect();
-  const actor = await User.findById(listerPhoneNumber).lean();
+  const actor = await User.findById(sessionPhoneNumber).lean();
+  const listerProfile = listerPhoneNumber === sessionPhoneNumber
+    ? actor
+    : await User.findById(listerPhoneNumber).lean();
   const actorRole = actor?.role || session?.user?.role || "user";
   const isAgent = actorRole === "agent";
   const actorVerificationStatus = actor?.agentProfile?.verificationStatus || "none";
   const listingsFrozen = Boolean(actor?.agentProfile?.listingsFrozen);
   const canCreateAgentListing =
-    isAgent && !listingsFrozen && actorVerificationStatus === "verified";
-  const requestedListerType =
-    payload.listerType === "agent" ||
-      (payload.listerType !== "direct_landlord" && canCreateAgentListing)
-      ? "agent"
-      : "direct_landlord";
+    isAdmin || (isAgent && !listingsFrozen && actorVerificationStatus === "verified");
+  let requestedListerType = "direct_landlord";
+  if (payload.listerType === "agent") {
+    requestedListerType = "agent";
+  } else if (payload.listerType !== "direct_landlord") {
+    requestedListerType = !isAdmin && canCreateAgentListing ? "agent" : "direct_landlord";
+  }
   if (requestedListerType === "agent" && !canCreateAgentListing) {
     return Response.json(
       {
@@ -348,7 +357,7 @@ export async function POST(request) {
   let listerType = "direct_landlord";
   let approved = isAdmin && typeof body?.approved === "boolean" ? body.approved : false;
   let approvalStatus = approved ? "approved" : "pending";
-  let approvedByAdminId = approved ? listerPhoneNumber : "";
+  let approvedByAdminId = approved ? sessionPhoneNumber : "";
   let approvedAt = approved ? now : null;
   let approvalReason = approved ? "Approved by admin on create" : "Awaiting admin approval";
 
@@ -360,13 +369,13 @@ export async function POST(request) {
     approvedAt = null;
     approvalReason = "Agent listing pending approval";
     agentRate =
-      typeof actor?.agentProfile?.commissionRatePercent === "number"
-        ? actor.agentProfile.commissionRatePercent
+      typeof listerProfile?.agentProfile?.commissionRatePercent === "number"
+        ? listerProfile.agentProfile.commissionRatePercent
         : null;
     agentFixedFee =
-      typeof actor?.agentProfile?.fixedFee === "number" ? actor.agentProfile.fixedFee : null;
-    agentProfileImageUrl = String(actor?.agentProfile?.profileImageUrl || "").trim();
-    if (agentRate === null && agentFixedFee === null) {
+      typeof listerProfile?.agentProfile?.fixedFee === "number" ? listerProfile.agentProfile.fixedFee : null;
+    agentProfileImageUrl = String(listerProfile?.agentProfile?.profileImageUrl || "").trim();
+    if (!isAdmin && agentRate === null && agentFixedFee === null) {
       return Response.json(
         { error: "Agent profile must have commission rate or fixed fee configured" },
         { status: 400 },
