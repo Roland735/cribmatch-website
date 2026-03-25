@@ -231,4 +231,72 @@ describe("POST /api/listings agent price rule", () => {
     const payload = await response.json();
     expect(payload.listing.lister_type).toBe("agent");
   });
+
+  test("allows admin to create agent listing with fixed fee override", async () => {
+    getServerSessionMock.mockResolvedValue({
+      user: { phoneNumber: "+263770000001", role: "admin", name: "Admin User" },
+    });
+    userFindByIdMock.mockReturnValue({
+      lean: () =>
+        Promise.resolve({
+          role: "admin",
+          agentProfile: {},
+        }),
+    });
+    listingCreateMock.mockResolvedValue({
+      _id: "listing-5",
+      ...basePayload,
+      listerType: "agent",
+      agentRate: null,
+      agentFixedFee: 35,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      toObject() {
+        return this;
+      },
+    });
+
+    const response = await POST(
+      makeRequest({
+        ...basePayload,
+        listerType: "agent",
+        pricePerMonth: 850,
+        agentRate: null,
+        agentFixedFee: 35,
+      }),
+    );
+
+    expect(response.status).toBe(201);
+    const createInput = listingCreateMock.mock.calls[0][0];
+    expect(createInput.listerType).toBe("agent");
+    expect(createInput.agentRate).toBe(null);
+    expect(createInput.agentFixedFee).toBe(35);
+  });
+
+  test("rejects admin payload when both fee modes are provided", async () => {
+    getServerSessionMock.mockResolvedValue({
+      user: { phoneNumber: "+263770000001", role: "admin", name: "Admin User" },
+    });
+    userFindByIdMock.mockReturnValue({
+      lean: () =>
+        Promise.resolve({
+          role: "admin",
+          agentProfile: {},
+        }),
+    });
+
+    const response = await POST(
+      makeRequest({
+        ...basePayload,
+        listerType: "agent",
+        pricePerMonth: 850,
+        agentRate: 10,
+        agentFixedFee: 35,
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    const payload = await response.json();
+    expect(payload.error).toMatch(/either percentage fee or fixed fee/i);
+  });
 });

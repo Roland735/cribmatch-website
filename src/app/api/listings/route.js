@@ -77,6 +77,8 @@ function normalizeListingPayload(body = {}) {
   const numberOfStudents =
     numberOfStudentsRaw !== null ? Math.floor(numberOfStudentsRaw) : null;
   const listerType = typeof body?.listerType === "string" ? body.listerType.trim() : "";
+  const agentRate = toValidNumber(body?.agentRate);
+  const agentFixedFee = toValidNumber(body?.agentFixedFee);
 
   return {
     title,
@@ -101,6 +103,8 @@ function normalizeListingPayload(body = {}) {
     duration,
     numberOfStudents,
     listerType,
+    agentRate,
+    agentFixedFee,
   };
 }
 
@@ -312,6 +316,24 @@ export async function POST(request) {
 
   const body = await request.json();
   const payload = normalizeListingPayload(body);
+  const hasAgentRate = Object.prototype.hasOwnProperty.call(body || {}, "agentRate");
+  const hasAgentFixedFee = Object.prototype.hasOwnProperty.call(body || {}, "agentFixedFee");
+  if (
+    isAdmin &&
+    hasAgentRate &&
+    body?.agentRate !== null &&
+    (typeof body?.agentRate !== "number" || !Number.isFinite(body.agentRate) || body.agentRate < 0 || body.agentRate > 100)
+  ) {
+    return Response.json({ error: "Agent rate must be a number between 0 and 100" }, { status: 400 });
+  }
+  if (
+    isAdmin &&
+    hasAgentFixedFee &&
+    body?.agentFixedFee !== null &&
+    (typeof body?.agentFixedFee !== "number" || !Number.isFinite(body.agentFixedFee) || body.agentFixedFee < 0)
+  ) {
+    return Response.json({ error: "Agent fixed fee must be a non-negative number" }, { status: 400 });
+  }
   const requestedListerPhoneNumber =
     typeof body?.listerPhoneNumber === "string" ? body.listerPhoneNumber.trim() : "";
   const listerPhoneNumber = isAdmin && requestedListerPhoneNumber
@@ -375,6 +397,31 @@ export async function POST(request) {
     agentFixedFee =
       typeof listerProfile?.agentProfile?.fixedFee === "number" ? listerProfile.agentProfile.fixedFee : null;
     agentProfileImageUrl = String(listerProfile?.agentProfile?.profileImageUrl || "").trim();
+    if (isAdmin) {
+      if (hasAgentRate) {
+        agentRate = body?.agentRate === null ? null : payload.agentRate;
+      }
+      if (hasAgentFixedFee) {
+        agentFixedFee = body?.agentFixedFee === null ? null : payload.agentFixedFee;
+      }
+      if (
+        hasAgentRate &&
+        hasAgentFixedFee &&
+        agentRate !== null &&
+        agentFixedFee !== null
+      ) {
+        return Response.json(
+          { error: "Choose either percentage fee or fixed fee, not both" },
+          { status: 400 },
+        );
+      }
+    }
+    if (agentRate === null && agentFixedFee === null) {
+      return Response.json(
+        { error: "Agent listings require either a percentage fee or fixed fee" },
+        { status: 400 },
+      );
+    }
     if (!isAdmin && agentRate === null && agentFixedFee === null) {
       return Response.json(
         { error: "Agent profile must have commission rate or fixed fee configured" },

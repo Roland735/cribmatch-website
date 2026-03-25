@@ -216,6 +216,8 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
   const [creatorRole, setCreatorRole] = useState("user");
   const [creatorVerificationStatus, setCreatorVerificationStatus] = useState("none");
   const [listingCreatorType, setListingCreatorType] = useState("direct_landlord");
+  const [agentFeeType, setAgentFeeType] = useState("percentage");
+  const [agentFeeValue, setAgentFeeValue] = useState("");
   const [listingOwnerName, setListingOwnerName] = useState("");
   const [listingOwnerPhone, setListingOwnerPhone] = useState("");
   const uploadTasksRef = useRef(new Map());
@@ -293,8 +295,19 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
     ) {
       return "Only verified agents can create agent listings.";
     }
+    if (scope === "all" && listingCreatorType === "agent") {
+      const feeValue = toNumber(agentFeeValue);
+      if (feeValue === null || feeValue < 0) {
+        return "Agent fee must be a non-negative number.";
+      }
+      if (agentFeeType === "percentage" && feeValue > 100) {
+        return "Agent fee percentage must be between 0 and 100.";
+      }
+    }
     return "";
   }, [
+    agentFeeType,
+    agentFeeValue,
     bedrooms,
     city,
     creatorRole,
@@ -676,6 +689,18 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
           approved,
           contactName: !editingListingId && scope === "all" ? listingOwnerName.trim() || undefined : undefined,
           listerType: !editingListingId ? listingCreatorType : undefined,
+          agentRate:
+            scope === "all" && listingCreatorType === "agent"
+              ? agentFeeType === "percentage"
+                ? toNumber(agentFeeValue)
+                : null
+              : undefined,
+          agentFixedFee:
+            scope === "all" && listingCreatorType === "agent"
+              ? agentFeeType === "fixed"
+                ? toNumber(agentFeeValue)
+                : null
+              : undefined,
           listerPhoneNumber:
             !editingListingId && scope === "all" ? listingOwnerPhone.trim() || undefined : undefined,
         }),
@@ -722,6 +747,21 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
     setStatus(statusToUi(listing.status));
     setApproved(listing.approved || false);
     setListingCreatorType(listing.listerType === "agent" ? "agent" : "direct_landlord");
+    if (listing.listerType === "agent") {
+      if (typeof listing.agentRate === "number") {
+        setAgentFeeType("percentage");
+        setAgentFeeValue(String(listing.agentRate));
+      } else if (typeof listing.agentFixedFee === "number") {
+        setAgentFeeType("fixed");
+        setAgentFeeValue(String(listing.agentFixedFee));
+      } else {
+        setAgentFeeType("percentage");
+        setAgentFeeValue("");
+      }
+    } else {
+      setAgentFeeType("percentage");
+      setAgentFeeValue("");
+    }
     setListingOwnerName(typeof listing.contactName === "string" ? listing.contactName : "");
     setListingOwnerPhone(
       typeof listing.listerPhoneNumber === "string" ? listing.listerPhoneNumber : "",
@@ -760,6 +800,8 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
     setStatus("active");
     setApproved(false);
     setListingCreatorType("direct_landlord");
+    setAgentFeeType("percentage");
+    setAgentFeeValue("");
     setListingOwnerName("");
     setListingOwnerPhone("");
     setSaveError("");
@@ -1334,6 +1376,43 @@ Interested? Contact us today!
                         </p>
                       </div>
                     ) : null}
+                  </div>
+                ) : null}
+                {scope === "all" && listingCreatorType === "agent" ? (
+                  <div className="sm:col-span-2 rounded-2xl border border-amber-300/30 bg-amber-500/5 p-4">
+                    <p className="text-sm font-medium text-amber-100">Agent fee setup</p>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-200" htmlFor="agentFeeType">
+                          Fee type
+                        </label>
+                        <select
+                          id="agentFeeType"
+                          value={agentFeeType}
+                          onChange={(e) => setAgentFeeType(e.target.value === "fixed" ? "fixed" : "percentage")}
+                          className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+                        >
+                          <option value="percentage">Percentage (%)</option>
+                          <option value="fixed">Fixed amount (USD)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-200" htmlFor="agentFeeValue">
+                          Fee value
+                        </label>
+                        <input
+                          id="agentFeeValue"
+                          inputMode="decimal"
+                          value={agentFeeValue}
+                          onChange={(e) => setAgentFeeValue(e.target.value)}
+                          className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+                          placeholder={agentFeeType === "percentage" ? "10" : "25"}
+                        />
+                      </div>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-300">
+                      Set either a percentage commission or a fixed USD fee for this agent listing.
+                    </p>
                   </div>
                 ) : null}
                 <div className="sm:col-span-2">

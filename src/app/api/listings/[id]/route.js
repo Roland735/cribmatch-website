@@ -102,6 +102,8 @@ export async function PATCH(request, { params }) {
   }
 
   const body = await request.json();
+  const hasAgentRate = Object.prototype.hasOwnProperty.call(body || {}, "agentRate");
+  const hasAgentFixedFee = Object.prototype.hasOwnProperty.call(body || {}, "agentFixedFee");
   if (body?.listerType || body?.lister_type) {
     return Response.json({ error: "lister_type cannot be changed after creation" }, { status: 400 });
   }
@@ -120,6 +122,12 @@ export async function PATCH(request, { params }) {
   }
   if (!isAdmin && typeof body?.approved === "boolean") {
     return Response.json({ error: "Only admins can approve or reject listings" }, { status: 403 });
+  }
+  if (!isAdmin && (hasAgentRate || hasAgentFixedFee)) {
+    return Response.json({ error: "Only admins can update agent fees" }, { status: 403 });
+  }
+  if ((hasAgentRate || hasAgentFixedFee) && existing?.listerType !== "agent") {
+    return Response.json({ error: "Agent fees can only be set for agent listings" }, { status: 400 });
   }
 
   const update = {};
@@ -217,6 +225,44 @@ export async function PATCH(request, { params }) {
   if (isAdmin && typeof body?.marketed === "boolean") {
     update.marketed = body.marketed;
     update.marketedAt = body.marketed ? new Date() : null;
+  }
+  if (isAdmin && hasAgentRate) {
+    if (body?.agentRate === null) {
+      update.agentRate = null;
+    } else if (typeof body?.agentRate === "number" && Number.isFinite(body.agentRate) && body.agentRate >= 0 && body.agentRate <= 100) {
+      update.agentRate = body.agentRate;
+    } else {
+      return Response.json({ error: "Agent rate must be a number between 0 and 100" }, { status: 400 });
+    }
+  }
+  if (isAdmin && hasAgentFixedFee) {
+    if (body?.agentFixedFee === null) {
+      update.agentFixedFee = null;
+    } else if (typeof body?.agentFixedFee === "number" && Number.isFinite(body.agentFixedFee) && body.agentFixedFee >= 0) {
+      update.agentFixedFee = body.agentFixedFee;
+    } else {
+      return Response.json({ error: "Agent fixed fee must be a non-negative number" }, { status: 400 });
+    }
+  }
+  if (
+    isAdmin &&
+    hasAgentRate &&
+    hasAgentFixedFee &&
+    update.agentRate !== null &&
+    update.agentFixedFee !== null
+  ) {
+    return Response.json({ error: "Choose either percentage fee or fixed fee, not both" }, { status: 400 });
+  }
+  if (isAdmin && (hasAgentRate || hasAgentFixedFee) && existing?.listerType === "agent") {
+    const nextAgentRate = update.agentRate !== undefined ? update.agentRate : toValidNumber(existing.agentRate);
+    const nextAgentFixedFee =
+      update.agentFixedFee !== undefined ? update.agentFixedFee : toValidNumber(existing.agentFixedFee);
+    if (nextAgentRate === null && nextAgentFixedFee === null) {
+      return Response.json(
+        { error: "Agent listings require either a percentage fee or fixed fee" },
+        { status: 400 },
+      );
+    }
   }
 
   const hasListingFieldChanges =
