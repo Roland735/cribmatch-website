@@ -44,7 +44,31 @@ function parseArgs(argv) {
     reset: args.has("--reset") || args.has("--force"),
     allSuburbs: args.has("--all-suburbs") || args.has("--all"),
     resetPasswords: args.has("--reset-passwords") || args.has("--reset-password"),
+    prepareProduction:
+      args.has("--prepare-production") ||
+      args.has("--production-reset") ||
+      args.has("--clear-production"),
   };
+}
+
+const ROLE_ORDER = ["admin", "agent", "user"];
+const PROTECTED_COLLECTIONS = new Set([
+  "users",
+  "locationcities",
+  "locationsuburbs",
+  "locationcatalogs",
+  "pricingsettings",
+]);
+
+function normalizeRole(value) {
+  return value === "admin" || value === "agent" ? value : "user";
+}
+
+function compareUserForKeeper(a, b) {
+  const aCreated = new Date(a?.createdAt || 0).getTime();
+  const bCreated = new Date(b?.createdAt || 0).getTime();
+  if (aCreated !== bCreated) return aCreated - bCreated;
+  return String(a?._id || "").localeCompare(String(b?._id || ""));
 }
 
 async function loadSeedListings() {
@@ -336,7 +360,7 @@ function generateAllSuburbSeedListings(agents) {
 }
 
 async function main() {
-  const { reset, allSuburbs, resetPasswords } = parseArgs(process.argv);
+  const { reset, allSuburbs, resetPasswords, prepareProduction } = parseArgs(process.argv);
 
   await loadEnvFiles();
 
@@ -346,9 +370,6 @@ async function main() {
 
   const { admin, agents, users } = buildSeedUsers();
 
-  const seedListingsRaw = allSuburbs ? generateAllSuburbSeedListings(agents) : await loadSeedListings();
-  if (seedListingsRaw.length === 0) throw new Error("No seed listings found");
-
   const client = new MongoClient(process.env.MONGODB_URI);
   await client.connect();
 
@@ -356,9 +377,114 @@ async function main() {
     const db = client.db();
     const listingsCollection = db.collection("listings");
     const usersCollection = db.collection("users");
+    const now = new Date();
+
+    if (prepareProduction) {
+      const fallbackByRole = {
+        admin: admin,
+        agent: agents[0],
+        user: users[0],
+      };
+
+      const existingUsers = await usersCollection
+        .find({}, { projection: { _id: 1, name: 1, role: 1, createdAt: 1, updatedAt: 1 } })
+        .toArray();
+
+      const keepers = [];
+      for (const role of ROLE_ORDER) {
+        const matches = existingUsers
+          .filter((user) => normalizeRole(user?.role) === role)
+          .sort(compareUserForKeeper);
+        if (matches.length > 0) {
+          const selected = matches[0];
+          const plainPassword =
+            role === "admin" ? "admin12345" : role === "agent" ? "agent12345" : "user12345";
+          const password = await hashPassword(plainPassword);
+          await usersCollection.updateOne(
+            { _id: selected._id },
+            {
+              $set: {
+                role,
+                password,
+                failedLoginAttempts: 0,
+                lastFailedLoginAt: null,
+                lockedUntil: null,
+                whatsappVerified: true,
+                whatsappVerifiedAt: now,
+                updatedAt: now,
+              },
+            },
+          );
+          keepers.push({
+            _id: selected._id,
+            role,
+            name: selected?.name || selected._id,
+            plainPassword,
+            source: "existing",
+          });
+        } else {
+          const fallback = fallbackByRole[role];
+          const password = await hashPassword(fallback.plainPassword);
+          await usersCollection.updateOne(
+            { _id: fallback._id },
+            {
+              $set: {
+                name: fallback.name,
+                role: fallback.role,
+                password,
+                failedLoginAttempts: 0,
+                lastFailedLoginAt: null,
+                lockedUntil: null,
+                whatsappVerified: true,
+                whatsappVerifiedAt: now,
+                updatedAt: now,
+              },
+              $setOnInsert: { createdAt: now },
+            },
+            { upsert: true },
+          );
+          keepers.push({
+            _id: fallback._id,
+            role,
+            name: fallback.name,
+            plainPassword: fallback.plainPassword,
+            source: "created",
+          });
+        }
+      }
+
+      const keeperIds = keepers.map((item) => item._id);
+      const removedUsersResult = await usersCollection.deleteMany({ _id: { $nin: keeperIds } });
+
+      const collections = await db.listCollections({}, { nameOnly: true }).toArray();
+      const clearTargets = collections
+        .map((item) => item?.name)
+        .filter((name) => name && !PROTECTED_COLLECTIONS.has(name));
+
+      const clearedSummaries = [];
+      for (const collectionName of clearTargets) {
+        const deleteResult = await db.collection(collectionName).deleteMany({});
+        clearedSummaries.push(`${collectionName}:${deleteResult.deletedCount}`);
+      }
+
+      const roleSummary = keepers
+        .map(
+          (item) =>
+            `${item.role}:${item._id} (${item.source}, password=${item.plainPassword})`,
+        )
+        .join(" | ");
+
+      console.log(`Production reset complete. Removed users: ${removedUsersResult.deletedCount}.`);
+      console.log(`Kept 1 user per role -> ${roleSummary}`);
+      console.log(
+        clearedSummaries.length
+          ? `Cleared collections -> ${clearedSummaries.join(", ")}`
+          : "No non-protected collections found to clear.",
+      );
+      return;
+    }
 
     if (resetPasswords) {
-      const now = new Date();
       const existingUsers = await usersCollection
         .find({}, { projection: { _id: 1, role: 1 } })
         .toArray();
@@ -388,8 +514,10 @@ async function main() {
       return;
     }
 
+    const seedListingsRaw = allSuburbs ? generateAllSuburbSeedListings(agents) : await loadSeedListings();
+    if (seedListingsRaw.length === 0) throw new Error("No seed listings found");
+
     const usersToInsert = [admin, ...agents, ...users];
-    const now = new Date();
     const userDocs = await Promise.all(
       usersToInsert.map(async (u) => {
         const password = await hashPassword(u.plainPassword);
