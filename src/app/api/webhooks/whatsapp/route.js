@@ -2937,12 +2937,15 @@ export async function POST(request) {
         const resolvedPropertyCategory = normalizeCategory(categoryRaw) || "residential";
 
         const propertyTypeId = String(effectiveFlowData.propertyType || effectiveFlowData.property_type || "").trim();
-        const resolvedPropertyType = propertyTypeId ? resolveTitleById(propertyTypeId, PREDEFINED_PROPERTY_TYPES) : "";
-        const propertyTypeCandidates = buildPropertyTypeCandidates({
-          propertyTypeId,
-          fallbackTitle: resolvedPropertyType,
-          categoryHint: resolvedPropertyCategory,
-        });
+        const propertyTypeIsAny = propertyTypeId === "any" || propertyTypeId === "";
+        const resolvedPropertyType = propertyTypeIsAny ? "" : resolveTitleById(propertyTypeId, PREDEFINED_PROPERTY_TYPES);
+        const propertyTypeCandidates = propertyTypeIsAny
+          ? []
+          : buildPropertyTypeCandidates({
+            propertyTypeId,
+            fallbackTitle: resolvedPropertyType,
+            categoryHint: resolvedPropertyCategory,
+          });
 
         const bedroomsRaw = String(effectiveFlowData.bedrooms || "").trim();
         const minBeds =
@@ -2970,7 +2973,9 @@ export async function POST(request) {
           minBeds: minBedsSafe,
           features: resolvedFeatures,
         };
-        results = await runSearchWithPropertyTypeCandidates(primarySearchOptions, propertyTypeCandidates);
+        results = propertyTypeCandidates.length
+          ? await runSearchWithPropertyTypeCandidates(primarySearchOptions, propertyTypeCandidates)
+          : await runSearch({ ...primarySearchOptions, propertyType: "" });
       }
     } catch (e) {
       console.warn("[webhook] flow search error", e);
