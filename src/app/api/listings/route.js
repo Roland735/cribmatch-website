@@ -1,6 +1,6 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { dbConnect, getPricingSettings, Listing, User } from "@/lib/db";
+import { dbConnect, Listing, User } from "@/lib/db";
 import {
   KNOWN_PROPERTY_CATEGORIES,
   KNOWN_PROPERTY_TYPES_BY_CATEGORY,
@@ -137,54 +137,6 @@ function validateListingPayload(payload) {
     }
   }
   return "";
-}
-
-function normalizeMarketValue(value) {
-  return typeof value === "string" ? value.trim().toLowerCase() : "";
-}
-
-function computeMedian(values = []) {
-  const numbers = values
-    .map((item) => Number(item))
-    .filter((num) => Number.isFinite(num) && num >= 0)
-    .sort((a, b) => a - b);
-  if (!numbers.length) return null;
-  const middle = Math.floor(numbers.length / 2);
-  if (numbers.length % 2 === 0) {
-    return (numbers[middle - 1] + numbers[middle]) / 2;
-  }
-  return numbers[middle];
-}
-
-async function getMicroMarketMedianPrice({ city, suburb }) {
-  const cityNorm = normalizeMarketValue(city);
-  const suburbNorm = normalizeMarketValue(suburb);
-  const baseQuery = {
-    listerType: "direct_landlord",
-    status: "published",
-    approved: { $ne: false },
-  };
-  const directListings = await Listing.find(baseQuery)
-    .select("pricePerMonth city suburb")
-    .limit(1200)
-    .lean();
-  const bySuburb = directListings.filter((listing) => {
-    if (!suburbNorm) return false;
-    const listingSuburb = normalizeMarketValue(listing?.suburb);
-    return listingSuburb === suburbNorm;
-  });
-  if (bySuburb.length) {
-    return computeMedian(bySuburb.map((listing) => listing?.pricePerMonth));
-  }
-  const byCity = directListings.filter((listing) => {
-    if (!cityNorm) return false;
-    const listingCity = normalizeMarketValue(listing?.city);
-    return listingCity === cityNorm;
-  });
-  if (byCity.length) {
-    return computeMedian(byCity.map((listing) => listing?.pricePerMonth));
-  }
-  return computeMedian(directListings.map((listing) => listing?.pricePerMonth));
 }
 
 export async function GET(request) {
@@ -429,23 +381,6 @@ export async function POST(request) {
       );
     }
 
-    const pricingSettings = await getPricingSettings({ ensurePersisted: true });
-    const discountPercent = Number(pricingSettings?.agentPriceDiscountPercent ?? 0);
-    const medianDirectPrice = await getMicroMarketMedianPrice({
-      city: payload.city,
-      suburb: payload.suburb,
-    });
-    if (Number.isFinite(medianDirectPrice)) {
-      const maxAllowedAgentPrice = medianDirectPrice * (1 - discountPercent / 100);
-      if (payload.pricePerMonth > maxAllowedAgentPrice) {
-        return Response.json(
-          {
-            error: `Agent listing must be at least ${discountPercent}% below micro-market median (${medianDirectPrice.toFixed(2)}). Max allowed is ${maxAllowedAgentPrice.toFixed(2)}.`,
-          },
-          { status: 400 },
-        );
-      }
-    }
   } else {
     listerType = "direct_landlord";
   }

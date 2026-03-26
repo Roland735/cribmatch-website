@@ -80,16 +80,27 @@ describe("POST /api/listings agent price rule", () => {
     });
   });
 
-  test("rejects agent listing when above allowed discounted median", async () => {
+  test("creates agent listing without micro-market price cap", async () => {
+    listingCreateMock.mockResolvedValue({
+      _id: "listing-0",
+      ...basePayload,
+      listerType: "agent",
+      agentRate: 10,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      toObject() {
+        return this;
+      },
+    });
     const response = await POST(
       makeRequest({
         ...basePayload,
-        pricePerMonth: 950,
+        pricePerMonth: 5000,
       }),
     );
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(201);
     const payload = await response.json();
-    expect(payload.error).toMatch(/Agent listing must be at least/);
+    expect(payload.listing.lister_type).toBe("agent");
   });
 
   test("creates agent listing with lister_type and agent_rate when valid", async () => {
