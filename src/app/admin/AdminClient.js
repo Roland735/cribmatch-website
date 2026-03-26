@@ -218,6 +218,10 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
   const [listingCreatorType, setListingCreatorType] = useState("direct_landlord");
   const [agentFeeType, setAgentFeeType] = useState("percentage");
   const [agentFeeValue, setAgentFeeValue] = useState("");
+  const [listingContactName, setListingContactName] = useState("");
+  const [listingContactPhone, setListingContactPhone] = useState("");
+  const [listingContactWhatsApp, setListingContactWhatsApp] = useState("");
+  const [listingContactEmail, setListingContactEmail] = useState("");
   const [listingOwnerName, setListingOwnerName] = useState("");
   const [listingOwnerPhone, setListingOwnerPhone] = useState("");
   const uploadTasksRef = useRef(new Map());
@@ -687,7 +691,10 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
           images: cleanedImages,
           status: uiToStatus(status),
           approved,
-          contactName: !editingListingId && scope === "all" ? listingOwnerName.trim() || undefined : undefined,
+          contactName: scope === "all" ? listingContactName.trim() : undefined,
+          contactPhone: scope === "all" ? listingContactPhone.trim() : undefined,
+          contactWhatsApp: scope === "all" ? listingContactWhatsApp.trim() : undefined,
+          contactEmail: scope === "all" ? listingContactEmail.trim() : undefined,
           listerType: !editingListingId ? listingCreatorType : undefined,
           agentRate:
             scope === "all" && listingCreatorType === "agent"
@@ -762,6 +769,16 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
       setAgentFeeType("percentage");
       setAgentFeeValue("");
     }
+    setListingContactName(typeof listing.contactName === "string" ? listing.contactName : "");
+    setListingContactPhone(
+      typeof listing.contactPhone === "string"
+        ? listing.contactPhone
+        : typeof listing.listerPhoneNumber === "string"
+          ? listing.listerPhoneNumber
+          : "",
+    );
+    setListingContactWhatsApp(typeof listing.contactWhatsApp === "string" ? listing.contactWhatsApp : "");
+    setListingContactEmail(typeof listing.contactEmail === "string" ? listing.contactEmail : "");
     setListingOwnerName(typeof listing.contactName === "string" ? listing.contactName : "");
     setListingOwnerPhone(
       typeof listing.listerPhoneNumber === "string" ? listing.listerPhoneNumber : "",
@@ -802,6 +819,10 @@ export default function AdminClient({ scope = "all", showSignOut = true } = {}) 
     setListingCreatorType("direct_landlord");
     setAgentFeeType("percentage");
     setAgentFeeValue("");
+    setListingContactName("");
+    setListingContactPhone("");
+    setListingContactWhatsApp("");
+    setListingContactEmail("");
     setListingOwnerName("");
     setListingOwnerPhone("");
     setSaveError("");
@@ -1376,6 +1397,62 @@ Interested? Contact us today!
                         </p>
                       </div>
                     ) : null}
+                  </div>
+                ) : null}
+                {scope === "all" ? (
+                  <div className="sm:col-span-2 rounded-2xl border border-white/10 bg-slate-950/40 p-4">
+                    <p className="text-sm font-medium text-slate-200">Lister contact details</p>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-200" htmlFor="listingContactName">
+                          Contact name
+                        </label>
+                        <input
+                          id="listingContactName"
+                          value={listingContactName}
+                          onChange={(e) => setListingContactName(e.target.value)}
+                          className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+                          placeholder="Tariro Moyo"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-200" htmlFor="listingContactPhone">
+                          Contact phone
+                        </label>
+                        <input
+                          id="listingContactPhone"
+                          value={listingContactPhone}
+                          onChange={(e) => setListingContactPhone(e.target.value)}
+                          className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+                          placeholder="0771234567"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-200" htmlFor="listingContactWhatsApp">
+                          Contact WhatsApp
+                        </label>
+                        <input
+                          id="listingContactWhatsApp"
+                          value={listingContactWhatsApp}
+                          onChange={(e) => setListingContactWhatsApp(e.target.value)}
+                          className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+                          placeholder="0771234567"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-200" htmlFor="listingContactEmail">
+                          Contact email
+                        </label>
+                        <input
+                          id="listingContactEmail"
+                          type="email"
+                          value={listingContactEmail}
+                          onChange={(e) => setListingContactEmail(e.target.value)}
+                          className="mt-2 block w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-50 outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/30"
+                          placeholder="agent@example.com"
+                        />
+                      </div>
+                    </div>
                   </div>
                 ) : null}
                 {scope === "all" && listingCreatorType === "agent" ? (
