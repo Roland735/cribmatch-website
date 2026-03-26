@@ -1894,6 +1894,11 @@ Interested? Contact us today!
                     {saveError}
                   </p>
                 ) : null}
+                {!saveError && formValidationError ? (
+                  <p className="sm:col-span-2 text-sm font-medium text-amber-200">
+                    {formValidationError}
+                  </p>
+                ) : null}
 
                 <div className="flex items-center justify-end gap-3 pt-4 sm:col-span-2">
                   <button
@@ -1906,6 +1911,7 @@ Interested? Contact us today!
                   <button
                     type="submit"
                     disabled={!canSubmit}
+                    title={!canSubmit && formValidationError ? formValidationError : undefined}
                     className="rounded-full bg-emerald-400 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {saving ? "Saving…" : editingListingId ? "Save changes" : "Create listing"}
