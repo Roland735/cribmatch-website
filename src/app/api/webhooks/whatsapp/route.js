@@ -31,6 +31,7 @@ async function sendNzvimboOtp(phone, code, expiresInMinutes) {
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_ID;
   const templateName = process.env.WHATSAPP_OTP_TEMPLATE_NAME;
   const languageCode = process.env.WHATSAPP_OTP_TEMPLATE_LANGUAGE || "en_US";
+  const templateHasUrlButton = process.env.WHATSAPP_OTP_TEMPLATE_URL_BUTTON === "true";
 
   if (!token || !phoneNumberId) {
     return { ok: false, status: 500, error: "WhatsApp credentials are not configured." };
@@ -49,6 +50,14 @@ async function sendNzvimboOtp(phone, code, expiresInMinutes) {
             type: "body",
             parameters: [{ type: "text", text: String(code) }],
           },
+          ...(templateHasUrlButton
+            ? [{
+              type: "button",
+              sub_type: "url",
+              index: "0",
+              parameters: [{ type: "text", text: String(code) }],
+            }]
+            : []),
         ],
       },
     }
