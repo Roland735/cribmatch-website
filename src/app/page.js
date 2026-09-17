@@ -169,11 +169,11 @@ export default async function Home({ searchParams }) {
                   Match preview
                 </p>
                 <p className="mt-1 text-sm text-slate-200">
-                  Preview of your guided match journey.
+                  A guided journey from search to viewing.
                 </p>
               </div>
               <span className="rounded-full bg-emerald-400/15 px-3 py-1 text-xs font-semibold text-emerald-200">
-                Sample
+                Guided matching
               </span>
             </div>
 

@@ -254,7 +254,7 @@ export async function POST(request) {
 
   if (!process.env.MONGODB_URI) {
     return Response.json(
-      { error: "Listings are unavailable in demo mode" },
+      { error: "Listings are temporarily unavailable. Please try again shortly." },
       { status: 503 },
     );
   }
