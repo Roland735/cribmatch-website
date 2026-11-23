@@ -4,9 +4,6 @@ import clientPromise from "@/lib/mongodb";
 const GRAPH_VERSION = "v24.0";
 const MAX_ANSWER_LENGTH = 1800;
 const FLOW_NAME = "CribMatch Full CV Builder";
-// Published WhatsApp Flows are immutable snapshots. Pin the updated Flow from
-// WhatsApp Manager so START cannot silently reopen an older published copy.
-const CV_FLOW_ID = "2674876169640727";
 let cachedFlowId = null;
 const CV_SECTIONS = [
   {
@@ -289,10 +286,6 @@ async function sendActionButtons(to, body, buttons) {
 
 async function getOrCreateFlow() {
   if (cachedFlowId) return cachedFlowId;
-  if (CV_FLOW_ID) {
-    cachedFlowId = String(CV_FLOW_ID);
-    return cachedFlowId;
-  }
   const wabaId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
   if (!wabaId) throw new Error("WHATSAPP_BUSINESS_ACCOUNT_ID is not configured");
   const query = new URLSearchParams({ fields: "id,name,status", limit: "100" });
