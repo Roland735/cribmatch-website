@@ -37,13 +37,12 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 ## CribMatch CV on WhatsApp
 
-The public homepage starts an automated CV chat on WhatsApp. A customer sends `START`, answers the prompts, reviews or corrects the information, then replies `YES` to create a US$1 order. The bot stores the draft in MongoDB, sends the configured payment instructions, and automatically makes and sends a PDF when the customer replies `PAID <reference>`. The payment reference is recorded but is not verified against a payment provider.
+The public homepage starts a native WhatsApp Flow for CV details. A customer sends `START`, fills in and submits one in-app form, and receives a generated test PDF in WhatsApp. CV generation is free during testing; no payment or Paynow step is used.
 
-The WhatsApp webhook must point to `https://<your-domain>/api/webhooks/whatsapp` and the Meta app must be subscribed to the WhatsApp `messages` webhook field. Configure these deployment environment variables alongside the existing WhatsApp and MongoDB settings:
+The WhatsApp webhook must point to `https://<your-domain>/api/webhooks/whatsapp` and the Meta app must be subscribed to the WhatsApp `messages` webhook field. Keep the existing WhatsApp API token, phone number ID, webhook verify token, and MongoDB URI. Add the existing Meta app secret to the deployment environment as:
 
 - `WHATSAPP_APP_SECRET`: the existing Meta app secret, used to verify signed webhook requests. Copy it from the Meta app settings; do not generate or rotate it.
-- `CV_PAYMENT_INSTRUCTIONS`: the payment method and account details shown to CV customers.
 
-The customer receives the CV after self-reporting payment with `PAID <reference>`; the bot does not independently confirm a transfer. Add a payment gateway and verified callback before relying on automatic payment enforcement. Customers can send `DELETE` to remove their saved draft and orders. Drafts expire after 30 days and orders after 90 days.
+The app looks for a published Flow named `CribMatch CV Builder` in the configured WhatsApp Business Account. If one does not exist, it creates and publishes the Flow through Meta's Graph API when a customer sends `START`. The Meta token therefore needs WhatsApp Flow management permission in addition to sending messages. Submitted test CV details are stored for up to 30 days; customers can send `DELETE` to remove them sooner.
 
 The `/api/auth/whatsapp-otp` API and the legacy `send_nzvimbo_otp` webhook action remain available for the separate Nzvimbo login flow.
