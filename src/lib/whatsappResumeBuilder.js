@@ -3,37 +3,138 @@ import clientPromise from "@/lib/mongodb";
 
 const GRAPH_VERSION = "v24.0";
 const MAX_ANSWER_LENGTH = 1800;
-const FLOW_NAME = "CribMatch CV Builder";
+const FLOW_NAME = "CribMatch Full CV Builder";
 let cachedFlowId = null;
-const FLOW_JSON = {
-  version: "7.3",
-  screens: [{
-    id: "CV_DETAILS",
-    title: "Build your CV",
+const CV_SECTIONS = [
+  {
+    id: "CONTACT",
+    title: "Contact details",
+    fields: [
+      { name: "fullName", label: "Full name", required: true, maxChars: 80 },
+      { name: "targetRole", label: "Target job title", required: true, maxChars: 80 },
+      { name: "email", label: "Email address", inputType: "email", maxChars: 100 },
+      { name: "phone", label: "Phone number", inputType: "phone", maxChars: 32 },
+      { name: "location", label: "Town or city", maxChars: 80 },
+      { name: "links", label: "LinkedIn or website", maxChars: 180 },
+    ],
+  },
+  {
+    id: "PROFILE",
+    title: "Profile and focus",
+    fields: [
+      { name: "profile", label: "Professional profile", type: "TextArea", required: true, maxLength: 600, helperText: "Summarise your experience and strengths." },
+      { name: "objective", label: "Career objective", type: "TextArea", maxLength: 300, helperText: "Optional: the roles or goals you are targeting." },
+      { name: "expertise", label: "Core expertise", type: "TextArea", maxLength: 500, helperText: "Optional: group your strongest areas." },
+    ],
+  },
+  {
+    id: "EXPERIENCE",
+    title: "Work experience",
+    fields: [
+      { name: "experience", label: "Roles and employers", type: "TextArea", maxLength: 600, helperText: "List each role, employer, and dates. Leave blank if none." },
+      { name: "achievements", label: "Duties and results", type: "TextArea", maxLength: 600, helperText: "Add key duties, achievements, and measurable results." },
+    ],
+  },
+  {
+    id: "EDUCATION",
+    title: "Education",
+    fields: [
+      { name: "education", label: "Education history", type: "TextArea", maxLength: 600, helperText: "Qualification, institution, dates, subjects, and results." },
+      { name: "certifications", label: "Certificates", type: "TextArea", maxLength: 400, helperText: "Optional: certificates, training, and professional memberships." },
+    ],
+  },
+  {
+    id: "SKILLS",
+    title: "Skills and tools",
+    fields: [
+      { name: "skills", label: "Core skills", type: "TextArea", maxLength: 500, helperText: "List role-related skills and strengths." },
+      { name: "technologies", label: "Tools and technology", type: "TextArea", maxLength: 400, helperText: "Optional: software, platforms, equipment, or methods." },
+      { name: "languages", label: "Languages", type: "TextArea", maxLength: 200, helperText: "Optional: languages and proficiency." },
+    ],
+  },
+  {
+    id: "PROJECTS",
+    title: "Projects",
+    fields: [
+      { name: "projects", label: "Selected projects", type: "TextArea", maxLength: 600, helperText: "Optional: name, purpose, contribution, and technologies." },
+    ],
+  },
+  {
+    id: "EXTRA",
+    title: "Additional details",
     terminal: true,
-    success: true,
+    fields: [
+      { name: "awards", label: "Awards and honours", type: "TextArea", maxLength: 300, helperText: "Optional: awards, publications, or notable recognition." },
+      { name: "volunteering", label: "Community work", type: "TextArea", maxLength: 300, helperText: "Optional: volunteering, leadership, or community work." },
+      { name: "references", label: "References", type: "TextArea", maxLength: 300, helperText: "Optional: names and contact details, or write 'Available on request'." },
+    ],
+  },
+];
+
+function makeFlowInput(field) {
+  if (field.type === "TextArea") {
+    return {
+      type: "TextArea",
+      name: field.name,
+      label: field.label,
+      ...(field.required ? { required: true } : {}),
+      "max-length": field.maxLength || 600,
+      ...(field.helperText ? { "helper-text": field.helperText } : {}),
+    };
+  }
+  return {
+    type: "TextInput",
+    name: field.name,
+    label: field.label,
+    ...(field.required ? { required: true } : {}),
+    ...(field.inputType ? { "input-type": field.inputType } : {}),
+    "max-chars": field.maxChars || 80,
+  };
+}
+
+function flowDataModel(fields) {
+  return Object.fromEntries(fields.map((field) => [field.name, { type: "string", __example__: "Example" }]));
+}
+
+function makeFlowScreen(section, index) {
+  const previousFields = CV_SECTIONS.slice(0, index).flatMap((item) => item.fields);
+  const allAvailableFields = [...previousFields, ...section.fields];
+  const nextSection = CV_SECTIONS[index + 1];
+  const payload = Object.fromEntries(allAvailableFields.map((field) => [
+    field.name,
+    previousFields.includes(field) ? `\${data.${field.name}}` : `\${form.${field.name}}`,
+  ]));
+  const action = section.terminal
+    ? { name: "complete", payload }
+    : { name: "navigate", next: { type: "screen", name: nextSection.id }, payload };
+
+  return {
+    id: section.id,
+    title: section.title,
+    ...(section.terminal ? { terminal: true, success: true } : {}),
+    data: flowDataModel(previousFields),
     layout: {
       type: "SingleColumnLayout",
       children: [{
         type: "Form",
-        name: "cv_form",
+        name: `${section.id.toLowerCase()}_form`,
         children: [
-          { type: "TextInput", name: "fullName", label: "Full name", required: true, "max-length": 80 },
-          { type: "TextInput", name: "targetRole", label: "Target job title", required: true, "max-length": 80 },
-          { type: "TextInput", name: "email", label: "Email address", "input-type": "email", "max-length": 100 },
-          { type: "TextInput", name: "location", label: "Town or city", "max-length": 80 },
-          { type: "TextArea", name: "profile", label: "Professional summary", required: true, "max-length": 500 },
-          { type: "TextArea", name: "experience", label: "Work experience", "max-length": 500 },
-          { type: "TextArea", name: "education", label: "Education and training", "max-length": 300 },
-          { type: "TextArea", name: "skills", label: "Skills", required: true, "max-length": 300 },
-          { type: "Footer", label: "Create my CV", "on-click-action": { name: "complete", payload: {
-            fullName: "${form.fullName}", targetRole: "${form.targetRole}", email: "${form.email}", location: "${form.location}",
-            profile: "${form.profile}", experience: "${form.experience}", education: "${form.education}", skills: "${form.skills}",
-          } } },
+          { type: "TextSubheading", text: section.title },
+          ...section.fields.map(makeFlowInput),
+          { type: "Footer", label: section.terminal ? "Create my CV" : "Continue", "on-click-action": action },
         ],
       }],
     },
-  }],
+  };
+}
+
+const FLOW_JSON = {
+  version: "7.3",
+  routing_model: Object.fromEntries(CV_SECTIONS.map((section, index) => [
+    section.id,
+    section.terminal ? [] : [CV_SECTIONS[index + 1].id],
+  ])),
+  screens: CV_SECTIONS.map(makeFlowScreen),
 };
 
 function digitsOnly(value) {
@@ -124,7 +225,7 @@ async function sendCvFlow(to) {
       interactive: {
         type: "flow",
         body: { text: "Fill in your details in this WhatsApp form. When you submit it, CribMatch will create a test CV PDF and send it here." },
-        action: { name: "flow", parameters: { flow_message_version: "3", flow_id: flowId, flow_cta: "Build my CV", flow_action: "navigate", flow_action_payload: { screen: "CV_DETAILS" } } },
+        action: { name: "flow", parameters: { flow_message_version: "3", flow_id: flowId, flow_cta: "Build my CV", flow_action: "navigate", flow_action_payload: { screen: "CONTACT" } } },
       },
     }),
   });
@@ -239,21 +340,47 @@ function buildCvPdf(data) {
   pageOps[0].push("0.043 0.463 0.318 rg 0 828 595 14 re f");
   draw(data.fullName || "Curriculum Vitae", { size: 25, font: "F2", color: "#10281d", gap: 32 });
   draw(data.targetRole || "Professional Profile", { size: 12, font: "F2", color: "#0b7651", gap: 19 });
-  const contact = [data.email, data.location].filter(Boolean).join("  |  ");
-  if (contact) draw(contact, { size: 9, color: "#617268", gap: 20 });
+  const contact = [data.email, data.phone, data.location].filter(Boolean).join("  |  ");
+  if (contact) paragraph(contact, { size: 9, color: "#617268", maxChars: 88 });
+  if (data.links) paragraph(data.links, { size: 9, color: "#617268", maxChars: 88 });
   section("Professional profile");
   paragraph(data.profile);
-  if (data.experience && !/^skip$/i.test(data.experience)) {
+  if (data.objective) {
+    section("Career objective");
+    paragraph(data.objective);
+  }
+  if (data.expertise) {
+    section("Core expertise");
+    paragraph(data.expertise);
+  }
+  if (data.experience || data.achievements) {
     section("Experience");
     paragraph(data.experience);
+    paragraph(data.achievements);
   }
   if (data.education && !/^skip$/i.test(data.education)) {
-    section("Education & training");
+    section("Education");
     paragraph(data.education);
   }
-  if (data.skills) {
-    section("Skills");
+  if (data.certifications) {
+    section("Certifications & training");
+    paragraph(data.certifications);
+  }
+  if (data.skills || data.technologies || data.languages) {
+    section("Skills and tools");
     paragraph(data.skills, { color: "#24362d" });
+    if (data.technologies) paragraph(`Tools and technology: ${data.technologies}`);
+    if (data.languages) paragraph(`Languages: ${data.languages}`);
+  }
+  if (data.projects) {
+    section("Selected projects");
+    paragraph(data.projects);
+  }
+  if (data.awards || data.volunteering || data.references) {
+    section("Additional details");
+    if (data.awards) paragraph(`Awards and honours: ${data.awards}`);
+    if (data.volunteering) paragraph(`Community work: ${data.volunteering}`);
+    if (data.references) paragraph(`References: ${data.references}`);
   }
   for (let index = 0; index < pageOps.length; index += 1) {
     pageOps[index].push(`BT ${colorCommand("#87948c")} /F1 8 Tf 1 0 0 1 52 32 Tm (Prepared with CribMatch CV) Tj ET`);
@@ -293,16 +420,21 @@ async function startDraft(phone) {
   await sendCvFlow(phone);
 }
 
-function cleanFlowData(flowReply) {
+function cleanFlowData(flowReply, senderPhone) {
   let parsed = flowReply;
   if (typeof parsed === "string") {
     try { parsed = JSON.parse(parsed); } catch { return null; }
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-  const fields = ["fullName", "targetRole", "email", "location", "profile", "experience", "education", "skills"];
+  const fields = [
+    "fullName", "targetRole", "email", "phone", "location", "links", "profile", "objective", "expertise",
+    "experience", "achievements", "education", "certifications", "skills", "technologies", "languages",
+    "projects", "awards", "volunteering", "references",
+  ];
   const data = {};
   for (const field of fields) data[field] = safeText(parsed[field]);
-  if (data.fullName.length < 3 || !data.targetRole || !data.profile || !data.skills) return null;
+  if (!data.phone) data.phone = safeText(senderPhone);
+  if (data.fullName.length < 3 || !data.targetRole || !data.profile) return null;
   if (data.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) return null;
   return data;
 }
@@ -310,7 +442,7 @@ function cleanFlowData(flowReply) {
 async function handleIncomingMessage(db, { from, text, flowReply }) {
   const normalized = commandText(text);
   if (flowReply) {
-    const data = cleanFlowData(flowReply);
+    const data = cleanFlowData(flowReply, from);
     if (!data) {
       await sendText(from, "I couldn't read all the required fields. Send START to reopen the CV form and submit it again.");
       return;
