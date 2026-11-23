@@ -3,7 +3,7 @@ import clientPromise from "@/lib/mongodb";
 
 const GRAPH_VERSION = "v24.0";
 const MAX_ANSWER_LENGTH = 1800;
-const FLOW_NAME = "CribMatch Full CV Builder";
+const FLOW_NAME = "CribMatch Full CV Builder v2";
 let cachedFlowId = null;
 const CV_SECTIONS = [
   {
@@ -24,49 +24,57 @@ const CV_SECTIONS = [
     fields: [
       { name: "profile", label: "Professional profile", type: "TextArea", required: true, maxLength: 600, helperText: "Summarise your experience and strengths." },
       { name: "objective", label: "Career objective", type: "TextArea", maxLength: 300, helperText: "Optional: the roles or goals you are targeting." },
-      { name: "expertise", label: "Core expertise", type: "TextArea", maxLength: 500, helperText: "Optional: group your strongest areas." },
+      { type: "RepeatableGroup", name: "expertise", addLabel: "area of expertise", maxEntries: 4, entries: [
+        [{ name: "expertise", label: "Area of expertise", maxLength: 120, helperText: "Enter one area at a time." }],
+      ] },
     ],
   },
   {
     id: "EXPERIENCE",
     title: "Work experience",
     fields: [
-      { name: "experience1", label: "Role 1: title, employer, dates", type: "TextArea", maxLength: 400, helperText: "Add your most recent role. Add more roles in the next fields." },
-      { name: "achievements1", label: "Role 1: duties and results", type: "TextArea", maxLength: 400, helperText: "Key duties, achievements, and measurable results." },
-      { name: "experience2", label: "Role 2 (optional)", type: "TextArea", maxLength: 400 },
-      { name: "achievements2", label: "Role 2: duties and results (optional)", type: "TextArea", maxLength: 400 },
-      { name: "experience3", label: "Role 3 (optional)", type: "TextArea", maxLength: 400 },
-      { name: "achievements3", label: "Role 3: duties and results (optional)", type: "TextArea", maxLength: 400 },
+      { type: "RepeatableGroup", name: "experience", addLabel: "role", maxEntries: 3, entries: [
+        [
+          { name: "experience", label: "Role title, employer, and dates", maxLength: 400, helperText: "Start with your most recent role." },
+          { name: "achievements", label: "Duties and results", maxLength: 400, helperText: "Add key duties, achievements, and measurable results." },
+        ],
+      ] },
     ],
   },
   {
     id: "EDUCATION",
     title: "Education",
     fields: [
-      { name: "education1", label: "Education 1", type: "TextArea", maxLength: 400, helperText: "Qualification, institution, dates, subjects, and results. Add more below." },
-      { name: "education2", label: "Education 2 (optional)", type: "TextArea", maxLength: 400 },
-      { name: "education3", label: "Education 3 (optional)", type: "TextArea", maxLength: 400 },
-      { name: "certifications1", label: "Certificate 1", type: "TextArea", maxLength: 300, helperText: "Certificate, training, or professional membership. Add more below." },
-      { name: "certifications2", label: "Certificate 2 (optional)", type: "TextArea", maxLength: 300 },
-      { name: "certifications3", label: "Certificate 3 (optional)", type: "TextArea", maxLength: 300 },
+      { type: "RepeatableGroup", name: "education", addLabel: "education entry", maxEntries: 3, entries: [
+        [{ name: "education", label: "Qualification, institution, dates, subjects, and results", maxLength: 400 }],
+      ] },
+      { type: "RepeatableGroup", name: "certifications", addLabel: "certificate", maxEntries: 3, entries: [
+        [{ name: "certifications", label: "Certificate, training, or professional membership", maxLength: 300 }],
+      ] },
     ],
   },
   {
     id: "SKILLS",
     title: "Skills and tools",
     fields: [
-      { name: "skills", label: "Core skills", type: "TextArea", maxLength: 500, helperText: "List role-related skills and strengths." },
-      { name: "technologies", label: "Tools and technology", type: "TextArea", maxLength: 400, helperText: "Optional: software, platforms, equipment, or methods." },
-      { name: "languages", label: "Languages", type: "TextArea", maxLength: 200, helperText: "Optional: languages and proficiency." },
+      { type: "RepeatableGroup", name: "skills", addLabel: "skill", maxEntries: 4, entries: [
+        [{ name: "skills", label: "Skill", maxLength: 120, helperText: "Enter one skill at a time." }],
+      ] },
+      { type: "RepeatableGroup", name: "technologies", addLabel: "tool or technology", maxEntries: 4, entries: [
+        [{ name: "technologies", label: "Tool or technology", maxLength: 120, helperText: "Enter one tool, platform, or method at a time." }],
+      ] },
+      { type: "RepeatableGroup", name: "languages", addLabel: "language", maxEntries: 4, entries: [
+        [{ name: "languages", label: "Language and proficiency", maxLength: 120, helperText: "Enter one language and proficiency at a time." }],
+      ] },
     ],
   },
   {
     id: "PROJECTS",
     title: "Projects",
     fields: [
-      { name: "projects1", label: "Project 1 (optional)", type: "TextArea", maxLength: 350, helperText: "Name, purpose, contribution, and technologies. Add more below." },
-      { name: "projects2", label: "Project 2 (optional)", type: "TextArea", maxLength: 350 },
-      { name: "projects3", label: "Project 3 (optional)", type: "TextArea", maxLength: 350 },
+      { type: "RepeatableGroup", name: "projects", addLabel: "project", maxEntries: 3, entries: [
+        [{ name: "projects", label: "Project name, purpose, contribution, and technologies", maxLength: 350, helperText: "Add one project at a time." }],
+      ] },
     ],
   },
   {
@@ -74,9 +82,15 @@ const CV_SECTIONS = [
     title: "Additional details",
     terminal: true,
     fields: [
-      { name: "awards", label: "Awards and honours", type: "TextArea", maxLength: 300, helperText: "Optional: awards, publications, or notable recognition." },
-      { name: "volunteering", label: "Community work", type: "TextArea", maxLength: 300, helperText: "Optional: volunteering, leadership, or community work." },
-      { name: "references", label: "References", type: "TextArea", maxLength: 300, helperText: "Optional: names and contact details, or write 'Available on request'." },
+      { type: "RepeatableGroup", name: "awards", addLabel: "award or honour", maxEntries: 3, entries: [
+        [{ name: "awards", label: "Award, publication, or recognition", maxLength: 250 }],
+      ] },
+      { type: "RepeatableGroup", name: "volunteering", addLabel: "community role", maxEntries: 3, entries: [
+        [{ name: "volunteering", label: "Volunteering or community role", maxLength: 250 }],
+      ] },
+      { type: "RepeatableGroup", name: "references", addLabel: "reference", maxEntries: 3, entries: [
+        [{ name: "references", label: "Reference name and contact details", maxLength: 250, helperText: "You can also enter 'Available on request'." }],
+      ] },
     ],
   },
 ];
@@ -102,13 +116,54 @@ function makeFlowInput(field) {
   };
 }
 
+function repeatableEntries(field) {
+  return Array.from({ length: field.maxEntries }, () => field.entries[0]);
+}
+
 function flowDataModel(fields) {
-  return Object.fromEntries(fields.map((field) => [field.name, { type: "string", __example__: "Example" }]));
+  return Object.fromEntries(fields.flatMap((field) => (
+    field.type === "RepeatableGroup"
+      ? [
+          ...repeatableEntries(field).flatMap((entry, index) => entry.map((item) => [`${item.name}_${index + 1}`, { type: "string", __example__: "Example" }])),
+          ...repeatableEntries(field).slice(1).map((_, index) => [`add_${field.name}_${index + 2}`, { type: "boolean", __example__: false }]),
+        ]
+      : [[field.name, { type: field.type === "OptIn" ? "boolean" : "string", __example__: field.type === "OptIn" ? false : "Example" }]]
+  )));
+}
+
+function makeRepeatableGroup(field) {
+  const entries = repeatableEntries(field);
+  const makeEntry = (index) => {
+    const entry = entries[index];
+    const children = entry.map((item) => makeFlowInput({ ...item, name: `${item.name}_${index + 1}`, type: "TextArea" }));
+    if (index < entries.length - 1) {
+      const nextIndex = index + 1;
+      const addField = `add_${field.name}_${nextIndex + 1}`;
+      children.push({ type: "OptIn", name: addField, label: `＋ Add another ${field.addLabel}` });
+      children.push({
+        type: "If",
+        condition: `\${form.${addField}} == true`,
+        then: makeEntry(nextIndex),
+      });
+    }
+    return children;
+  };
+  return makeEntry(0);
+}
+
+function sectionFields(fields) {
+  return fields.flatMap((field) => (
+    field.type === "RepeatableGroup"
+      ? repeatableEntries(field).flatMap((entry, index) => entry.map((item) => ({ ...item, name: `${item.name}_${index + 1}`, type: "TextArea" })))
+        .concat(repeatableEntries(field).slice(1).map((_, index) => ({ name: `add_${field.name}_${index + 2}`, type: "OptIn" })))
+      : [field]
+  ));
 }
 
 function makeFlowScreen(section, index) {
-  const previousFields = CV_SECTIONS.slice(0, index).flatMap((item) => item.fields);
-  const allAvailableFields = [...previousFields, ...section.fields];
+  const previousFields = CV_SECTIONS.slice(0, index).flatMap((item) => sectionFields(item.fields));
+  const currentFields = sectionFields(section.fields);
+  const allAvailableFields = [...previousFields, ...currentFields];
   const nextSection = CV_SECTIONS[index + 1];
   const payload = Object.fromEntries(allAvailableFields.map((field) => [
     field.name,
@@ -130,7 +185,7 @@ function makeFlowScreen(section, index) {
         name: `${section.id.toLowerCase()}_form`,
         children: [
           { type: "TextSubheading", text: section.title },
-          ...section.fields.map(makeFlowInput),
+          ...section.fields.flatMap((field) => field.type === "RepeatableGroup" ? makeRepeatableGroup(field) : [makeFlowInput(field)]),
           { type: "Footer", label: section.terminal ? "Create my CV" : "Continue", "on-click-action": action },
         ],
       }],
@@ -577,17 +632,30 @@ function cleanFlowData(flowReply, senderPhone) {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
   const fields = [
     "fullName", "targetRole", "email", "phone", "location", "links", "profile", "objective", "expertise",
-    "experience1", "achievements1", "experience2", "achievements2", "experience3", "achievements3",
-    "education1", "education2", "education3", "certifications1", "certifications2", "certifications3",
-    "skills", "technologies", "languages", "projects1", "projects2", "projects3", "awards", "volunteering", "references",
+    "experience_1", "achievements_1", "experience_2", "achievements_2", "experience_3", "achievements_3",
+    "education_1", "education_2", "education_3", "certifications_1", "certifications_2", "certifications_3",
+    "expertise_1", "expertise_2", "expertise_3", "expertise_4",
+    "skills_1", "skills_2", "skills_3", "skills_4",
+    "technologies_1", "technologies_2", "technologies_3", "technologies_4",
+    "languages_1", "languages_2", "languages_3", "languages_4",
+    "projects_1", "projects_2", "projects_3",
+    "awards_1", "awards_2", "awards_3", "volunteering_1", "volunteering_2", "volunteering_3",
+    "references_1", "references_2", "references_3",
   ];
   const data = {};
   for (const field of fields) data[field] = safeText(parsed[field]);
-  data.experience = [data.experience1, data.experience2, data.experience3].filter(Boolean).join("\n\n");
-  data.achievements = [data.achievements1, data.achievements2, data.achievements3].filter(Boolean).join("\n\n");
-  data.education = [data.education1, data.education2, data.education3].filter(Boolean).join("\n\n");
-  data.certifications = [data.certifications1, data.certifications2, data.certifications3].filter(Boolean).join("\n\n");
-  data.projects = [data.projects1, data.projects2, data.projects3].filter(Boolean).join("\n\n");
+  data.experience = [data.experience_1, data.experience_2, data.experience_3].filter(Boolean).join("\n\n");
+  data.achievements = [data.achievements_1, data.achievements_2, data.achievements_3].filter(Boolean).join("\n\n");
+  data.education = [data.education_1, data.education_2, data.education_3].filter(Boolean).join("\n\n");
+  data.certifications = [data.certifications_1, data.certifications_2, data.certifications_3].filter(Boolean).join("\n\n");
+  data.projects = [data.projects_1, data.projects_2, data.projects_3].filter(Boolean).join("\n\n");
+  data.expertise = [data.expertise_1, data.expertise_2, data.expertise_3, data.expertise_4].filter(Boolean).map((item) => `- ${item}`).join("\n");
+  data.awards = [data.awards_1, data.awards_2, data.awards_3].filter(Boolean).map((item) => `- ${item}`).join("\n");
+  data.volunteering = [data.volunteering_1, data.volunteering_2, data.volunteering_3].filter(Boolean).join("\n\n");
+  data.references = [data.references_1, data.references_2, data.references_3].filter(Boolean).join("\n\n");
+  data.skills = [data.skills_1, data.skills_2, data.skills_3, data.skills_4].filter(Boolean).map((item) => `- ${item}`).join("\n");
+  data.technologies = [data.technologies_1, data.technologies_2, data.technologies_3, data.technologies_4].filter(Boolean).map((item) => `- ${item}`).join("\n");
+  data.languages = [data.languages_1, data.languages_2, data.languages_3, data.languages_4].filter(Boolean).map((item) => `- ${item}`).join("\n");
   if (!data.phone) data.phone = safeText(senderPhone);
   if (data.fullName.length < 3 || !data.targetRole || !data.profile) return null;
   if (data.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) return null;
