@@ -14,6 +14,8 @@ const CV_SECTIONS = [
       { name: "targetRole", label: "Target job title", required: true, maxChars: 80 },
       { name: "email", label: "Email address", inputType: "email", maxChars: 100 },
       { name: "phone", label: "Phone number", inputType: "phone", maxChars: 32 },
+      { name: "dateOfBirth", label: "Date of birth", type: "DatePicker", helperText: "Only include this if relevant to your CV." },
+      { name: "idNumber", label: "National ID or passport", maxChars: 40, helperText: "Only enter this if you want it shown on your CV." },
       { name: "location", label: "Town or city", maxChars: 80 },
       { name: "links", label: "LinkedIn or website", maxChars: 180 },
     ],
@@ -57,13 +59,13 @@ const CV_SECTIONS = [
     id: "SKILLS",
     title: "Skills and tools",
     fields: [
-      { type: "RepeatableGroup", name: "skills", addLabel: "skill", maxEntries: 4, entries: [
+      { type: "RepeatableGroup", name: "skills", addLabel: "skill", maxEntries: 3, entries: [
         [{ name: "skills", label: "Skill", maxLength: 120, helperText: "Enter one skill at a time." }],
       ] },
-      { type: "RepeatableGroup", name: "technologies", addLabel: "tool or technology", maxEntries: 4, entries: [
+      { type: "RepeatableGroup", name: "technologies", addLabel: "tool or technology", maxEntries: 2, entries: [
         [{ name: "technologies", label: "Tool or technology", maxLength: 120, helperText: "Enter one tool, platform, or method at a time." }],
       ] },
-      { type: "RepeatableGroup", name: "languages", addLabel: "language", maxEntries: 4, entries: [
+      { type: "RepeatableGroup", name: "languages", addLabel: "language", maxEntries: 3, entries: [
         [{ name: "languages", label: "Language and proficiency", maxLength: 120, helperText: "Enter one language and proficiency at a time." }],
       ] },
     ],
@@ -85,7 +87,7 @@ const CV_SECTIONS = [
       { type: "RepeatableGroup", name: "awards", addLabel: "award or honour", maxEntries: 3, entries: [
         [{ name: "awards", label: "Award, publication, or recognition", maxLength: 250 }],
       ] },
-      { type: "RepeatableGroup", name: "volunteering", addLabel: "community role", maxEntries: 3, entries: [
+      { type: "RepeatableGroup", name: "volunteering", addLabel: "community role", maxEntries: 2, entries: [
         [{ name: "volunteering", label: "Volunteering or community role", maxLength: 250 }],
       ] },
       { type: "RepeatableGroup", name: "references", addLabel: "reference", maxEntries: 3, entries: [
@@ -96,6 +98,15 @@ const CV_SECTIONS = [
 ];
 
 function makeFlowInput(field) {
+  if (field.type === "DatePicker") {
+    return {
+      type: "DatePicker",
+      name: field.name,
+      label: field.label,
+      ...(field.required ? { required: true } : {}),
+      ...(field.helperText ? { "helper-text": field.helperText } : {}),
+    };
+  }
   if (field.type === "TextArea") {
     return {
       type: "TextArea",
@@ -113,6 +124,7 @@ function makeFlowInput(field) {
     ...(field.required ? { required: true } : {}),
     ...(field.inputType ? { "input-type": field.inputType } : {}),
     "max-chars": field.maxChars || 80,
+    ...(field.helperText ? { "helper-text": field.helperText } : {}),
   };
 }
 
@@ -517,6 +529,11 @@ function buildCvPdf(data) {
   const contact = [data.email, data.phone, data.location].filter(Boolean).join("  |  ");
   if (contact) drawBlock(contact, { size: 9, color: "#617268", after: 2 });
   if (data.links) drawBlock(data.links, { size: 9, color: "#617268", after: 3 });
+  const personalDetails = [
+    data.dateOfBirth && `Date of birth: ${data.dateOfBirth}`,
+    data.idNumber && `National ID / passport: ${data.idNumber}`,
+  ].filter(Boolean).join("  |  ");
+  if (personalDetails) drawBlock(personalDetails, { size: 9, color: "#617268", after: 3 });
   pageOps[0].push(`0.82 0.87 0.84 RG 0.8 w ${left} ${y} m ${right} ${y} l S`);
   y -= 12;
 
@@ -631,7 +648,7 @@ function cleanFlowData(flowReply, senderPhone) {
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
   const fields = [
-    "fullName", "targetRole", "email", "phone", "location", "links", "profile", "objective", "expertise",
+    "fullName", "targetRole", "email", "phone", "dateOfBirth", "idNumber", "location", "links", "profile", "objective", "expertise",
     "experience_1", "achievements_1", "experience_2", "achievements_2", "experience_3", "achievements_3",
     "education_1", "education_2", "education_3", "certifications_1", "certifications_2", "certifications_3",
     "expertise_1", "expertise_2", "expertise_3", "expertise_4",
