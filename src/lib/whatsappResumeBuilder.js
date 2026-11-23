@@ -275,32 +275,82 @@ function commandText(text) {
   return String(text || "").trim().toLowerCase();
 }
 
-function pdfText(value) {
+const HELVETICA_WIDTHS = [
+  278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278,
+  556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556,
+  1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778,
+  667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556,
+  333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556,
+  556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584,
+];
+
+function pdfPlainText(value) {
   return String(value || "")
+    .replace(/\r\n?/g, "\n")
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\x20-\x7E]/g, " ")
-    .replace(/[\\()]/g, "\\$&")
-    .replace(/\s+/g, " ")
+    .replace(/[–—]/g, "-")
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[^\x20-\x7E\n]/g, " ")
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+/g, " ").trim())
+    .join("\n")
     .trim();
 }
 
-function wrap(value, maxChars) {
-  const text = pdfText(value).replace(/\\([\\()])/g, "$1");
-  if (!text) return [];
-  const words = text.split(/\s+/);
-  const lines = [];
-  let line = "";
-  for (const word of words) {
-    const next = line ? `${line} ${word}` : word;
-    if (next.length > maxChars && line) {
-      lines.push(line);
-      line = word;
+function pdfText(value) {
+  return pdfPlainText(value).replace(/[\\()]/g, "\\$&");
+}
+
+function pdfTextWidth(value, size) {
+  return [...String(value || "")].reduce((width, character) => {
+    const code = character.charCodeAt(0);
+    return width + (HELVETICA_WIDTHS[code - 32] || 556) * size / 1000;
+  }, 0);
+}
+
+function splitWideWord(word, maxWidth, size) {
+  const pieces = [];
+  let piece = "";
+  for (const character of word) {
+    const candidate = piece + character;
+    if (piece && pdfTextWidth(candidate, size) > maxWidth) {
+      pieces.push(piece);
+      piece = character;
     } else {
-      line = next;
+      piece = candidate;
     }
   }
-  if (line) lines.push(line);
+  if (piece) pieces.push(piece);
+  return pieces;
+}
+
+function wrapPdfText(value, maxWidth, size) {
+  const paragraphs = pdfPlainText(value).split("\n");
+  const lines = [];
+  for (const paragraph of paragraphs) {
+    if (!paragraph) {
+      lines.push("");
+      continue;
+    }
+    let line = "";
+    for (const originalWord of paragraph.split(/\s+/)) {
+      const words = pdfTextWidth(originalWord, size) > maxWidth
+        ? splitWideWord(originalWord, maxWidth, size)
+        : [originalWord];
+      for (const word of words) {
+        const candidate = line ? `${line} ${word}` : word;
+        if (line && pdfTextWidth(candidate, size) > maxWidth) {
+          lines.push(line);
+          line = word;
+        } else {
+          line = candidate;
+        }
+      }
+    }
+    if (line) lines.push(line);
+  }
   return lines;
 }
 
@@ -311,80 +361,149 @@ function colorCommand(hex) {
 }
 
 function buildCvPdf(data) {
+  const pageWidth = 595;
+  const pageHeight = 842;
+  const left = 52;
+  const right = 543;
+  const contentWidth = right - left;
+  const footerLimit = 54;
+  const lineHeight = (size) => size * 1.42;
   const pageOps = [[]];
   let pageIndex = 0;
   let y = 790;
-  const ensureSpace = (height) => {
-    if (y - height < 52) {
-      pageOps.push([]);
-      pageIndex += 1;
-      y = 790;
-    }
+  const pushText = (text, { size = 10, font = "F1", color = "#24362d", x = left, baseline = y } = {}) => {
+    pageOps[pageIndex].push(`BT ${colorCommand(color)} /${font} ${size} Tf 1 0 0 1 ${x} ${baseline} Tm (${pdfText(text)}) Tj ET`);
   };
-  const draw = (text, { size = 10, font = "F1", color = "#24362d", x = 52, gap = 15 } = {}) => {
+  const addPage = () => {
+    pageOps.push(["0.043 0.463 0.318 rg 0 828 595 6 re f"]);
+    pageIndex += 1;
+    y = 790;
+    const repeatedHeader = `${data.fullName || "Curriculum Vitae"}  |  ${data.targetRole || "Professional Profile"}`;
+    const repeatedSize = Math.min(9, contentWidth / Math.max(1, pdfTextWidth(repeatedHeader, 1)));
+    pushText(repeatedHeader, { size: Math.max(7, repeatedSize), font: "F2", color: "#617268" });
+    y -= 13;
+    pageOps[pageIndex].push(`0.043 0.463 0.318 RG 0.6 w ${left} ${y} m ${right} ${y} l S`);
+    y -= 17;
+  };
+  const ensureSpace = (height) => {
+    if (y - height < footerLimit) addPage();
+  };
+  const drawLine = (text, { size = 10, font = "F1", color = "#37483f", x = left, gap = lineHeight(size) } = {}) => {
     ensureSpace(gap);
-    const safe = pdfText(text);
-    pageOps[pageIndex].push(`BT ${colorCommand(color)} /${font} ${size} Tf 1 0 0 1 ${x} ${y} Tm (${safe}) Tj ET`);
+    pushText(text, { size, font, color, x });
     y -= gap;
   };
-  const paragraph = (text, { size = 10, color = "#37483f", maxChars = 92 } = {}) => {
-    const lines = wrap(text, maxChars);
-    for (const line of lines) draw(line, { size, color, gap: size + 5 });
-    if (lines.length) y -= 4;
+  const drawBlock = (value, { size = 10, color = "#37483f", font = "F1", after = 5 } = {}) => {
+    const sourceLines = String(value || "").replace(/\r\n?/g, "\n").split("\n");
+    for (const sourceLine of sourceLines) {
+      const cleanLine = pdfPlainText(sourceLine);
+      if (!cleanLine) {
+        y -= size * 0.42;
+        continue;
+      }
+      const bulletMatch = cleanLine.match(/^(?:[-*]|\d+[.)])\s+(.+)$/);
+      const bulletText = bulletMatch ? bulletMatch[1] : cleanLine;
+      const indent = bulletMatch ? 13 : 0;
+      const wrapped = wrapPdfText(bulletText, contentWidth - indent, size);
+      wrapped.forEach((line, index) => {
+        const rendered = bulletMatch && index === 0 ? `- ${line}` : line;
+        drawLine(rendered, { size, color, font, x: left + (bulletMatch && index > 0 ? indent : 0) });
+      });
+      y -= 1.5;
+    }
+    y -= after;
   };
-  const section = (title) => {
-    y -= 8;
-    draw(title.toUpperCase(), { size: 10, font: "F2", color: "#0b7651", gap: 18 });
+  const drawLabel = (label, bodySize = 10) => {
+    ensureSpace(12 + lineHeight(bodySize) + 4);
+    drawLine(label.toUpperCase(), { size: 8, font: "F2", color: "#617268", gap: 12 });
+  };
+  const drawSection = (title) => {
+    ensureSpace(43);
+    y -= 2;
+    drawLine(title.toUpperCase(), { size: 10, font: "F2", color: "#0b7651", gap: 15 });
+    pageOps[pageIndex].push(`0.82 0.87 0.84 RG 0.55 w ${left} ${y + 2} m ${right} ${y + 2} l S`);
+    y -= 9;
   };
 
   pageOps[0].push("0.043 0.463 0.318 rg 0 828 595 14 re f");
-  draw(data.fullName || "Curriculum Vitae", { size: 25, font: "F2", color: "#10281d", gap: 32 });
-  draw(data.targetRole || "Professional Profile", { size: 12, font: "F2", color: "#0b7651", gap: 19 });
+  const nameLines = wrapPdfText(data.fullName || "Curriculum Vitae", contentWidth, 25);
+  nameLines.forEach((line) => drawLine(line, { size: 25, font: "F2", color: "#10281d", gap: 31 }));
+  drawLine(data.targetRole || "Professional Profile", { size: 12, font: "F2", color: "#0b7651", gap: 18 });
   const contact = [data.email, data.phone, data.location].filter(Boolean).join("  |  ");
-  if (contact) paragraph(contact, { size: 9, color: "#617268", maxChars: 88 });
-  if (data.links) paragraph(data.links, { size: 9, color: "#617268", maxChars: 88 });
-  section("Professional profile");
-  paragraph(data.profile);
+  if (contact) drawBlock(contact, { size: 9, color: "#617268", after: 2 });
+  if (data.links) drawBlock(data.links, { size: 9, color: "#617268", after: 3 });
+  pageOps[0].push(`0.82 0.87 0.84 RG 0.8 w ${left} ${y} m ${right} ${y} l S`);
+  y -= 12;
+
+  drawSection("Professional profile");
+  drawBlock(data.profile);
   if (data.objective) {
-    section("Career objective");
-    paragraph(data.objective);
+    drawSection("Career objective");
+    drawBlock(data.objective);
   }
   if (data.expertise) {
-    section("Core expertise");
-    paragraph(data.expertise);
+    drawSection("Core expertise");
+    drawBlock(data.expertise);
   }
   if (data.experience || data.achievements) {
-    section("Experience");
-    paragraph(data.experience);
-    paragraph(data.achievements);
+    drawSection("Experience");
+    if (data.experience) {
+      drawLabel("Roles and employers");
+      drawBlock(data.experience, { after: data.achievements ? 2 : 5 });
+    }
+    if (data.achievements) {
+      drawLabel("Key duties and results");
+      drawBlock(data.achievements);
+    }
   }
   if (data.education && !/^skip$/i.test(data.education)) {
-    section("Education");
-    paragraph(data.education);
+    drawSection("Education");
+    drawBlock(data.education);
   }
   if (data.certifications) {
-    section("Certifications & training");
-    paragraph(data.certifications);
+    drawSection("Certifications and training");
+    drawBlock(data.certifications);
   }
   if (data.skills || data.technologies || data.languages) {
-    section("Skills and tools");
-    paragraph(data.skills, { color: "#24362d" });
-    if (data.technologies) paragraph(`Tools and technology: ${data.technologies}`);
-    if (data.languages) paragraph(`Languages: ${data.languages}`);
+    drawSection("Skills and tools");
+    if (data.skills) {
+      drawLabel("Core skills");
+      drawBlock(data.skills, { color: "#24362d", after: data.technologies || data.languages ? 2 : 5 });
+    }
+    if (data.technologies) {
+      drawLabel("Tools and technology");
+      drawBlock(data.technologies, { after: data.languages ? 2 : 5 });
+    }
+    if (data.languages) {
+      drawLabel("Languages");
+      drawBlock(data.languages);
+    }
   }
   if (data.projects) {
-    section("Selected projects");
-    paragraph(data.projects);
+    drawSection("Selected projects");
+    drawBlock(data.projects);
   }
   if (data.awards || data.volunteering || data.references) {
-    section("Additional details");
-    if (data.awards) paragraph(`Awards and honours: ${data.awards}`);
-    if (data.volunteering) paragraph(`Community work: ${data.volunteering}`);
-    if (data.references) paragraph(`References: ${data.references}`);
+    drawSection("Additional details");
+    if (data.awards) {
+      drawLabel("Awards and honours");
+      drawBlock(data.awards, { after: data.volunteering || data.references ? 2 : 5 });
+    }
+    if (data.volunteering) {
+      drawLabel("Community work");
+      drawBlock(data.volunteering, { after: data.references ? 2 : 5 });
+    }
+    if (data.references) {
+      drawLabel("References");
+      drawBlock(data.references);
+    }
   }
   for (let index = 0; index < pageOps.length; index += 1) {
-    pageOps[index].push(`BT ${colorCommand("#87948c")} /F1 8 Tf 1 0 0 1 52 32 Tm (Prepared with CribMatch CV) Tj ET`);
-    pageOps[index].push(`BT ${colorCommand("#87948c")} /F1 8 Tf 1 0 0 1 530 32 Tm (${index + 1}) Tj ET`);
+    pageOps[index].push(`0.82 0.87 0.84 RG 0.55 w ${left} 43 m ${right} 43 l S`);
+    pageOps[index].push(`BT ${colorCommand("#87948c")} /F1 8 Tf 1 0 0 1 ${left} 28 Tm (Prepared with CribMatch CV) Tj ET`);
+    const pageLabel = `Page ${index + 1} of ${pageOps.length}`;
+    const pageLabelX = right - pdfTextWidth(pageLabel, 8);
+    pageOps[index].push(`BT ${colorCommand("#87948c")} /F1 8 Tf 1 0 0 1 ${pageLabelX} 28 Tm (${pdfText(pageLabel)}) Tj ET`);
   }
 
   const regularFontId = 3 + pageOps.length * 2;
@@ -397,7 +516,7 @@ function buildCvPdf(data) {
     const pageId = 3 + index * 2;
     const contentId = pageId + 1;
     const stream = `${operations.join("\n")}\n`;
-    objects[pageId] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 ${regularFontId} 0 R /F2 ${boldFontId} 0 R >> >> /Contents ${contentId} 0 R >>`;
+    objects[pageId] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 ${regularFontId} 0 R /F2 ${boldFontId} 0 R >> >> /Contents ${contentId} 0 R >>`;
     objects[contentId] = `<< /Length ${Buffer.byteLength(stream, "ascii")} >>\nstream\n${stream}endstream`;
   });
   objects[regularFontId] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>";
