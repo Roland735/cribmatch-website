@@ -1,5 +1,10 @@
 import crypto from "crypto";
 import { NextResponse } from "next/server";
+import {
+  hasIncomingWhatsAppMessages,
+  handleResumeWhatsAppWebhook,
+  isVerifiedWhatsAppWebhook,
+} from "@/lib/whatsappResumeBuilder";
 
 export const runtime = "nodejs";
 
@@ -183,7 +188,26 @@ export async function POST(request) {
     });
   }
 
-  // OTP-only mode intentionally ignores inbound WhatsApp messages.
+  if (body.object === "whatsapp_business_account") {
+    if (!hasIncomingWhatsAppMessages(body)) {
+      return NextResponse.json({ ok: true });
+    }
+    const signature = request.headers.get("x-hub-signature-256") || "";
+    if (!isVerifiedWhatsAppWebhook(rawBody, signature)) {
+      console.error(
+        "[cribmatch-cv-whatsapp] Rejected webhook: configure WHATSAPP_APP_SECRET and verify Meta's signature."
+      );
+      return NextResponse.json(
+        { error: "WhatsApp webhook signature verification failed." },
+        { status: 401 }
+      );
+    }
+
+    await handleResumeWhatsAppWebhook(body);
+    return NextResponse.json({ ok: true });
+  }
+
+  // Keep the legacy Nzvimbo OTP endpoint compatible with non-Meta requests.
   return NextResponse.json({ ok: true });
 }
 
