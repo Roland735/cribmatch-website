@@ -5,7 +5,7 @@ const steps = [
   {
     number: "01",
     title: "Start on WhatsApp",
-    description: "Tell us what kind of work you’re applying for and share your details or an old CV.",
+    description: "Tell the chatbot what kind of work you’re applying for and answer a few simple questions.",
   },
   {
     number: "02",
@@ -20,8 +20,8 @@ const steps = [
 ];
 
 const faqs = [
-  ["What do I need to get started?", "Just a WhatsApp account and the details you want on your CV. You can send a rough CV, notes, or answer a few simple questions."],
-  ["How much does it cost?", "The standard CV is $1. We’ll confirm payment instructions in WhatsApp before preparing the final PDF."],
+  ["What do I need to get started?", "Just a WhatsApp account and the details you want on your CV. The chatbot will ask you a few simple questions."],
+  ["How much does it cost?", "The standard CV is $1. Payment instructions are sent in WhatsApp. After you reply PAID with your payment reference, the chatbot creates your PDF. Payment is not independently verified yet."],
   ["Can I ask for a correction?", "Yes. Review your draft and message any corrections before you use it to apply."],
 ];
 
@@ -51,7 +51,7 @@ export default function Home() {
               <span className="px-2 text-sm text-[#a8b6ad]">One professional CV · <strong className="text-white">$1</strong></span>
             </div>
             <div className="flex flex-wrap gap-x-7 gap-y-3 border-t border-white/10 pt-6 text-xs text-[#a8b6ad]">
-              <span className="inline-flex items-center gap-2"><CheckIcon /> Human-guided support</span>
+              <span className="inline-flex items-center gap-2"><CheckIcon /> Step-by-step chat</span>
               <span className="inline-flex items-center gap-2"><CheckIcon /> PDF delivered in chat</span>
               <span className="inline-flex items-center gap-2"><CheckIcon /> Made for job applications</span>
             </div>

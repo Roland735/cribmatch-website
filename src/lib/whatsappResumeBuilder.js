@@ -19,14 +19,6 @@ function digitsOnly(value) {
   return String(value || "").replace(/\D/g, "");
 }
 
-function normalizeZimbabwePhone(value) {
-  const digits = digitsOnly(value);
-  if (/^2637[1-8]\d{7}$/.test(digits)) return digits;
-  if (/^07[1-8]\d{7}$/.test(digits)) return `263${digits.slice(1)}`;
-  if (/^7[1-8]\d{7}$/.test(digits)) return `263${digits}`;
-  return digits;
-}
-
 function matchesWebhookSignature(rawBody, signature, secret) {
   if (!secret || !signature?.startsWith("sha256=")) return false;
   const expected = `sha256=${crypto.createHmac("sha256", secret).update(rawBody).digest("hex")}`;
@@ -256,13 +248,6 @@ function buildCvPdf(data) {
   return Buffer.from(pdf, "ascii");
 }
 
-async function notifyAdmin(message) {
-  const adminPhone = normalizeZimbabwePhone(process.env.CV_ADMIN_PHONE);
-  if (!adminPhone) return false;
-  await sendText(adminPhone, message);
-  return true;
-}
-
 async function startDraft(db, phone) {
   const now = new Date();
   const previous = await db.collection("cv_whatsapp_sessions").findOne({ _id: phone });
@@ -277,49 +262,9 @@ async function startDraft(db, phone) {
   return sendText(phone, `Welcome to CribMatch CV. I’ll ask a few short questions and format your details into a professional PDF for ${PRICE_TEXT}. Your information is used to prepare your CV. Send DELETE at any time to remove your saved details.\n\n${promptFor(STEPS[0][0])}`);
 }
 
-async function processAdminCommand(db, phone, text) {
-  const expectedAdmin = normalizeZimbabwePhone(process.env.CV_ADMIN_PHONE);
-  if (!expectedAdmin || phone !== expectedAdmin) return false;
-  const match = /^(APPROVE|REJECT)\s+([A-Z0-9]{6,10})$/i.exec(text.trim());
-  if (!match) return false;
-  const [, action, codeRaw] = match;
-  const code = codeRaw.toUpperCase();
-  const orders = db.collection("cv_whatsapp_orders");
-  const order = await orders.findOne({ orderCode: code });
-  if (!order) {
-    await sendText(phone, `I couldn't find CV order ${code}.`);
-    return true;
-  }
-  if (action.toUpperCase() === "REJECT") {
-    await orders.updateOne({ _id: order._id }, { $set: { status: "payment_rejected", updatedAt: new Date() } });
-    await sendText(order.phone, `Payment for CV order ${code} could not be confirmed yet. Please reply here if you need help.`);
-    await sendText(phone, `Marked order ${code} as needing payment follow-up.`);
-    return true;
-  }
-  if (order.status === "delivered") {
-    await sendText(phone, `CV order ${code} has already been delivered.`);
-    return true;
-  }
-  const pdfBytes = buildCvPdf(order.data);
-  const filename = `${(order.data.fullName || "CribMatch-CV").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "CribMatch-CV"}.pdf`;
-  await sendPdf(order.phone, pdfBytes, filename, `Your CV is ready. Thank you for using CribMatch. Order ${code}.`);
-  await orders.updateOne({ _id: order._id }, { $set: { status: "delivered", updatedAt: new Date(), deliveredAt: new Date() } });
-  await db.collection("cv_whatsapp_sessions").updateOne(
-    { _id: order.phone, orderCode: code },
-    { $set: { step: "delivered", updatedAt: new Date() } },
-  );
-  await sendText(phone, `Sent the PDF for CV order ${code}.`);
-  return true;
-}
-
 async function handleIncomingMessage(db, { from, text }) {
   const normalized = commandText(text);
   if (!text) return;
-  if (normalizeZimbabwePhone(process.env.CV_ADMIN_PHONE) === from && normalized === "admin") {
-    await sendText(from, "Admin commands: APPROVE <order code> sends the paid CV PDF to its customer. REJECT <order code> asks the customer to follow up about payment. Keep this number private.");
-    return;
-  }
-  if (await processAdminCommand(db, from, text)) return;
 
   const sessions = db.collection("cv_whatsapp_sessions");
   const orders = db.collection("cv_whatsapp_orders");
@@ -351,14 +296,26 @@ async function handleIncomingMessage(db, { from, text }) {
     }
     if (normalized === "paid" || normalized.startsWith("paid ")) {
       const code = String(session.orderCode || "");
-      await orders.updateOne({ orderCode: code }, { $set: { status: "payment_reported", updatedAt: new Date() } });
-      const notified = await notifyAdmin(`CV payment reported. Order ${code}\nName: ${session.data?.fullName || ""}\nCustomer WhatsApp: +${from}\nReply APPROVE ${code} after confirming the US$1 payment.`).catch(() => false);
-      await sendText(from, notified
-        ? `Thanks. I’ve sent payment reference ${code} to our team for confirmation. I’ll deliver your PDF here once they approve it.`
-        : `Thanks. Your CV order is ${code}. Our team still needs to confirm payment before the PDF can be sent.`);
+      const paymentReference = text.trim().replace(/^paid\s*/i, "").slice(0, 100);
+      if (!paymentReference) {
+        await sendText(from, "Please send PAID followed by the payment reference, for example: PAID EC123456.");
+        return;
+      }
+      const order = await orders.findOne({ orderCode: code, phone: from });
+      if (!order) {
+        await sendText(from, "I couldn't find that CV order. Send START to begin again.");
+        return;
+      }
+      const pdfBytes = buildCvPdf(order.data);
+      const filename = `${(order.data.fullName || "CribMatch-CV").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "CribMatch-CV"}.pdf`;
+      await sendPdf(from, pdfBytes, filename, `Your CV is ready. Order ${code}.`);
+      const now = new Date();
+      await orders.updateOne({ _id: order._id }, { $set: { status: "delivered_customer_reported", paymentReference, updatedAt: now, deliveredAt: now } });
+      await sessions.updateOne({ _id: from, orderCode: code }, { $set: { step: "delivered", updatedAt: now } });
+      await sendText(from, `Your PDF is attached. Order ${code}. Keep your payment receipt. Payment is not verified automatically by this chatbot.`);
       return;
     }
-    await sendText(from, `Your CV order is ${session.orderCode}. The price is ${PRICE_TEXT}. ${process.env.CV_PAYMENT_INSTRUCTIONS || "Reply PAID after you have arranged payment with our team; the PDF is sent after payment is confirmed."}`);
+    await sendText(from, `Your CV order is ${session.orderCode}. The price is ${PRICE_TEXT}. Once you have paid, reply PAID followed by your payment reference. The bot will generate and send your PDF. Payment is not verified automatically.`);
     return;
   }
   if (session.step === "delivered") {
@@ -383,13 +340,16 @@ async function handleIncomingMessage(db, { from, text }) {
       return;
     }
     if (["yes", "confirm", "order"].includes(normalized)) {
+      const instructions = String(process.env.CV_PAYMENT_INSTRUCTIONS || "").trim();
+      if (!instructions) {
+        await sendText(from, "Payment details are not set up yet. Please try again later.");
+        return;
+      }
       const orderCode = makeOrderCode();
       const now = new Date();
-      await orders.insertOne({ orderCode, phone: from, data: session.data || {}, status: "awaiting_payment", createdAt: now, updatedAt: now });
+      await orders.insertOne({ orderCode, phone: from, data: session.data || {}, paymentInstructions: instructions, status: "awaiting_payment", createdAt: now, updatedAt: now });
       await sessions.updateOne({ _id: from }, { $set: { step: "awaiting_payment", orderCode, updatedAt: now } });
-      const instructions = process.env.CV_PAYMENT_INSTRUCTIONS || "Reply PAID after arranging payment with our team; the PDF will be sent here after payment is confirmed.";
-      const notified = await notifyAdmin(`New CribMatch CV order ${orderCode}\nName: ${session.data?.fullName || ""}\nCustomer WhatsApp: +${from}\nPrice: US$1\n${instructions}\nReply APPROVE ${orderCode} after payment is confirmed.`).catch(() => false);
-      await sendText(from, `Your order ${orderCode} is saved. The CV costs ${PRICE_TEXT}. ${instructions}${notified ? "\n\nI’ve notified our team. After they confirm payment, your PDF will arrive in this chat." : "\n\nOur team will confirm payment in this chat before sending the PDF."}`);
+      await sendText(from, `Your order ${orderCode} is saved. The CV costs ${PRICE_TEXT}.\n\n${instructions}\n\nAfter paying, reply *PAID* followed by your payment reference. The chatbot will generate and send your PDF. Payment is not verified automatically, so keep your receipt.`);
       return;
     }
     if (["edit", "restart"].includes(normalized)) {
