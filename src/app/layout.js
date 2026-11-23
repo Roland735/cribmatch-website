@@ -3,13 +3,14 @@ import SiteChrome from "./SiteChrome";
 import Providers from "./Providers";
 
 export const metadata = {
+  metadataBase: new URL("https://cribmatch.co.zw"),
   title: {
-    default: "CribMatch Zimbabwe — Web + WhatsApp Rental Assistant",
-    template: "%s | CribMatch Zimbabwe",
+    default: "CribMatch — CV Builder on WhatsApp",
+    template: "%s | CribMatch CV",
   },
   description:
-    "CribMatch connects renters, landlords and agents across Zimbabwe using the web and WhatsApp. Browse rentals online, then chat to get matched, confirm availability, and schedule viewings.",
-  keywords: ["rentals", "Zimbabwe", "Harare", "apartments", "houses for rent", "WhatsApp rental assistant", "CribMatch"],
+    "Create a professional CV through WhatsApp with CribMatch. Get guided help turning your experience into a clean, job-ready PDF for $1.",
+  keywords: ["CV builder", "resume builder", "Zimbabwe", "Harare", "WhatsApp CV", "professional CV", "CribMatch"],
   authors: [{ name: "CribMatch" }],
   creator: "CribMatch",
   openGraph: {
@@ -17,27 +18,20 @@ export const metadata = {
     locale: "en_ZW",
     url: "https://cribmatch.co.zw",
     siteName: "CribMatch Zimbabwe",
-    title: "CribMatch Zimbabwe — Web + WhatsApp Rental Assistant",
-    description: "Find your next home in Zimbabwe via web or WhatsApp.",
-    images: [
-      {
-        url: "/1.png",
-        width: 24000,
-        height: 18000,
-        alt: "CribMatch Zimbabwe",
-      },
-    ],
+    title: "CribMatch — CV Builder on WhatsApp",
+    description: "Build a professional CV in a simple WhatsApp chat. Get a polished PDF for $1.",
+    images: [{ url: "/cribmatch-social.svg", width: 1200, height: 630, alt: "CribMatch CV Builder on WhatsApp" }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "CribMatch Zimbabwe — Web + WhatsApp Rental Assistant",
-    description: "Find your next home in Zimbabwe via web or WhatsApp.",
-    images: ["/logo_vector.svg"],
+    title: "CribMatch — CV Builder on WhatsApp",
+    description: "Build a professional CV in a simple WhatsApp chat. Get a polished PDF for $1.",
+    images: ["/cribmatch-social.svg"],
   },
   icons: {
-    icon: "/1.png",
-    shortcut: "/1.png",
-    apple: "/1.png",
+    icon: "/cribmatch-icon.svg",
+    shortcut: "/cribmatch-icon.svg",
+    apple: "/cribmatch-icon.svg",
   },
 };
 

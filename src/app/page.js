@@ -1,390 +1,111 @@
-import Link from "next/link";
-import ListingsGridServer from "./listings/ListingsGridServer";
-import ListingsFilters from "./listings/ListingsFilters";
-import { getListingFacets, searchPublishedListings } from "@/lib/getListings";
-import { Suspense } from "react";
+const WHATSAPP_URL =
+  "https://wa.me/263771150713?text=Hi%20CribMatch%2C%20I%27d%20like%20to%20create%20my%20CV%20for%20%241.";
 
-function toSafeString(value) {
-  return typeof value === "string" ? value : "";
-}
+const steps = [
+  {
+    number: "01",
+    title: "Start on WhatsApp",
+    description: "Tell us what kind of work you’re applying for and share your details or an old CV.",
+  },
+  {
+    number: "02",
+    title: "We shape your story",
+    description: "We organise your experience, skills and education into a clean, professional CV.",
+  },
+  {
+    number: "03",
+    title: "Get your finished CV",
+    description: "Review it in chat, request a correction, then receive your CV as a PDF for $1.",
+  },
+];
 
-function toSafeNumber(value) {
-  if (value === null || value === undefined || value === "") return null;
-  const asNumber = Number(value);
-  return Number.isFinite(asNumber) ? asNumber : null;
-}
+const faqs = [
+  ["What do I need to get started?", "Just a WhatsApp account and the details you want on your CV. You can send a rough CV, notes, or answer a few simple questions."],
+  ["How much does it cost?", "The standard CV is $1. We’ll confirm payment instructions in WhatsApp before preparing the final PDF."],
+  ["Can I ask for a correction?", "Yes. Review your draft and message any corrections before you use it to apply."],
+];
 
-const ALLOWED_SORTS = new Set(["newest", "price_asc", "price_desc", "beds_asc", "beds_desc"]);
-
-function normalizeRangeNumbers(minValue, maxValue) {
-  const min = toSafeNumber(minValue);
-  const max = toSafeNumber(maxValue);
-  if (min !== null && min < 0) return normalizeRangeNumbers(null, max);
-  if (max !== null && max < 0) return normalizeRangeNumbers(min, null);
-  if (min !== null && max !== null && max < min) return { min: max, max: min };
-  return { min, max };
-}
-
-function parseCsv(value) {
-  const raw = toSafeString(value);
-  if (!raw) return [];
-  return raw
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .slice(0, 12);
-}
-
-export default async function Home({ searchParams }) {
-  const facets = await getListingFacets();
-
-  const resolvedSearchParams = await Promise.resolve(searchParams);
-  const q = toSafeString(resolvedSearchParams?.q).trim();
-  const city = toSafeString(resolvedSearchParams?.city).trim();
-  const suburb = toSafeString(resolvedSearchParams?.suburb).trim();
-  const propertyCategory = toSafeString(resolvedSearchParams?.propertyCategory).trim();
-  const propertyType = toSafeString(resolvedSearchParams?.propertyType).trim();
-  const priceRange = normalizeRangeNumbers(resolvedSearchParams?.minPrice, resolvedSearchParams?.maxPrice);
-  const depositRange = normalizeRangeNumbers(resolvedSearchParams?.minDeposit, resolvedSearchParams?.maxDeposit);
-  const bedsRange = normalizeRangeNumbers(resolvedSearchParams?.minBeds, resolvedSearchParams?.maxBeds);
-  const minPrice = priceRange.min;
-  const maxPrice = priceRange.max;
-  const minDeposit = depositRange.min;
-  const maxDeposit = depositRange.max;
-  const minBeds = bedsRange.min === null ? null : Math.floor(bedsRange.min);
-  const maxBeds = bedsRange.max === null ? null : Math.floor(bedsRange.max);
-  const features = parseCsv(resolvedSearchParams?.features);
-  const sortCandidate = toSafeString(resolvedSearchParams?.sort).trim() || "newest";
-  const sort = ALLOWED_SORTS.has(sortCandidate) ? sortCandidate : "newest";
-  const photos = toSafeString(resolvedSearchParams?.photos) === "1";
-
-  const perPage = 6;
-  const { listings, total } = await searchPublishedListings({
-    q,
-    city,
-    suburb,
-    propertyCategory,
-    propertyType,
-    minPrice,
-    maxPrice,
-    minDeposit,
-    maxDeposit,
-    minBeds,
-    maxBeds,
-    features,
-    sort,
-    photos,
-    page: 1,
-    perPage,
-  });
-
-  const hasResults = total > 0;
-  const from = hasResults ? 1 : 0;
-  const to = hasResults ? Math.min(perPage, total) : 0;
-  const resultSummary = hasResults ? `Showing ${from}-${to} of ${total}` : "0 matches";
-
+export default function Home() {
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-50">
-      <main className="mx-auto max-w-6xl px-6 pb-20 pt-10 lg:px-8 lg:pb-28 lg:pt-16">
-        <section className="grid gap-12 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] lg:items-center">
+    <div className="overflow-hidden bg-[#07120f] text-[#f3f5ef]">
+      <main>
+        <section className="relative isolate mx-auto grid min-h-[680px] max-w-7xl items-center gap-14 px-6 pb-20 pt-16 lg:grid-cols-[1.05fr_.95fr] lg:px-10 lg:pb-28 lg:pt-20">
+          <div className="pointer-events-none absolute -left-40 top-8 -z-10 h-96 w-96 rounded-full bg-emerald-400/10 blur-[110px]" />
           <div className="space-y-8">
-            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-200">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
-              Zimbabwe rentals, simplified on web + WhatsApp
+            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-300/[0.07] px-4 py-2 text-xs font-medium text-emerald-100">
+              <span className="h-2 w-2 rounded-full bg-emerald-300" />
+              Your CV, made on WhatsApp
             </div>
-
-            <div className="space-y-4">
-              <h1 className="text-balance text-4xl font-semibold tracking-tight sm:text-5xl lg:text-6xl">
-                Find your next rental with confidence.
+            <div className="space-y-5">
+              <h1 className="max-w-[13ch] text-balance text-5xl font-semibold leading-[1.03] tracking-[-0.045em] sm:text-6xl lg:text-7xl">
+                Your next opportunity starts with a <span className="text-emerald-300">better CV.</span>
               </h1>
-              <p className="max-w-xl text-pretty text-base leading-relaxed text-slate-300 sm:text-lg">
-                We connect renters, landlords, and agents in one guided flow.
-                Share your suburb, budget, and preferences, then move forward
-                with clear support.
+              <p className="max-w-xl text-pretty text-base leading-8 text-[#bdc9c1] sm:text-lg">
+                Turn your experience into a polished, job-ready CV through a simple WhatsApp chat. No complicated forms. No laptop needed.
               </p>
             </div>
-
-            <div className="flex flex-wrap items-center gap-4">
-              <a
-                href="https://wa.me/263771150713"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="rounded-full bg-emerald-400 px-6 py-3 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-400/25 transition hover:bg-emerald-300"
-              >
-                Chat on WhatsApp
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center gap-3 rounded-full bg-emerald-300 px-7 py-4 text-sm font-bold text-[#06211a] shadow-[0_12px_36px_rgba(52,211,153,.18)] transition hover:-translate-y-0.5 hover:bg-emerald-200">
+                <WhatsAppIcon /> Create my CV on WhatsApp <span aria-hidden="true">↗</span>
               </a>
-              <Link
-                href="/listings"
-                className="rounded-full border border-white/20 px-6 py-3 text-sm font-semibold text-slate-50 transition hover:border-white/40 hover:bg-white/5"
-              >
-                Browse listings
-              </Link>
-              <Link
-                href="/landlords"
-                className="text-sm font-semibold text-slate-200 transition hover:text-white"
-              >
-                List a property <span aria-hidden="true">→</span>
-              </Link>
-              <Link
-                href="/login?callbackUrl=/agent/register"
-                className="text-sm font-semibold text-amber-200 transition hover:text-amber-100"
-              >
-                Agent sign-up <span aria-hidden="true">→</span>
-              </Link>
-              <span className="text-xs text-slate-400">
-                Browse on web, finalize faster on WhatsApp.
-              </span>
+              <span className="px-2 text-sm text-[#a8b6ad]">One professional CV · <strong className="text-white">$1</strong></span>
             </div>
-
-            <dl className="grid gap-6 text-sm text-slate-300 sm:grid-cols-3">
-              <div className="space-y-1 rounded-2xl border border-white/5 bg-white/5 px-4 py-3">
-                <dt className="text-xs uppercase tracking-wide text-slate-400">
-                  Fast matching
-                </dt>
-                <dd className="text-lg font-semibold text-white">
-                  In minutes
-                </dd>
-              </div>
-              <div className="space-y-1 rounded-2xl border border-white/5 bg-white/5 px-4 py-3">
-                <dt className="text-xs uppercase tracking-wide text-slate-400">
-                  Mobile-first
-                </dt>
-                <dd className="text-lg font-semibold text-white">Web + WhatsApp</dd>
-              </div>
-              <div className="space-y-1 rounded-2xl border border-white/5 bg-white/5 px-4 py-3">
-                <dt className="text-xs uppercase tracking-wide text-slate-400">
-                  Trust & safety
-                </dt>
-                <dd className="text-lg font-semibold text-white">
-                  Guided checks
-                </dd>
-              </div>
-            </dl>
+            <div className="flex flex-wrap gap-x-7 gap-y-3 border-t border-white/10 pt-6 text-xs text-[#a8b6ad]">
+              <span className="inline-flex items-center gap-2"><CheckIcon /> Human-guided support</span>
+              <span className="inline-flex items-center gap-2"><CheckIcon /> PDF delivered in chat</span>
+              <span className="inline-flex items-center gap-2"><CheckIcon /> Made for job applications</span>
+            </div>
           </div>
 
-          <div className="space-y-6 rounded-3xl border border-white/10 bg-gradient-to-b from-slate-900/60 to-slate-950/80 p-6 shadow-[0_24px_80px_rgba(15,23,42,0.85)]">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                  Match preview
-                </p>
-                <p className="mt-1 text-sm text-slate-200">
-                  A guided journey from search to viewing.
-                </p>
+          <div className="relative mx-auto w-full max-w-[480px] lg:ml-auto">
+            <div className="absolute -inset-8 rounded-[3rem] bg-emerald-400/10 blur-3xl" />
+            <div className="relative rotate-1 rounded-[2rem] border border-white/10 bg-[#0c1c17] p-4 shadow-[0_32px_100px_rgba(0,0,0,.45)] sm:p-6">
+              <div className="flex items-center justify-between border-b border-white/10 px-2 pb-4">
+                <div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-300 text-sm font-bold text-[#09231b]">CM</div><div><p className="text-sm font-semibold">CribMatch CV</p><p className="text-xs text-[#91a39a]">online · WhatsApp</p></div></div>
+                <span className="rounded-full bg-emerald-300/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[.15em] text-emerald-200">Chat preview</span>
               </div>
-              <span className="rounded-full bg-emerald-400/15 px-3 py-1 text-xs font-semibold text-emerald-200">
-                Guided matching
-              </span>
-            </div>
-
-            <div className="space-y-4 rounded-2xl border border-white/10 bg-slate-900/80 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="space-y-1">
-                  <p className="text-sm font-semibold text-white">
-                    2-bed garden flat · Avondale
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    Borehole • Solar backup • Secure complex
-                  </p>
+              <div className="space-y-3 py-5">
+                <div className="ml-auto max-w-[82%] rounded-2xl rounded-tr-sm bg-[#164a39] px-4 py-3 text-sm leading-6 text-white">Hi, I need a CV for an IT support job. I have experience helping at a school.</div>
+                <div className="max-w-[88%] rounded-2xl rounded-tl-sm border border-white/[0.07] bg-[#14231d] px-4 py-3 text-sm leading-6 text-[#e1e8e3]">Great. We’ll bring out your support experience, systems knowledge and the impact of your work.</div>
+                <div className="ml-auto max-w-[82%] rounded-2xl rounded-tr-sm bg-[#164a39] px-4 py-3 text-sm leading-6 text-white">Can you make it look professional?</div>
+                <div className="max-w-[88%] rounded-2xl rounded-tl-sm border border-white/[0.07] bg-[#14231d] px-4 py-3 text-sm leading-6 text-[#e1e8e3]">Absolutely. We’ll send a clean PDF you can share with employers. The CV is $1.</div>
+              </div>
+              <div className="rounded-2xl border border-emerald-200/20 bg-[#e8eee8] p-5 text-[#18372b] shadow-xl sm:p-7">
+                <div className="flex items-start justify-between gap-4 border-b border-[#1a4b3820] pb-4">
+                  <div><p className="text-[9px] font-bold uppercase tracking-[.24em] text-[#39815e]">Curriculum Vitae</p><p className="mt-2 text-2xl font-bold tracking-tight">Roland Mungure</p><p className="mt-1 text-xs text-[#50705e]">IT Officer · Software Developer</p></div>
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#c7ddce] text-sm font-bold text-[#286447]">RM</div>
                 </div>
-                <p className="text-sm font-semibold text-emerald-300">
-                  $650
-                  <span className="ml-1 text-xs text-slate-400">/month</span>
-                </p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                <span className="rounded-full bg-slate-800 px-3 py-1 text-slate-200">
-                  Verified agent
-                </span>
-                <span className="rounded-full bg-slate-800 px-3 py-1 text-slate-200">
-                  Viewing slots
-                </span>
-                <span className="rounded-full bg-slate-800 px-3 py-1 text-slate-200">
-                  Payment terms
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between gap-4 rounded-xl bg-slate-900/70 p-3">
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                    Next step
-                  </p>
-                  <p className="text-sm font-semibold text-white">
-                    Book a viewing
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-slate-300">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-400/15 text-emerald-200">
-                    3
-                  </div>
-                  <p className="max-w-[10rem] text-[11px] text-slate-400">
-                    Options tuned to your suburb, budget, and bedroom needs.
-                  </p>
+                <div className="grid grid-cols-[.8fr_1.2fr] gap-5 pt-4 text-[10px] leading-5">
+                  <div className="space-y-4"><div><p className="mb-1 font-bold uppercase tracking-[.16em] text-[#39815e]">Contact</p><p>Harare, Zimbabwe</p><p>roland@email.com</p></div><div><p className="mb-1 font-bold uppercase tracking-[.16em] text-[#39815e]">Skills</p><p>Technical support<br />Web development<br />Systems administration</p></div></div>
+                  <div className="space-y-4"><div><p className="mb-1 font-bold uppercase tracking-[.16em] text-[#39815e]">Profile</p><p>Practical IT professional focused on reliable support, useful systems and better digital experiences.</p></div><div><p className="mb-1 font-bold uppercase tracking-[.16em] text-[#39815e]">Experience</p><p className="font-semibold">IT Officer &amp; Software Developer</p><p>Supporting users and building tools that improve everyday work.</p></div></div>
                 </div>
               </div>
             </div>
-
-            <p className="text-xs text-slate-400">
-              Start on web, then use WhatsApp for matching, viewings, and verification.
-            </p>
+            <div className="absolute -bottom-5 -left-4 rounded-2xl border border-white/10 bg-[#10221b] px-4 py-3 shadow-xl sm:-left-9"><p className="text-[10px] uppercase tracking-[.18em] text-[#95aa9e]">Simple, fixed price</p><p className="mt-1 text-lg font-semibold">$1 <span className="text-xs font-normal text-[#a8b6ad]">per CV</span></p></div>
           </div>
         </section>
 
-        <section className="mt-20 space-y-8 border-t border-white/10 pt-12">
-          <div className="space-y-3">
-            <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-              Designed for Zimbabwe rentals.
-            </h2>
-            <p className="max-w-2xl text-sm text-slate-300 sm:text-base">
-              Local neighborhoods, practical pricing context, and mobile-first workflows.
-            </p>
-          </div>
-          <div className="grid gap-6 md:grid-cols-3">
-            <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-slate-900/60 p-5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-400/15 text-sm font-semibold text-emerald-200">
-                1
-              </div>
-              <h3 className="text-sm font-semibold text-white sm:text-base">
-                Web + WhatsApp flow
-              </h3>
-              <p className="text-xs text-slate-300 sm:text-sm">
-                Browse listings on the web, then send your requirements on WhatsApp
-                to get matched options back quickly.
-              </p>
-            </div>
-            <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-slate-900/60 p-5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-400/15 text-sm font-semibold text-emerald-200">
-                2
-              </div>
-              <h3 className="text-sm font-semibold text-white sm:text-base">
-                Guided coordination
-              </h3>
-              <p className="text-xs text-slate-300 sm:text-sm">
-                We coordinate communication, viewing slots, and next steps.
-              </p>
-            </div>
-            <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-slate-900/60 p-5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-400/15 text-sm font-semibold text-emerald-200">
-                3
-              </div>
-              <h3 className="text-sm font-semibold text-white sm:text-base">
-                Trust & safety
-              </h3>
-              <p className="text-xs text-slate-300 sm:text-sm">
-                Clear guidance on privacy, safe payments, and basic verification
-                steps where possible.
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Link
-              href="/how-it-works"
-              className="rounded-full border border-white/20 px-5 py-2 text-sm font-semibold text-slate-50 transition hover:border-white/40 hover:bg-white/5"
-            >
-              See how it works
-            </Link>
-            <Link
-              href="/login?callbackUrl=/agent/register"
-              className="rounded-full border border-amber-300/40 px-5 py-2 text-sm font-semibold text-amber-200 transition hover:border-amber-300/70 hover:bg-amber-300/10"
-            >
-              Agent registration
-            </Link>
-            <Link
-              href="/pricing"
-              className="rounded-full border border-white/20 px-5 py-2 text-sm font-semibold text-slate-50 transition hover:border-white/40 hover:bg-white/5"
-            >
-              Pricing & packages
-            </Link>
-            <Link
-              href="/contact"
-              className="rounded-full border border-white/20 px-5 py-2 text-sm font-semibold text-slate-50 transition hover:border-white/40 hover:bg-white/5"
-            >
-              Contact
-            </Link>
+        <section id="how-it-works" className="border-y border-white/[0.08] bg-[#0b1914]">
+          <div className="mx-auto max-w-7xl px-6 py-20 lg:px-10 lg:py-24">
+            <div className="max-w-2xl"><p className="text-xs font-bold uppercase tracking-[.22em] text-emerald-300">How it works</p><h2 className="mt-4 text-3xl font-semibold tracking-tight sm:text-4xl">A stronger CV, in three simple steps.</h2><p className="mt-4 text-sm leading-7 text-[#aebdb4] sm:text-base">Everything happens in the chat app you already use.</p></div>
+            <div className="mt-10 grid gap-4 md:grid-cols-3">{steps.map((step) => <article key={step.number} className="rounded-3xl border border-white/[0.08] bg-white/[0.025] p-6 sm:p-7"><p className="text-xs font-bold tracking-[.2em] text-emerald-300">{step.number}</p><h3 className="mt-8 text-lg font-semibold">{step.title}</h3><p className="mt-3 text-sm leading-7 text-[#aebdb4]">{step.description}</p></article>)}</div>
+            <div className="mt-8 flex flex-col gap-4 rounded-3xl border border-emerald-200/15 bg-emerald-300/[0.06] p-6 sm:flex-row sm:items-center sm:justify-between sm:p-8"><div><p className="text-lg font-semibold">Ready to get started?</p><p className="mt-1 text-sm text-[#aebdb4]">Message CribMatch and start building your CV today.</p></div><a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer" className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full bg-emerald-300 px-6 py-3 text-sm font-bold text-[#06211a] transition hover:bg-emerald-200"><WhatsAppIcon /> Start on WhatsApp</a></div>
           </div>
         </section>
 
-        <section className="mt-20 space-y-8 border-t border-white/10 pt-12">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div className="space-y-3">
-              <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-                Featured listings
-              </h2>
-              <p className="max-w-2xl text-sm text-slate-300 sm:text-base">
-                Tap a listing to see details and contact the landlord/agent.
-              </p>
-            </div>
-            <Link
-              href="/listings"
-              className="inline-flex rounded-full border border-white/20 px-5 py-2 text-sm font-semibold text-slate-50 transition hover:border-white/40 hover:bg-white/5"
-            >
-              View all listings
-            </Link>
-          </div>
-
-          <Suspense
-            fallback={
-              <div className="mx-auto mt-12 max-w-5xl rounded-3xl border border-white/10 bg-slate-900/40 p-6">
-                <div className="h-10 w-full rounded-xl bg-slate-950/60" />
-              </div>
-            }
-          >
-            <ListingsFilters
-              cities={facets.cities}
-              suburbsByCity={facets.suburbsByCity}
-              propertyCategories={facets.propertyCategories}
-              propertyTypesByCategory={facets.propertyTypesByCategory}
-              features={facets.features}
-              resultSummary={resultSummary}
-            />
-          </Suspense>
-
-          <ListingsGridServer listings={listings} compact />
-        </section>
-
-        <section className="mt-20 grid gap-10 border-t border-white/10 pt-12 lg:grid-cols-2">
-          <div className="space-y-4">
-            <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-              Landlords and agents: list in minutes
-            </h2>
-            <p className="text-sm text-slate-300 sm:text-base">
-              Send details on WhatsApp, get web visibility, and receive
-              qualified enquiries without complex portals.
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <Link
-                href="/landlords"
-                className="rounded-full bg-emerald-400 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300"
-              >
-                List a property
-              </Link>
-              <Link
-                href="/listings"
-                className="rounded-full border border-white/20 px-5 py-2.5 text-sm font-semibold text-slate-50 transition hover:border-white/40 hover:bg-white/5"
-              >
-                View listings
-              </Link>
-            </div>
-          </div>
-
-          <div className="space-y-4 rounded-3xl border border-white/10 bg-slate-900/60 p-6">
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-              Safety notice
-            </p>
-            <p className="text-sm text-slate-200 sm:text-base">
-              CribMatch never asks for banking PINs. Always view in person and
-              confirm ownership or agent details before paying any deposit.
-            </p>
-            <Link
-              href="/faq"
-              className="inline-flex text-sm font-semibold text-emerald-200 transition hover:text-emerald-100"
-            >
-              Read FAQ <span aria-hidden="true">→</span>
-            </Link>
-          </div>
+        <section id="faq" className="mx-auto max-w-4xl px-6 py-20 lg:py-24">
+          <p className="text-xs font-bold uppercase tracking-[.22em] text-emerald-300">Good to know</p><h2 className="mt-4 text-3xl font-semibold tracking-tight">Questions, answered.</h2>
+          <div className="mt-8 divide-y divide-white/10">{faqs.map(([question, answer]) => <details key={question} className="group py-5"><summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-base font-medium marker:hidden">{question}<span className="text-xl text-emerald-300 transition group-open:rotate-45">+</span></summary><p className="max-w-3xl pt-3 text-sm leading-7 text-[#aebdb4]">{answer}</p></details>)}</div>
         </section>
       </main>
     </div>
   );
+}
+
+function WhatsAppIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" aria-hidden="true"><path d="M20 11.7a8.2 8.2 0 0 1-12.1 7.2L4 20l1.1-3.7A8.2 8.2 0 1 1 20 11.7Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><path d="M9 8.6c.2-.4.4-.4.7-.4h.4c.2 0 .3 0 .4.3l.7 1.7c.1.2 0 .4-.1.5l-.5.6c-.2.2-.2.3 0 .5.4.7 1 1.3 1.7 1.7.2.1.3.1.5-.1l.6-.7c.2-.2.3-.2.5-.1l1.6.8c.2.1.3.2.3.4v.4c0 .3-.1.5-.4.7-.5.3-1.2.5-1.8.3-1-.2-2.1-.8-3.1-1.8-1-.9-1.7-2.1-1.9-3.1-.1-.7.1-1.4.4-1.7Z" fill="currentColor"/></svg>;
+}
+
+function CheckIcon() {
+  return <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4 text-emerald-300" aria-hidden="true"><path d="m4 10 4 4 8-8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>;
 }

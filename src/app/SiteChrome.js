@@ -1,510 +1,75 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
-
 import { useSession, signOut } from "next-auth/react";
 
+const WHATSAPP_URL =
+  "https://wa.me/263771150713?text=Hi%20CribMatch%2C%20I%27d%20like%20to%20create%20my%20CV%20for%20%241.";
+
 function shouldHideChrome(pathname, session) {
-  if (typeof pathname !== "string") return false;
-
-  // Only hide chrome if user is an admin AND on an admin route
-  const isAdminRoute = pathname === "/admin" || pathname.startsWith("/admin/");
-  const isAdmin = session?.user?.role === "admin";
-
-  if (isAdminRoute && isAdmin) return true;
-
-  // For other dashboard-like routes, standard users should still see the main navbar
-  return false;
+  const isAdminRoute = pathname === "/admin" || pathname?.startsWith("/admin/");
+  return Boolean(isAdminRoute && session?.user?.role === "admin");
 }
 
 export default function SiteChrome({ children }) {
   const pathname = usePathname();
   const { data: session } = useSession();
-  const hideChrome = shouldHideChrome(pathname, session);
 
-  if (hideChrome) {
-    return <>{children}</>;
-  }
+  if (shouldHideChrome(pathname, session)) return children;
 
   return (
     <>
-      <header className="sticky top-0 z-50 border-b border-white/10 bg-slate-950/70 backdrop-blur">
-        <nav className="mx-auto max-w-screen-2xl px-4 sm:px-6 lg:px-8">
-          {/* Increased header height so the larger logo doesn't overlap other items */}
-          <div className="flex h-20 sm:h-24 items-center justify-between gap-3">
-            <Link href="/" className="flex shrink-0 items-center gap-2">
-              {/* Adjusted logo container sizes and removed extra scaling so the image fits nicely without extra inner padding or overlap */}
-              <div className="relative flex h-8 w-8 sm:h-20 sm:w-20 md:h-12 md:w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/5 ring-1 ring-white/10">
-                <Image
-                  src="/logo_vector.svg"
-                  alt="CribMatch Logo"
-                  fill
-                  priority
-                  className="obcject contain scale-300"
-                />
-              </div>
-              <span className="text-xl font-bold tracking-tight">CribMatch</span>
-              <span className="hidden sm:inline-flex rounded-full bg-emerald-400/10 px-2.5 py-1 text-xs font-semibold text-emerald-200 ring-1 ring-inset ring-emerald-400/30">
-                Zimbabwe
-              </span>
-            </Link>
+      <header className="sticky top-0 z-50 border-b border-white/[0.08] bg-[#07120f]/90 backdrop-blur-xl">
+        <nav className="mx-auto flex h-[76px] max-w-7xl items-center justify-between gap-4 px-5 sm:px-8">
+          <Link href="/" className="flex shrink-0 items-center gap-2.5" aria-label="CribMatch home">
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-300 text-xs font-extrabold tracking-tight text-[#06211a]">CM</span>
+            <span className="text-lg font-bold tracking-tight">CribMatch</span>
+          </Link>
 
-            <div className="hidden flex-1 items-center justify-center gap-1 text-sm text-slate-200 xl:flex">
-              <Link
-                href="/listings"
-                className="rounded-full px-3 py-2 transition hover:bg-white/5 hover:text-white"
-              >
-                Listings
-              </Link>
-              {!session && (
-                <>
-                  <Link
-                    href="/pricing"
-                    className="rounded-full px-3 py-2 transition hover:bg-white/5 hover:text-white"
-                  >
-                    Pricing
-                  </Link>
-                  <Link
-                    href="/renters"
-                    className="rounded-full px-3 py-2 transition hover:bg-white/5 hover:text-white"
-                  >
-                    For Renters
-                  </Link>
-                  <Link
-                    href="/landlords"
-                    className="rounded-full px-3 py-2 transition hover:bg-white/5 hover:text-white"
-                  >
-                    For Landlords
-                  </Link>
-                </>
-              )}
-              {session && (
-                <>
-                  <Link
-                    href="/dashboard"
-                    className="rounded-full px-3 py-2 transition hover:bg-white/5 hover:text-white"
-                  >
-                    Dashboard
-                  </Link>
-                  {(session.user.role === "agent" || session.user.role === "admin") && (
-                    <Link
-                      href="/agent"
-                      className="rounded-full px-3 py-2 transition hover:bg-white/5 hover:text-white"
-                    >
-                      Console
-                    </Link>
-                  )}
-                </>
-              )}
-            </div>
+          <div className="hidden items-center gap-8 text-sm text-[#b7c4bc] md:flex">
+            <Link href="/#how-it-works" className="transition hover:text-white">How it works</Link>
+            <Link href="/#faq" className="transition hover:text-white">FAQs</Link>
+            {session && <Link href="/dashboard" className="transition hover:text-white">My account</Link>}
+          </div>
 
-            <div className="flex shrink-0 items-center gap-2">
-              <Link
-                href="/landlords"
-                className="hidden rounded-full border border-white/15 bg-white/0 px-4 py-2 text-sm font-semibold text-slate-50 transition hover:border-white/30 hover:bg-white/5 2xl:inline-flex"
-              >
-                List a property
-              </Link>
-
-              {session ? (
-                <div className="hidden items-center gap-2 xl:flex">
-                  <details className="relative">
-                    <summary className="list-none inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-emerald-400 transition hover:border-emerald-400/30 cursor-pointer [&::-webkit-details-marker]:hidden">
-                      <span>{session.user.name || "My Account"}</span>
-                      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" aria-hidden="true">
-                        <path d="M6 9L12 15L18 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    </summary>
-                    <div className="absolute right-0 mt-2 w-56 overflow-hidden rounded-xl border border-white/10 bg-slate-950/95 p-2 shadow-2xl backdrop-blur">
-                      <div className="grid gap-1">
-                        <Link
-                          href="/dashboard"
-                          className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-200 transition hover:bg-white/5 hover:text-white"
-                        >
-                          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" aria-hidden="true">
-                            <path d="M3 12L5 10M5 10L12 3L19 10M5 10V20C5 20.5523 5.44772 21 6 21H9M19 10L21 12M19 10V20C19 20.5523 18.5523 21 18 21H15M9 21V15C9 14.4477 9.44772 14 10 14H14C14.5523 14 15 14.4477 15 15V21M9 21H15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                          My Dashboard
-                        </Link>
-                        <Link
-                          href="/user/listings"
-                          className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-200 transition hover:bg-white/5 hover:text-white"
-                        >
-                          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" aria-hidden="true">
-                            <path d="M4 6H20M4 12H20M4 18H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                          My Listings
-                        </Link>
-                        <Link
-                          href="/user/purchases"
-                          className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-200 transition hover:bg-white/5 hover:text-white"
-                        >
-                          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" aria-hidden="true">
-                            <path d="M16 11V7C16 4.79086 14.2091 3 12 3C9.79086 3 8 4.79086 8 7V11M5 9H19L20 21H4L5 9Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                          My Purchases
-                        </Link>
-                        <Link
-                          href="/user/profile"
-                          className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-200 transition hover:bg-white/5 hover:text-white"
-                        >
-                          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" aria-hidden="true">
-                            <path d="M16 7C16 9.20914 14.2091 11 12 11C9.79086 11 8 9.20914 8 7C8 4.79086 9.79086 3 12 3C14.2091 3 16 4.79086 16 7Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                            <path d="M12 14C8.13401 14 5 17.134 5 21H19C19 17.134 15.866 14 12 14Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                          My Profile
-                        </Link>
-                        {(session.user.role === "agent" || session.user.role === "admin") && (
-                          <Link
-                            href="/agent"
-                            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-emerald-400 transition hover:bg-white/5"
-                          >
-                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" aria-hidden="true">
-                              <path d="M9 12L11 14L15 10M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                            Agent Console
-                          </Link>
-                        )}
-                        {session.user.role === "admin" && (
-                          <Link
-                            href="/admin"
-                            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-emerald-400 transition hover:bg-white/5"
-                          >
-                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" aria-hidden="true">
-                              <path d="M12 15V17M12 7V13M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                            Admin Portal
-                          </Link>
-                        )}
-                        <div className="my-1 border-t border-white/10" />
-                        <button
-                          onClick={() => signOut({ callbackUrl: "/" })}
-                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-400 transition hover:bg-white/5 hover:text-white"
-                        >
-                          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" aria-hidden="true">
-                            <path d="M17 16L21 12M21 12L17 8M21 12H9M13 16V17C13 18.6569 11.6569 20 10 20H6C4.34315 20 3 18.6569 3 17V7C3 5.34315 4.34315 4 6 4H10C11.6569 4 13 5.34315 13 7V8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                          Logout
-                        </button>
-                      </div>
-                    </div>
-                  </details>
-                </div>
-              ) : (
-                <Link
-                  href="/login"
-                  className="hidden rounded-full border border-white/15 bg-white/0 px-4 py-2 text-sm font-semibold text-slate-50 transition hover:border-white/30 hover:bg-white/5 xl:inline-flex"
-                >
-                  Login
-                </Link>
-              )}
-
-              <a
-                href="https://wa.me/263771150713"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="hidden rounded-full bg-emerald-400 px-4 py-2 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300 md:inline-flex"
-              >
-                Chat on WhatsApp
-              </a>
-              <a
-                href="https://wa.me/263771150713"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-emerald-400 text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300 md:hidden"
-                aria-label="Chat on WhatsApp"
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M8 10.5H16M8 14H13M6 19.5V18.5C6 17.6716 6.67157 17 7.5 17H18C19.1046 17 20 16.1046 20 15V7C20 5.89543 19.1046 5 18 5H6C4.89543 5 4 5.89543 4 7V15C4 16.1046 4.89543 17 6 17H6.5"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </a>
-
-              <details id="mobile-menu" className="relative 2xl:hidden">
-                <summary className="list-none inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-white/0 text-slate-50 transition hover:border-white/30 hover:bg-white/5 [&::-webkit-details-marker]:hidden">
-                  <span className="sr-only">Open menu</span>
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-5 w-5"
-                    aria-hidden="true"
-                  >
-                    <path
-                      d="M4 7H20M4 12H20M4 17H20"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                </summary>
-                <div className="absolute right-0 mt-3 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-white/10 bg-slate-950/95 shadow-[0_24px_80px_rgba(15,23,42,0.85)] backdrop-blur">
-                  <div className="grid gap-1 p-2 text-sm text-slate-200">
-                    <Link
-                      href="/listings"
-                      className="rounded-xl px-3 py-2 transition hover:bg-white/5 hover:text-white"
-                    >
-                      Listings
-                    </Link>
-                    {!session && (
-                      <>
-                        <Link
-                          href="/pricing"
-                          className="rounded-xl px-3 py-2 transition hover:bg-white/5 hover:text-white"
-                        >
-                          Pricing
-                        </Link>
-                        <Link
-                          href="/renters"
-                          className="rounded-xl px-3 py-2 transition hover:bg-white/5 hover:text-white"
-                        >
-                          For Renters
-                        </Link>
-                        <Link
-                          href="/landlords"
-                          className="rounded-xl px-3 py-2 transition hover:bg-white/5 hover:text-white"
-                        >
-                          For Landlords
-                        </Link>
-                      </>
-                    )}
-                    {session && (
-                      <>
-                        <Link
-                          href="/dashboard"
-                          className="rounded-xl px-3 py-2 transition hover:bg-white/5 hover:text-white"
-                        >
-                          Dashboard
-                        </Link>
-                        {(session.user.role === "agent" || session.user.role === "admin") && (
-                          <Link
-                            href="/agent"
-                            className="rounded-xl px-3 py-2 transition hover:bg-white/5 hover:text-white"
-                          >
-                            Console
-                          </Link>
-                        )}
-                      </>
-                    )}
-                  </div>
-                  <div className="grid gap-2 border-t border-white/10 p-2">
-                    {session ? (
-                      <>
-                        <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                          My Account
-                        </div>
-                        <div className="grid gap-1">
-                          <Link
-                            href="/user/listings"
-                            className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-200 transition hover:bg-white/5 hover:text-white"
-                          >
-                            My Listings
-                          </Link>
-                          <Link
-                            href="/user/purchases"
-                            className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-200 transition hover:bg-white/5 hover:text-white"
-                          >
-                            My Purchases
-                          </Link>
-                          <Link
-                            href="/user/profile"
-                            className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-200 transition hover:bg-white/5 hover:text-white"
-                          >
-                            My Profile
-                          </Link>
-                        </div>
-                        <div className="my-1 border-t border-white/5" />
-                        <button
-                          onClick={() => signOut({ callbackUrl: "/" })}
-                          className="flex w-full items-center justify-center rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold text-slate-400 transition hover:bg-white/5"
-                        >
-                          Logout
-                        </button>
-                      </>
-                    ) : (
-                      <Link
-                        href="/login"
-                        className="flex w-full items-center justify-center rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold text-slate-50 transition hover:border-white/30 hover:bg-white/5"
-                      >
-                        Login
-                      </Link>
-                    )}
-
-                    {session?.user?.role === "admin" && (
-                      <Link
-                        href="/admin"
-                        className="flex w-full items-center justify-center rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-3 py-2 text-sm font-semibold text-emerald-400 transition hover:bg-emerald-400/10"
-                      >
-                        Admin Portal
-                      </Link>
-                    )}
-                    <Link
-                      href="/landlords"
-                      className="flex w-full items-center justify-center rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold text-slate-50 transition hover:border-white/30 hover:bg-white/5"
-                    >
-                      List a property
-                    </Link>
-                    <a
-                      href="https://wa.me/263771150713"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex w-full items-center justify-center rounded-xl bg-emerald-400 px-3 py-2 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-400/20 transition hover:bg-emerald-300"
-                    >
-                      Chat on WhatsApp
-                    </a>
-                  </div>
-                </div>
-              </details>
-            </div>
+          <div className="flex items-center gap-2 sm:gap-3">
+            {session ? (
+              <button onClick={() => signOut({ callbackUrl: "/" })} className="hidden rounded-full border border-white/15 px-4 py-2 text-sm font-semibold text-[#d8e1da] transition hover:bg-white/5 sm:inline-flex">
+                Sign out
+              </button>
+            ) : (
+              <Link href="/login" className="hidden rounded-full border border-white/15 px-4 py-2 text-sm font-semibold text-[#d8e1da] transition hover:bg-white/5 sm:inline-flex">Sign in</Link>
+            )}
+            <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-full bg-emerald-300 px-4 py-2.5 text-xs font-bold text-[#06211a] transition hover:bg-emerald-200 sm:px-5 sm:text-sm">
+              <WhatsAppIcon /> <span className="hidden sm:inline">Create my CV</span><span className="sm:hidden">Start</span>
+            </a>
           </div>
         </nav>
       </header>
 
-      <main>{children}</main>
+      {children}
 
-      <footer className="border-t border-white/10 bg-slate-950">
-        <div className="mx-auto max-w-6xl px-6 py-10 lg:px-8">
-          <div className="grid gap-8 md:grid-cols-4">
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-400/10 ring-1 ring-emerald-400/50">
-                  <span className="text-sm font-semibold text-emerald-300">
-                    CM
-                  </span>
-                </div>
-                <span className="text-lg font-semibold tracking-tight">
-                  CribMatch
-                </span>
-              </div>
-              <p className="text-sm text-slate-400">
-                A rental middleman connecting landlords, agents, and tenants
-                across Zimbabwe through the web and WhatsApp.
-              </p>
-            </div>
-
-            <div className="space-y-3 text-sm">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                Product
-              </p>
-              <div className="grid gap-2 text-slate-300">
-                <Link href="/listings" className="transition hover:text-white">
-                  Listings
-                </Link>
-                <Link
-                  href="/how-it-works"
-                  className="transition hover:text-white"
-                >
-                  How it works
-                </Link>
-                <Link href="/pricing" className="transition hover:text-white">
-                  Pricing
-                </Link>
-              </div>
-            </div>
-
-            <div className="space-y-3 text-sm">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                Guides
-              </p>
-              <div className="grid gap-2 text-slate-300">
-                <Link href="/renters" className="transition hover:text-white">
-                  For renters
-                </Link>
-                <Link href="/landlords" className="transition hover:text-white">
-                  For landlords & agents
-                </Link>
-                <Link href="/faq" className="transition hover:text-white">
-                  FAQ
-                </Link>
-              </div>
-            </div>
-
-            <div className="space-y-3 text-sm">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                Contact
-              </p>
-              <div className="grid gap-2 text-slate-300">
-                <a
-                  href="https://wa.me/263771150713"
-                  className="transition hover:text-white"
-                >
-                  WhatsApp: +263 77 115 0713
-                </a>
-                <a
-                  href="mailto:rolandmungure@cribmatch.org"
-                  className="transition hover:text-white"
-                >
-                  rolandmungure@cribmatch.org
-                </a>
-                <Link href="/contact" className="transition hover:text-white">
-                  Contact page
-                </Link>
-              </div>
-            </div>
+      <footer className="border-t border-white/[0.08] bg-[#050d0a]">
+        <div className="mx-auto grid max-w-7xl gap-10 px-6 py-12 sm:grid-cols-[1fr_auto] sm:items-end lg:px-10">
+          <div className="max-w-md">
+            <Link href="/" className="inline-flex items-center gap-2 text-lg font-bold tracking-tight"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-300 text-xs font-extrabold text-[#06211a]">CM</span> CribMatch</Link>
+            <p className="mt-4 text-sm leading-7 text-[#9aa99f]">A professional CV, made easier through WhatsApp. Send your experience, get a polished PDF, and take your next step.</p>
           </div>
-
-          <div className="mt-10 flex flex-col gap-2 border-t border-white/10 pt-6 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-            <p>© {new Date().getFullYear()} CribMatch Zimbabwe.</p>
-            <p>Stay safe: never share banking PINs. Always verify in person.</p>
+          <div className="space-y-3 sm:text-right">
+            <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-200 transition hover:text-emerald-100"><WhatsAppIcon /> +263 77 115 0713</a>
+            <p className="text-xs text-[#718078]">One CV · $1 · Delivered as a PDF on WhatsApp</p>
+          </div>
+          <div className="flex flex-col gap-2 border-t border-white/[0.08] pt-5 text-xs text-[#718078] sm:col-span-2 sm:flex-row sm:items-center sm:justify-between">
+            <p>© {new Date().getFullYear()} CribMatch. All rights reserved.</p>
+            <p>WhatsApp is a registered trademark of its respective owner.</p>
           </div>
         </div>
       </footer>
-
-      <script
-        dangerouslySetInnerHTML={{
-          __html: `(function () {
-  function getMenu() {
-    return document.getElementById("mobile-menu");
-  }
-
-  function closeMenu() {
-    var menu = getMenu();
-    if (menu && menu.open) menu.open = false;
-  }
-
-  document.addEventListener(
-    "click",
-    function (event) {
-      var menu = getMenu();
-      if (!menu || !menu.open) return;
-      var target = event.target;
-      if (!(target instanceof Element)) return;
-      var link = target.closest("a");
-      if (link && menu.contains(link)) closeMenu();
-    },
-    true
-  );
-
-  var originalPushState = history.pushState;
-  var originalReplaceState = history.replaceState;
-
-  history.pushState = function () {
-    closeMenu();
-    return originalPushState.apply(this, arguments);
-  };
-
-  history.replaceState = function () {
-    closeMenu();
-    return originalReplaceState.apply(this, arguments);
-  };
-
-  window.addEventListener("popstate", closeMenu);
-})();`,
-        }}
-      />
     </>
   );
+}
+
+function WhatsAppIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" aria-hidden="true"><path d="M20 11.7a8.2 8.2 0 0 1-12.1 7.2L4 20l1.1-3.7A8.2 8.2 0 1 1 20 11.7Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><path d="M9 8.6c.2-.4.4-.4.7-.4h.4c.2 0 .3 0 .4.3l.7 1.7c.1.2 0 .4-.1.5l-.5.6c-.2.2-.2.3 0 .5.4.7 1 1.3 1.7 1.7.2.1.3.1.5-.1l.6-.7c.2-.2.3-.2.5-.1l1.6.8c.2.1.3.2.3.4v.4c0 .3-.1.5-.4.7-.5.3-1.2.5-1.8.3-1-.2-2.1-.8-3.1-1.8-1-.9-1.7-2.1-1.9-3.1-.1-.7.1-1.4.4-1.7Z" fill="currentColor"/></svg>;
 }
