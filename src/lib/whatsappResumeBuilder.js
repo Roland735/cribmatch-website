@@ -3,7 +3,7 @@ import clientPromise from "@/lib/mongodb";
 
 const GRAPH_VERSION = "v24.0";
 const MAX_ANSWER_LENGTH = 1800;
-const FLOW_NAME = "CribMatch Full CV Builder v2";
+const FLOW_NAME = "CribMatch Full CV Builder";
 let cachedFlowId = null;
 const CV_SECTIONS = [
   {
@@ -644,6 +644,19 @@ function cleanFlowData(flowReply, senderPhone) {
   ];
   const data = {};
   for (const field of fields) data[field] = safeText(parsed[field]);
+  // Keep accepting submissions from the existing published Flow's original field names.
+  data.experience_1 = data.experience_1 || safeText(parsed.experience);
+  data.achievements_1 = data.achievements_1 || safeText(parsed.achievements);
+  data.education_1 = data.education_1 || safeText(parsed.education);
+  data.certifications_1 = data.certifications_1 || safeText(parsed.certifications);
+  data.projects_1 = data.projects_1 || safeText(parsed.projects);
+  data.skills_1 = data.skills_1 || safeText(parsed.skills);
+  data.technologies_1 = data.technologies_1 || safeText(parsed.technologies);
+  data.languages_1 = data.languages_1 || safeText(parsed.languages);
+  data.expertise_1 = data.expertise_1 || safeText(parsed.expertise);
+  data.awards_1 = data.awards_1 || safeText(parsed.awards);
+  data.volunteering_1 = data.volunteering_1 || safeText(parsed.volunteering);
+  data.references_1 = data.references_1 || safeText(parsed.references);
   data.experience = [data.experience_1, data.experience_2, data.experience_3].filter(Boolean).join("\n\n");
   data.achievements = [data.achievements_1, data.achievements_2, data.achievements_3].filter(Boolean).join("\n\n");
   data.education = [data.education_1, data.education_2, data.education_3].filter(Boolean).join("\n\n");
