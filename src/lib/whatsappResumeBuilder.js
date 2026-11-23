@@ -31,16 +31,24 @@ const CV_SECTIONS = [
     id: "EXPERIENCE",
     title: "Work experience",
     fields: [
-      { name: "experience", label: "Roles and employers", type: "TextArea", maxLength: 600, helperText: "List each role, employer, and dates. Leave blank if none." },
-      { name: "achievements", label: "Duties and results", type: "TextArea", maxLength: 600, helperText: "Add key duties, achievements, and measurable results." },
+      { name: "experience1", label: "Role 1: title, employer, dates", type: "TextArea", maxLength: 400, helperText: "Add your most recent role. Add more roles in the next fields." },
+      { name: "achievements1", label: "Role 1: duties and results", type: "TextArea", maxLength: 400, helperText: "Key duties, achievements, and measurable results." },
+      { name: "experience2", label: "Role 2 (optional)", type: "TextArea", maxLength: 400 },
+      { name: "achievements2", label: "Role 2: duties and results (optional)", type: "TextArea", maxLength: 400 },
+      { name: "experience3", label: "Role 3 (optional)", type: "TextArea", maxLength: 400 },
+      { name: "achievements3", label: "Role 3: duties and results (optional)", type: "TextArea", maxLength: 400 },
     ],
   },
   {
     id: "EDUCATION",
     title: "Education",
     fields: [
-      { name: "education", label: "Education history", type: "TextArea", maxLength: 600, helperText: "Qualification, institution, dates, subjects, and results." },
-      { name: "certifications", label: "Certificates", type: "TextArea", maxLength: 400, helperText: "Optional: certificates, training, and professional memberships." },
+      { name: "education1", label: "Education 1", type: "TextArea", maxLength: 400, helperText: "Qualification, institution, dates, subjects, and results. Add more below." },
+      { name: "education2", label: "Education 2 (optional)", type: "TextArea", maxLength: 400 },
+      { name: "education3", label: "Education 3 (optional)", type: "TextArea", maxLength: 400 },
+      { name: "certifications1", label: "Certificate 1", type: "TextArea", maxLength: 300, helperText: "Certificate, training, or professional membership. Add more below." },
+      { name: "certifications2", label: "Certificate 2 (optional)", type: "TextArea", maxLength: 300 },
+      { name: "certifications3", label: "Certificate 3 (optional)", type: "TextArea", maxLength: 300 },
     ],
   },
   {
@@ -56,7 +64,9 @@ const CV_SECTIONS = [
     id: "PROJECTS",
     title: "Projects",
     fields: [
-      { name: "projects", label: "Selected projects", type: "TextArea", maxLength: 600, helperText: "Optional: name, purpose, contribution, and technologies." },
+      { name: "projects1", label: "Project 1 (optional)", type: "TextArea", maxLength: 350, helperText: "Name, purpose, contribution, and technologies. Add more below." },
+      { name: "projects2", label: "Project 2 (optional)", type: "TextArea", maxLength: 350 },
+      { name: "projects3", label: "Project 3 (optional)", type: "TextArea", maxLength: 350 },
     ],
   },
   {
@@ -187,6 +197,26 @@ async function sendText(to, body) {
   });
 }
 
+async function sendActionButtons(to, body, buttons) {
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_ID;
+  if (!phoneNumberId) throw new Error("WHATSAPP_PHONE_NUMBER_ID is not configured");
+  return graphRequest(`${phoneNumberId}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to,
+      type: "interactive",
+      interactive: {
+        type: "button",
+        body: { text: body },
+        action: { buttons: buttons.map(({ id, title }) => ({ type: "reply", reply: { id, title } })) },
+      },
+    }),
+  });
+}
+
 async function getOrCreateFlow() {
   if (cachedFlowId) return cachedFlowId;
   const wabaId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
@@ -259,7 +289,7 @@ function getIncomingMessages(payload) {
       const value = change?.value || {};
       for (const message of value.messages || []) {
         const flowReply = message?.interactive?.nfm_reply?.response_json;
-        const text = message?.text?.body || message?.button?.text || message?.interactive?.button_reply?.title || message?.interactive?.list_reply?.title || "";
+        const text = message?.text?.body || message?.button?.text || message?.interactive?.button_reply?.id || message?.interactive?.button_reply?.title || message?.interactive?.list_reply?.id || message?.interactive?.list_reply?.title || "";
         messages.push({ id: String(message?.id || ""), from: digitsOnly(message?.from), text: String(text).trim(), flowReply });
       }
     }
@@ -547,11 +577,17 @@ function cleanFlowData(flowReply, senderPhone) {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
   const fields = [
     "fullName", "targetRole", "email", "phone", "location", "links", "profile", "objective", "expertise",
-    "experience", "achievements", "education", "certifications", "skills", "technologies", "languages",
-    "projects", "awards", "volunteering", "references",
+    "experience1", "achievements1", "experience2", "achievements2", "experience3", "achievements3",
+    "education1", "education2", "education3", "certifications1", "certifications2", "certifications3",
+    "skills", "technologies", "languages", "projects1", "projects2", "projects3", "awards", "volunteering", "references",
   ];
   const data = {};
   for (const field of fields) data[field] = safeText(parsed[field]);
+  data.experience = [data.experience1, data.experience2, data.experience3].filter(Boolean).join("\n\n");
+  data.achievements = [data.achievements1, data.achievements2, data.achievements3].filter(Boolean).join("\n\n");
+  data.education = [data.education1, data.education2, data.education3].filter(Boolean).join("\n\n");
+  data.certifications = [data.certifications1, data.certifications2, data.certifications3].filter(Boolean).join("\n\n");
+  data.projects = [data.projects1, data.projects2, data.projects3].filter(Boolean).join("\n\n");
   if (!data.phone) data.phone = safeText(senderPhone);
   if (data.fullName.length < 3 || !data.targetRole || !data.profile) return null;
   if (data.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) return null;
@@ -570,7 +606,10 @@ async function handleIncomingMessage(db, { from, text, flowReply }) {
     await db.collection("cv_whatsapp_submissions").insertOne({ phone: from, data, createdAt: now, updatedAt: now });
     const filename = `${data.fullName.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "CribMatch-CV"}.pdf`;
     await sendPdf(from, buildCvPdf(data), filename, "Your CribMatch CV test PDF is ready.");
-    await sendText(from, "Your CV test PDF is attached. No payment is enabled yet. Send START to make another test CV, or DELETE to remove your saved test data.");
+    await sendActionButtons(from, "Your CV test PDF is attached. No payment is enabled yet.", [
+      { id: "START", title: "Make another CV" },
+      { id: "DELETE", title: "Delete my data" },
+    ]);
     return;
   }
   if (["delete", "delete my data"].includes(normalized)) {
