@@ -551,7 +551,211 @@ async function polishResumeWithGemini(data) {
   return data;
 }
 
+function buildSparseCvPdf(data) {
+  const pageWidth = 595;
+  const pageHeight = 842;
+  const sidebarWidth = 174;
+  const mainLeft = 202;
+  const mainRight = 555;
+  const mainWidth = mainRight - mainLeft;
+  const operations = [
+    "0.043 0.463 0.318 rg 0 0 174 842 re f",
+    "0.965 0.98 0.97 rg 174 0 421 828 re f",
+    "0.043 0.463 0.318 rg 174 828 421 14 re f",
+  ];
+  const addText = (value, { x, y, size = 10, font = "F1", color = "#24362d" }) => {
+    operations.push(`BT ${colorCommand(color)} /${font} ${size} Tf 1 0 0 1 ${x} ${y} Tm (${pdfText(value)}) Tj ET`);
+  };
+  const wrappedLines = (value, width, size) => String(value || "")
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .flatMap((paragraph) => paragraph ? wrapPdfText(paragraph, width, size) : [""]);
+  const drawSidebarText = (value, y, { size = 9, color = "#ffffff", font = "F1", gap = 12 } = {}) => {
+    for (const line of wrappedLines(value, 132, size)) {
+      if (line) addText(line, { x: 20, y, size, font, color });
+      y -= gap;
+    }
+    return y;
+  };
+  const drawSidebarLabel = (value, y) => {
+    addText(value.toUpperCase(), { x: 20, y, size: 8, font: "F2", color: "#b9e2d3" });
+    return y - 16;
+  };
+  const drawMainText = (value, y, { size = 10.5, color = "#34443c", font = "F1", width = mainWidth, x = mainLeft, gap = 15 } = {}) => {
+    for (const line of wrappedLines(value, width, size)) {
+      if (line) addText(line, { x, y, size, font, color });
+      y -= gap;
+    }
+    return y;
+  };
+  let sidebarY = 798;
+  const nameLines = wrappedLines(data.fullName || "Curriculum Vitae", 132, 21);
+  for (const line of nameLines) {
+    addText(line, { x: 20, y: sidebarY, size: 21, font: "F2", color: "#ffffff" });
+    sidebarY -= 25;
+  }
+  sidebarY -= 7;
+  operations.push(`0.72 0.88 0.81 RG 0.8 w 20 ${sidebarY} m 152 ${sidebarY} l S`);
+  sidebarY -= 25;
+  sidebarY = drawSidebarLabel("Contact", sidebarY);
+  const contactItems = [data.email, data.phone, data.location, data.links, data.dateOfBirth && `Date of birth: ${data.dateOfBirth}`, data.idNumber && `ID / passport: ${data.idNumber}`].filter(Boolean);
+  for (const item of contactItems) sidebarY = drawSidebarText(item, sidebarY, { size: 8.5, color: "#f4fbf7", gap: 12 }) - 5;
+  if (data.availability) {
+    sidebarY -= 7;
+    sidebarY = drawSidebarLabel("Availability", sidebarY);
+    sidebarY = drawSidebarText(data.availability, sidebarY, { size: 9, color: "#ffffff" });
+  }
+  addText("CRIBMATCH CV", { x: 20, y: 29, size: 8, font: "F2", color: "#b9e2d3" });
+
+  let y = 778;
+  addText("CURRICULUM VITAE", { x: mainLeft, y, size: 8, font: "F2", color: "#617268" });
+  y -= 37;
+  const roleLines = wrappedLines(data.targetRole || "Professional Profile", mainWidth, 23);
+  for (const line of roleLines) {
+    addText(line, { x: mainLeft, y, size: 23, font: "F2", color: "#10281d" });
+    y -= 28;
+  }
+  y -= 10;
+  const skillItems = [data.skills, data.practicalSkills]
+    .flatMap((value) => String(value || "").split(/[\n;]/))
+    .map((value) => pdfPlainText(value).replace(/^[-*]\s*/, ""))
+    .filter(Boolean);
+  const uniqueSkills = [...new Set(skillItems)];
+  const profile = data.profile || (uniqueSkills.length
+    ? `${data.targetRole || "Professional"} candidate with confirmed strengths in ${uniqueSkills.slice(0, 3).join(", ")}.`
+    : `${data.targetRole || "Professional"} candidate seeking an opportunity to apply their strengths and continue developing.`);
+  const drawSectionHeading = (title, sectionY) => {
+    addText(title.toUpperCase(), { x: mainLeft, y: sectionY, size: 9, font: "F2", color: "#0b7651" });
+    sectionY -= 9;
+    operations.push(`0.82 0.87 0.84 RG 0.55 w ${mainLeft} ${sectionY} m ${mainRight} ${sectionY} l S`);
+    return sectionY - 19;
+  };
+  y = drawSectionHeading("Professional profile", y);
+  y = drawMainText(profile, y, { size: 11.5, gap: 17 });
+  y -= 30;
+  let objectivePanel = null;
+  if (data.objective) {
+    const objectiveLines = wrappedLines(data.objective, mainWidth - 34, 11);
+    const hasOtherSections = Boolean(data.experience || data.achievements || data.education || data.certifications || data.skills || data.projects || data.practicalSkills || data.technologies || data.languages || data.awards || data.volunteering || data.references);
+    const panelHeight = Math.max(hasOtherSections ? 96 : 190, objectiveLines.length * 17 + 60);
+    const panelTop = y + 15;
+    objectivePanel = { panelHeight, panelTop, objectiveLines };
+    y = panelTop - panelHeight - 34;
+  }
+
+  const drawMainSection = (title, body) => {
+    if (!body) return;
+    y = drawSectionHeading(title, y);
+    y = drawMainText(body, y, { size: 10.5, gap: 15 });
+  };
+  const drawSkillChips = (title, values) => {
+    if (title === "Core skills" && values.length === 1) {
+      const cardBottom = y - 92;
+      operations.push(`1 1 1 rg ${mainLeft} ${cardBottom} ${mainWidth} 80 re f`);
+      operations.push(`0.043 0.463 0.318 rg ${mainLeft} ${cardBottom} 4 80 re f`);
+      addText("KEY SKILL", { x: mainLeft + 16, y: cardBottom + 55, size: 8, font: "F2", color: "#0b7651" });
+      const skillLines = wrappedLines(values[0], mainWidth - 32, 17);
+      skillLines.forEach((line, index) => addText(line, { x: mainLeft + 16, y: cardBottom + 28 - index * 20, size: 17, font: "F2", color: "#244438" }));
+      y = cardBottom - 20;
+      return;
+    }
+    y = drawSectionHeading(title, y);
+    let chipX = mainLeft;
+    for (const value of values) {
+      const chipWidth = Math.min(mainWidth, pdfTextWidth(value, 9) + 20);
+      if (chipX + chipWidth > mainRight) { y -= 29; chipX = mainLeft; }
+      operations.push(`1 1 1 rg ${chipX} ${y - 8} ${chipWidth} 21 re f`);
+      addText(value, { x: chipX + 10, y, size: 9, font: "F2", color: "#244438" });
+      chipX += chipWidth + 8;
+    }
+    y -= 28;
+  };
+  const coreSkills = [...new Set(String(data.skills || "").split(/[\n;]/).map((value) => pdfPlainText(value).replace(/^[-*]\s*/, "")).filter(Boolean))];
+  const practicalSkills = [...new Set(String(data.practicalSkills || "").split(/[\n;]/).map((value) => pdfPlainText(value).replace(/^[-*]\s*/, "")).filter(Boolean))];
+  const toolItems = [...new Set(String(data.technologies || "").split(/[\n;]/).map((value) => pdfPlainText(value).replace(/^[-*]\s*/, "")).filter(Boolean))];
+  const languageItems = [...new Set(String(data.languages || "").split(/[\n;]/).map((value) => pdfPlainText(value).replace(/^[-*]\s*/, "")).filter(Boolean))];
+  const sections = [
+    coreSkills.length && { type: "chips", title: "Core skills", values: coreSkills },
+    practicalSkills.length && { type: "chips", title: "Practical skills", values: practicalSkills },
+    toolItems.length && { type: "chips", title: "Tools and technology", values: toolItems },
+    languageItems.length && { type: "chips", title: "Languages", values: languageItems },
+    data.experience || data.achievements ? { type: "text", title: "Work experience", body: [data.experience, data.achievements].filter(Boolean).join("\n") } : null,
+    data.education && { type: "text", title: "Education", body: data.education },
+    data.certifications && { type: "text", title: "Certifications and training", body: data.certifications },
+    data.projects && { type: "text", title: "Selected projects", body: data.projects },
+    data.awards || data.volunteering || data.references ? { type: "text", title: "Additional details", body: [data.awards, data.volunteering, data.references].filter(Boolean).join("\n") } : null,
+  ].filter(Boolean);
+  const chipRows = (values) => {
+    let rows = 1;
+    let rowWidth = 0;
+    for (const value of values) {
+      const width = Math.min(mainWidth, pdfTextWidth(value, 9) + 20);
+      if (rowWidth && rowWidth + width > mainWidth) { rows += 1; rowWidth = 0; }
+      rowWidth += width + 8;
+    }
+    return rows;
+  };
+  const sectionHeights = sections.map((section) => section.type === "chips"
+    ? section.title === "Core skills" && section.values.length === 1 ? 112 : 56 + (chipRows(section.values) - 1) * 29
+    : 28 + wrappedLines(section.body, mainWidth, 10.5).length * 15);
+  let freeHeight = y - 74 - sectionHeights.reduce((total, height) => total + height, 0);
+  let sectionGap = sections.length ? Math.max(9, freeHeight / sections.length) : 0;
+  if (objectivePanel && freeHeight > 0) {
+    const desiredGap = sections.length ? Math.min(28, Math.max(18, freeHeight / sections.length)) : 0;
+    const extraPanelHeight = Math.max(0, freeHeight - desiredGap * sections.length);
+    objectivePanel.panelHeight += extraPanelHeight;
+    y -= extraPanelHeight;
+    freeHeight -= extraPanelHeight;
+    sectionGap = sections.length ? Math.max(9, freeHeight / sections.length) : 0;
+  }
+  if (objectivePanel) {
+    const { panelHeight, panelTop, objectiveLines } = objectivePanel;
+    const panelBottom = panelTop - panelHeight;
+    operations.push(`1 1 1 rg ${mainLeft - 10} ${panelBottom} ${mainWidth + 20} ${panelHeight} re f`);
+    operations.push(`0.043 0.463 0.318 rg ${mainLeft - 10} ${panelBottom} 4 ${panelHeight} re f`);
+    addText("CAREER OBJECTIVE", { x: mainLeft + 9, y: panelTop - 23, size: 8, font: "F2", color: "#0b7651" });
+    const objectiveTextY = panelTop - 45 - Math.max(0, (panelHeight - 62 - objectiveLines.length * 17) / 2);
+    drawMainText(data.objective, objectiveTextY, { size: 11, gap: 17, width: mainWidth - 34, x: mainLeft + 9 });
+  }
+  for (const section of sections) {
+    y -= sectionGap;
+    if (section.type === "chips") drawSkillChips(section.title, section.values);
+    else drawMainSection(section.title, section.body);
+  }
+  operations.push("0.82 0.87 0.84 RG 0.55 w 202 43 m 555 43 l S");
+  addText("Prepared with CribMatch CV", { x: 202, y: 28, size: 8, color: "#87948c" });
+  addText("Page 1 of 1", { x: 510, y: 28, size: 8, color: "#87948c" });
+
+  const regularFontId = 5;
+  const boldFontId = 6;
+  const stream = `${operations.join("\n")}\n`;
+  const objects = [
+    null,
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 ${regularFontId} 0 R /F2 ${boldFontId} 0 R >> >> /Contents 4 0 R >>`,
+    `<< /Length ${Buffer.byteLength(stream, "ascii")} >>\nstream\n${stream}endstream`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>",
+  ];
+  let pdf = "%PDF-1.4\n% CribMatch CV\n";
+  const offsets = [0];
+  for (let id = 1; id < objects.length; id += 1) {
+    offsets[id] = Buffer.byteLength(pdf, "ascii");
+    pdf += `${id} 0 obj\n${objects[id]}\nendobj\n`;
+  }
+  const xrefOffset = Buffer.byteLength(pdf, "ascii");
+  pdf += `xref\n0 ${objects.length}\n0000000000 65535 f \n`;
+  for (let id = 1; id < objects.length; id += 1) pdf += `${String(offsets[id]).padStart(10, "0")} 00000 n \n`;
+  pdf += `trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  return Buffer.from(pdf, "ascii");
+}
+
 export function buildCvPdf(data) {
+  const sourceLines = [data.profile, data.objective, data.expertise, data.practicalSkills, data.experience, data.achievements, data.education, data.certifications, data.skills, data.technologies, data.languages, data.projects, data.awards, data.volunteering, data.references, data.availability]
+    .filter(Boolean)
+    .reduce((total, value) => total + wrapPdfText(value, 72, 10).length, 0);
+  if (sourceLines <= 12) return buildSparseCvPdf(data);
   const pageWidth = 595;
   const pageHeight = 842;
   const left = 52;
