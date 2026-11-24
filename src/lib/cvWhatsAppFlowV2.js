@@ -172,7 +172,7 @@ export const CV_FLOW_V2_JSON = {
       area("skillsOther", "Other skills", { maxLength: 300 }),
     ] } }),
     makeScreen({ id: "REVIEW", title: "Review and submit", terminal: true, section: { intro: "Check the information you entered in the previous steps. Your draft CV will be prepared and sent here for review.", children: [
-      { type: "TextBody", text: "Name: \${data.fullName}\nApplying for: \${data.targetRole}\nContact: \${data.phone}\nEmail: \${data.email}" },
+      { type: "TextBody", text: "Review your details on the previous screens, then submit. Use Back if you need to make a change." },
       { type: "TextBody", text: "Your details are used to prepare a draft CV. Date of birth and ID/passport are optional; share them only when required for your application." },
     ] }, fields: [], previousFields: [...goalFields, ...contactFields, ...experienceFields, ...educationFields, ...skillFields] }),
   ],
