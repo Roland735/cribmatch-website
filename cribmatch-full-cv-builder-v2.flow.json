@@ -137,18 +137,18 @@
               {
                 "type": "TextInput",
                 "name": "targetField",
-                "label": "Field (optional)",
+                "label": "Field",
                 "max-chars": 120
               },
               {
                 "type": "DatePicker",
                 "name": "attachmentStartDate",
-                "label": "Available start (optional)"
+                "label": "Available start"
               },
               {
                 "type": "TextInput",
                 "name": "attachmentDuration",
-                "label": "Duration (optional)",
+                "label": "Duration",
                 "max-chars": 120,
                 "helper-text": "For example, 6 months."
               },
@@ -281,14 +281,14 @@
                 "type": "DatePicker",
                 "name": "dateOfBirth",
                 "label": "Date of birth",
-                "helper-text": "Optional; add it only if the employer or application requires it."
+                "helper-text": "Add it only if the employer or application requires it."
               },
               {
                 "type": "TextInput",
                 "name": "idNumber",
                 "label": "ID or passport",
                 "max-chars": 120,
-                "helper-text": "Optional; enter the official ID requested for this application."
+                "helper-text": "Enter the official ID requested for this application, if required."
               },
               {
                 "type": "TextInput",
@@ -331,7 +331,7 @@
                   {
                     "type": "TextArea",
                     "name": "profileManualText",
-                    "label": "Professional profile (optional)",
+                    "label": "Professional profile",
                     "max-length": 600
                   }
                 ]
@@ -998,7 +998,7 @@
                   {
                     "type": "TextArea",
                     "name": "achievements_1",
-                    "label": "Duties or results (optional)",
+                    "label": "Duties or results",
                     "max-length": 450
                   }
                 ]
@@ -1059,7 +1059,7 @@
                       {
                         "type": "TextArea",
                         "name": "achievements_2",
-                        "label": "Duties or results (optional)",
+                        "label": "Duties or results",
                         "max-length": 450
                       }
                     ]
@@ -4132,15 +4132,328 @@
               },
               {
                 "type": "TextBody",
-                "text": "Check the information you entered in the previous steps. Your draft CV will be prepared and sent here for review."
+                "text": "Check your information below. Use Back to review or change your selected work tasks, skills, and other details before submitting."
+              },
+              {
+                "type": "TextSubheading",
+                "text": "Job goal"
               },
               {
                 "type": "TextBody",
-                "text": "Review your details on the previous screens, then submit. Use Back if you need to make a change."
+                "text": "`'Target job: ' ${data.targetRole}`"
               },
               {
                 "type": "TextBody",
-                "text": "Your details are used to prepare a draft CV. Date of birth and ID/passport are optional; share them only when required for your application."
+                "text": "`'Field: ' ${data.targetField}`",
+                "visible": "`${data.targetField} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Available start: ' ${data.attachmentStartDate}`",
+                "visible": "`${data.attachmentStartDate} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Duration: ' ${data.attachmentDuration}`",
+                "visible": "`${data.attachmentDuration} != ''`"
+              },
+              {
+                "type": "TextSubheading",
+                "text": "Contact details"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Full name: ' ${data.fullName}`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Phone: ' ${data.phone}`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Email: ' ${data.email}`",
+                "visible": "`${data.email} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Date of birth: ' ${data.dateOfBirth}`",
+                "visible": "`${data.dateOfBirth} != '' && ${data.dateOfBirth} != 'NaN-NaN-NaN'`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'ID or passport: ' ${data.idNumber}`",
+                "visible": "`${data.idNumber} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Town or city: ' ${data.location}`",
+                "visible": "`${data.location} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'LinkedIn or website: ' ${data.links}`",
+                "visible": "`${data.links} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Career objective: ' ${data.objectiveManualText}`",
+                "visible": "`${data.objectiveManualText} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Professional profile: ' ${data.profileManualText}`",
+                "visible": "`${data.profileManualText} != ''`"
+              },
+              {
+                "type": "TextSubheading",
+                "text": "Work and activity"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'First role or activity: ' ${data.experience_1}`",
+                "visible": "`${data.experience_1} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'First employer: ' ${data.employer_1}`",
+                "visible": "`${data.employer_1} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'First start date: ' ${data.startDate_1}`",
+                "visible": "`${data.startDate_1} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'First end date: ' ${data.endDate_1}`",
+                "visible": "`${data.endDate_1} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Other tasks: ' ${data.otherTasks_1}`",
+                "visible": "`${data.otherTasks_1} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Duties or results: ' ${data.achievements_1}`",
+                "visible": "`${data.achievements_1} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Second role or activity: ' ${data.experience_2}`",
+                "visible": "`${data.experience_2} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Second employer: ' ${data.employer_2}`",
+                "visible": "`${data.employer_2} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Second start date: ' ${data.startDate_2}`",
+                "visible": "`${data.startDate_2} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Second end date: ' ${data.endDate_2}`",
+                "visible": "`${data.endDate_2} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Second entry tasks: ' ${data.otherTasks_2}`",
+                "visible": "`${data.otherTasks_2} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Second entry duties or results: ' ${data.achievements_2}`",
+                "visible": "`${data.achievements_2} != ''`"
+              },
+              {
+                "type": "TextSubheading",
+                "text": "Education and training"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'First qualification or course: ' ${data.education_1}`",
+                "visible": "`${data.education_1} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'First education level: ' ${data.educationLevel_1}`",
+                "visible": "`${data.educationLevel_1} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'First study status: ' ${data.educationStatus_1}`",
+                "visible": "`${data.educationStatus_1} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'First awarding body: ' ${data.educationBody_1}`",
+                "visible": "`${data.educationBody_1} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'First start year: ' ${data.educationStartYear_1}`",
+                "visible": "`${data.educationStartYear_1} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'First end or expected year: ' ${data.educationEndYear_1}`",
+                "visible": "`${data.educationEndYear_1} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'First subjects: ' ${data.educationSubjects_1}`",
+                "visible": "`${data.educationSubjects_1} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'First results: ' ${data.educationResults_1}`",
+                "visible": "`${data.educationResults_1} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'First relevant coursework: ' ${data.educationCoursework_1}`",
+                "visible": "`${data.educationCoursework_1} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Second qualification or course: ' ${data.education_2}`",
+                "visible": "`${data.education_2} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Second education level: ' ${data.educationLevel_2}`",
+                "visible": "`${data.educationLevel_2} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Second study status: ' ${data.educationStatus_2}`",
+                "visible": "`${data.educationStatus_2} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Second awarding body: ' ${data.educationBody_2}`",
+                "visible": "`${data.educationBody_2} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Second start year: ' ${data.educationStartYear_2}`",
+                "visible": "`${data.educationStartYear_2} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Second end or expected year: ' ${data.educationEndYear_2}`",
+                "visible": "`${data.educationEndYear_2} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Second subjects: ' ${data.educationSubjects_2}`",
+                "visible": "`${data.educationSubjects_2} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Second results: ' ${data.educationResults_2}`",
+                "visible": "`${data.educationResults_2} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Second relevant coursework: ' ${data.educationCoursework_2}`",
+                "visible": "`${data.educationCoursework_2} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'First certificate or course: ' ${data.certifications_1}`",
+                "visible": "`${data.certifications_1} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Second certificate or course: ' ${data.certifications_2}`",
+                "visible": "`${data.certifications_2} != ''`"
+              },
+              {
+                "type": "TextSubheading",
+                "text": "Skills and extras"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'First skill: ' ${data.skills_1}`",
+                "visible": "`${data.skills_1} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Second skill: ' ${data.skills_2}`",
+                "visible": "`${data.skills_2} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'First tool or technology: ' ${data.technologies_1}`",
+                "visible": "`${data.technologies_1} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Second tool or technology: ' ${data.technologies_2}`",
+                "visible": "`${data.technologies_2} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'First language and proficiency: ' ${data.languages_1}`",
+                "visible": "`${data.languages_1} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Second language and proficiency: ' ${data.languages_2}`",
+                "visible": "`${data.languages_2} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'First project: ' ${data.projects_1}`",
+                "visible": "`${data.projects_1} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'First project details: ' ${data.projectsDescription_1}`",
+                "visible": "`${data.projectsDescription_1} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Second project: ' ${data.projects_2}`",
+                "visible": "`${data.projects_2} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Second project details: ' ${data.projectsDescription_2}`",
+                "visible": "`${data.projectsDescription_2} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Awards: ' ${data.awards}`",
+                "visible": "`${data.awards} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Community work: ' ${data.volunteering}`",
+                "visible": "`${data.volunteering} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Referees: ' ${data.references}`",
+                "visible": "`${data.references} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Availability: ' ${data.availability}`",
+                "visible": "`${data.availability} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "`'Other skills: ' ${data.skillsOther}`",
+                "visible": "`${data.skillsOther} != ''`"
+              },
+              {
+                "type": "TextBody",
+                "text": "Date of birth and ID or passport are optional. Share them only when required for your application."
               },
               {
                 "type": "Footer",

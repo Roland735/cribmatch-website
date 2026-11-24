@@ -56,6 +56,19 @@ function makeScreen({ id, title, section, fields, previousFields = [], terminal 
   };
 }
 
+const reviewRow = (label, name, optional = true) => ({
+  type: "TextBody",
+  text: "`'" + label + ": ' ${data." + name + "}`",
+  ...(optional ? { visible: name === "dateOfBirth"
+    ? "`${data.dateOfBirth} != '' && ${data.dateOfBirth} != 'NaN-NaN-NaN'`"
+    : "`${data." + name + "} != ''`" } : {}),
+});
+
+const reviewSection = (title, rows) => [
+  { type: "TextSubheading", text: title },
+  ...rows.map(([label, name, optional]) => reviewRow(label, name, optional)),
+];
+
 const appOptions = optionRows(APPLICATION_TYPES);
 const expOptions = optionRows(EXPERIENCE_TYPES).map((option) => ({
   ...option,
@@ -99,23 +112,23 @@ export const CV_FLOW_V2_JSON = {
       input("Dropdown", "applicationType", "CV purpose", { required: true, options: appOptions }),
       input("Dropdown", "targetRoleId", "Target job or field", { required: true, options: roleOptions }),
       text("targetRole", "Target job title", { required: true, helperText: "Use the role name above or enter your specific title." }),
-      text("targetField", "Field (optional)"),
-      input("DatePicker", "attachmentStartDate", "Available start (optional)"),
-      text("attachmentDuration", "Duration (optional)", { helperText: "For example, 6 months." }),
+      text("targetField", "Field"),
+      input("DatePicker", "attachmentStartDate", "Available start"),
+      text("attachmentDuration", "Duration", { helperText: "For example, 6 months." }),
       check("experienceTypes", "Which kinds of experience have you had? Select all that apply.", { options: expOptions }),
     ] } }),
     makeScreen({ id: "CONTACT", title: "Contact details", fields: contactFields, previousFields: goalFields, section: { next: "EXPERIENCE", intro: "Your phone number can be your WhatsApp contact. Email is optional.", children: [
       text("fullName", "Full name", { required: true, maxChars: 80 }),
       text("phone", "Phone number", { required: true, maxChars: 32, inputType: "phone" }),
       text("email", "Email", { maxChars: 100, inputType: "email" }),
-      input("DatePicker", "dateOfBirth", "Date of birth", { helperText: "Optional; add it only if the employer or application requires it." }),
-      text("idNumber", "ID or passport", { maxChars: 120, helperText: "Optional; enter the official ID requested for this application." }),
+      input("DatePicker", "dateOfBirth", "Date of birth", { helperText: "Add it only if the employer or application requires it." }),
+      text("idNumber", "ID or passport", { maxChars: 120, helperText: "Enter the official ID requested for this application, if required." }),
       text("location", "Town or city", { maxChars: 80 }),
       text("links", "LinkedIn or website", { maxChars: 180 }),
       opt("objectiveManual", "I want to write my career objective myself"),
       iff("\${form.objectiveManual} == true", [area("objectiveManualText", "Career objective", { maxLength: 300 })]),
       opt("profileManual", "I want to write my professional profile myself"),
-      iff("\${form.profileManual} == true", [area("profileManualText", "Professional profile (optional)", { maxLength: 600 })]),
+      iff("\${form.profileManual} == true", [area("profileManualText", "Professional profile", { maxLength: 600 })]),
       opt("aiConsent", "Use optional Google Gemini help to improve wording (details below)"),
       { type: "TextBody", text: "If selected, only professional details such as your target role and confirmed tasks are sent to Google Gemini. Your name and contact details are excluded. Leave this unticked to use template writing." },
     ] } }),
@@ -126,13 +139,13 @@ export const CV_FLOW_V2_JSON = {
       ...roleChoiceComponents("workTasks_1", "tasks", TASK_LABELS),
       area("otherTasks_1", "Other tasks", { maxLength: 450 }),
       opt("manualDuties_1", "I want to write these duties myself"),
-      iff("\${form.manualDuties_1} == true", [area("achievements_1", "Duties or results (optional)", { maxLength: 450 })]),
+      iff("\${form.manualDuties_1} == true", [area("achievements_1", "Duties or results", { maxLength: 450 })]),
       opt("add_experience_2", "＋ Add another work or activity entry"),
       iff("\${form.add_experience_2} == true", [
         text("experience_2", "Second role/activity", { maxChars: 100 }), text("employer_2", "Employer", { maxChars: 100 }),
         text("startDate_2", "Start date/year"), text("endDate_2", "End date/year"), opt("current_2", "I still do this"),
         area("otherTasks_2", "Other tasks", { maxLength: 450 }),
-        opt("manualDuties_2", "I want to write these duties myself"), iff("\${form.manualDuties_2} == true", [area("achievements_2", "Duties or results (optional)", { maxLength: 450 })]),
+        opt("manualDuties_2", "I want to write these duties myself"), iff("\${form.manualDuties_2} == true", [area("achievements_2", "Duties or results", { maxLength: 450 })]),
       ]),
       { type: "TextSubheading", text: "Practical abilities" },
       ...roleChoiceComponents("practicalTasks", "tasks", TASK_LABELS),
@@ -171,9 +184,37 @@ export const CV_FLOW_V2_JSON = {
       area("references", "Referees", { maxLength: 300, helperText: "Ask their permission before listing their details." }), text("availability", "Availability", { maxChars: 100 }),
       area("skillsOther", "Other skills", { maxLength: 300 }),
     ] } }),
-    makeScreen({ id: "REVIEW", title: "Review and submit", terminal: true, section: { intro: "Check the information you entered in the previous steps. Your draft CV will be prepared and sent here for review.", children: [
-      { type: "TextBody", text: "Review your details on the previous screens, then submit. Use Back if you need to make a change." },
-      { type: "TextBody", text: "Your details are used to prepare a draft CV. Date of birth and ID/passport are optional; share them only when required for your application." },
+    makeScreen({ id: "REVIEW", title: "Review and submit", terminal: true, section: { intro: "Check your information below. Use Back to review or change your selected work tasks, skills, and other details before submitting.", children: [
+      ...reviewSection("Job goal", [
+        ["Target job", "targetRole", false], ["Field", "targetField"], ["Available start", "attachmentStartDate"], ["Duration", "attachmentDuration"],
+      ]),
+      ...reviewSection("Contact details", [
+        ["Full name", "fullName", false], ["Phone", "phone", false], ["Email", "email"], ["Date of birth", "dateOfBirth"],
+        ["ID or passport", "idNumber"], ["Town or city", "location"], ["LinkedIn or website", "links"],
+        ["Career objective", "objectiveManualText"], ["Professional profile", "profileManualText"],
+      ]),
+      ...reviewSection("Work and activity", [
+        ["First role or activity", "experience_1"], ["First employer", "employer_1"], ["First start date", "startDate_1"], ["First end date", "endDate_1"],
+        ["Other tasks", "otherTasks_1"], ["Duties or results", "achievements_1"],
+        ["Second role or activity", "experience_2"], ["Second employer", "employer_2"], ["Second start date", "startDate_2"], ["Second end date", "endDate_2"],
+        ["Second entry tasks", "otherTasks_2"], ["Second entry duties or results", "achievements_2"],
+      ]),
+      ...reviewSection("Education and training", [
+        ["First qualification or course", "education_1"], ["First education level", "educationLevel_1"], ["First study status", "educationStatus_1"],
+        ["First awarding body", "educationBody_1"], ["First start year", "educationStartYear_1"], ["First end or expected year", "educationEndYear_1"],
+        ["First subjects", "educationSubjects_1"], ["First results", "educationResults_1"], ["First relevant coursework", "educationCoursework_1"],
+        ["Second qualification or course", "education_2"], ["Second education level", "educationLevel_2"], ["Second study status", "educationStatus_2"],
+        ["Second awarding body", "educationBody_2"], ["Second start year", "educationStartYear_2"], ["Second end or expected year", "educationEndYear_2"],
+        ["Second subjects", "educationSubjects_2"], ["Second results", "educationResults_2"], ["Second relevant coursework", "educationCoursework_2"],
+        ["First certificate or course", "certifications_1"], ["Second certificate or course", "certifications_2"],
+      ]),
+      ...reviewSection("Skills and extras", [
+        ["First skill", "skills_1"], ["Second skill", "skills_2"], ["First tool or technology", "technologies_1"], ["Second tool or technology", "technologies_2"],
+        ["First language and proficiency", "languages_1"], ["Second language and proficiency", "languages_2"],
+        ["First project", "projects_1"], ["First project details", "projectsDescription_1"], ["Second project", "projects_2"], ["Second project details", "projectsDescription_2"],
+        ["Awards", "awards"], ["Community work", "volunteering"], ["Referees", "references"], ["Availability", "availability"], ["Other skills", "skillsOther"],
+      ]),
+      { type: "TextBody", text: "Date of birth and ID or passport are optional. Share them only when required for your application." },
     ] }, fields: [], previousFields: [...goalFields, ...contactFields, ...experienceFields, ...educationFields, ...skillFields] }),
   ],
 };

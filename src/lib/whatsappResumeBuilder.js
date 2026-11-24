@@ -559,6 +559,7 @@ export function buildCvPdf(data) {
   const contentWidth = right - left;
   const footerLimit = 54;
   const lineHeight = (size) => size * 1.42;
+  // Keep a real first A4 page even when the candidate only supplies contact details.
   const pageOps = [[]];
   let pageIndex = 0;
   let y = 790;
