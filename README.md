@@ -45,4 +45,15 @@ The WhatsApp webhook must point to `https://<your-domain>/api/webhooks/whatsapp`
 
 The app looks for a published Flow named `CribMatch CV Builder` in the configured WhatsApp Business Account. If one does not exist, it creates and publishes the Flow through Meta's Graph API when a customer sends `START`. The Meta token therefore needs WhatsApp Flow management permission in addition to sending messages. Submitted test CV details are stored for up to 30 days; customers can send `DELETE` to remove them sooner.
 
+### Optional Gemini CV wording polish
+
+The WhatsApp CV builder can use Gemini 3.1 Flash-Lite to improve the professional profile, career objective, and achievement wording before creating the PDF. If that model is unavailable, it falls back to Gemini 3.5 Flash-Lite. The API key stays on the server. To enable it, create a Gemini API key in [Google AI Studio](https://aistudio.google.com/apikey) and add these server environment variables (for local development, use `.env.local`; set them in the hosting provider for production):
+
+- `GEMINI_API_KEY`: the key from Google AI Studio.
+- `GEMINI_MODEL`: optional; defaults to `gemini-3.1-flash-lite`.
+- `GEMINI_FALLBACK_MODEL`: optional; defaults to `gemini-3.5-flash-lite`.
+- `GEMINI_CV_POLISH_ENABLED`: set to `false` to disable AI polishing while keeping CV PDF generation available.
+
+Gemini is optional: without a key, or if its API is unavailable, the existing CV PDF is generated without AI. The AI request excludes name, contact details, date of birth, and ID/passport number, but it does send professional CV text to Google. Google may use free-tier prompts and responses to improve its products, so use fictional CVs for free-tier testing and do not enable this for real customer CVs until the data-use terms and user notice are appropriate.
+
 The `/api/auth/whatsapp-otp` API and the legacy `send_nzvimbo_otp` webhook action remain available for the separate Nzvimbo login flow.

@@ -457,6 +457,76 @@ function colorCommand(hex) {
   return `${channels.join(" ")} rg`;
 }
 
+async function polishResumeWithGemini(data) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || process.env.GEMINI_CV_POLISH_ENABLED === "false") return data;
+
+  const primaryModel = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
+  const fallbackModel = process.env.GEMINI_FALLBACK_MODEL || "gemini-3.5-flash-lite";
+  const models = [...new Set([primaryModel, fallbackModel])];
+  const source = {
+    targetRole: data.targetRole,
+    profile: data.profile,
+    objective: data.objective,
+    expertise: data.expertise,
+    experience: data.experience,
+    achievements: data.achievements,
+    education: data.education,
+    certifications: data.certifications,
+    skills: data.skills,
+    technologies: data.technologies,
+    languages: data.languages,
+    projects: data.projects,
+    awards: data.awards,
+    volunteering: data.volunteering,
+  };
+  const prompt = [
+    "Improve the wording of this CV for the stated target role. Return only a JSON object with string fields profile, objective, and achievements.",
+    "Keep every claim grounded in the supplied text. Do not invent employers, dates, qualifications, metrics, duties, or skills. Preserve the meaning and scale of each achievement. Keep fields empty when the source is empty. Use clear, professional Zimbabwean/British English. Keep the profile concise (up to 100 words), objective up to 60 words, and achievements as concise bullet lines.",
+    "Do not include or infer personal contact details or identity information.",
+    JSON.stringify(source),
+  ].join("\n\n");
+
+  for (const model of models) {
+    try {
+      const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        body: JSON.stringify({ model, input: prompt, store: false }),
+        signal: AbortSignal.timeout(20000),
+      });
+      if (!response.ok) {
+        console.error("[cribmatch-cv-whatsapp] Gemini CV polish failed", model, response.status);
+        if (response.status === 401 || response.status === 403) break;
+        continue;
+      }
+      const result = await response.json();
+      const output = typeof result?.output_text === "string"
+        ? result.output_text
+        : (result?.steps || [])
+          .filter((step) => step?.type === "model_output")
+          .flatMap((step) => step.content || [])
+          .filter((part) => part?.type === "text" && typeof part.text === "string")
+          .map((part) => part.text)
+          .join("\n");
+      if (!output.trim()) continue;
+      const parsed = JSON.parse(output.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""));
+      return {
+        ...data,
+        profile: typeof parsed.profile === "string" && parsed.profile.trim() ? parsed.profile.trim() : data.profile,
+        objective: typeof parsed.objective === "string" ? parsed.objective.trim() : data.objective,
+        achievements: typeof parsed.achievements === "string" && parsed.achievements.trim() ? parsed.achievements.trim() : data.achievements,
+      };
+    } catch (error) {
+      console.error("[cribmatch-cv-whatsapp] Gemini CV polish unavailable", model, error?.message || error);
+    }
+  }
+  return data;
+}
+
 function buildCvPdf(data) {
   const pageWidth = 595;
   const pageHeight = 842;
@@ -700,10 +770,11 @@ async function handleIncomingMessage(db, { from, text, flowReply }) {
       await sendText(from, "I couldn't read all the required fields. Send START to reopen the CV form and submit it again.");
       return;
     }
+    const pdfData = await polishResumeWithGemini(data);
     const now = new Date();
-    await db.collection("cv_whatsapp_submissions").insertOne({ phone: from, data, createdAt: now, updatedAt: now });
+    await db.collection("cv_whatsapp_submissions").insertOne({ phone: from, data: pdfData, createdAt: now, updatedAt: now });
     const filename = `${data.fullName.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "CribMatch-CV"}.pdf`;
-    await sendPdf(from, buildCvPdf(data), filename, "Your CribMatch CV test PDF is ready.");
+    await sendPdf(from, buildCvPdf(pdfData), filename, "Your CribMatch CV test PDF is ready.");
     await sendActionButtons(from, "Your CV test PDF is attached. No payment is enabled yet.", [
       { id: "START", title: "Make another CV" },
       { id: "DELETE", title: "Delete my data" },
