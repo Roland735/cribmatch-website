@@ -43,7 +43,13 @@ The WhatsApp webhook must point to `https://<your-domain>/api/webhooks/whatsapp`
 
 - `WHATSAPP_APP_SECRET`: the existing Meta app secret, used to verify signed webhook requests. Copy it from the Meta app settings; do not generate or rotate it.
 
-The app looks for a published Flow named `CribMatch CV Builder` in the configured WhatsApp Business Account. If one does not exist, it creates and publishes the Flow through Meta's Graph API when a customer sends `START`. The Meta token therefore needs WhatsApp Flow management permission in addition to sending messages. Submitted test CV details are stored for up to 30 days; customers can send `DELETE` to remove them sooner.
+The app looks for a published Flow named `CribMatch Full CV Builder` in the configured WhatsApp Business Account. If one does not exist, it creates and publishes the Flow through Meta's Graph API when a customer sends `START`. The Meta token therefore needs WhatsApp Flow management permission in addition to sending messages. Submitted test CV details are stored for up to 30 days; customers can send `DELETE` to remove them sooner. Published Flow assets cannot be edited in place; clone the live Flow to a new draft and validate it before changing the production flow selection. Once the replacement Flow has been cloned, validated, and published in Meta, set `WHATSAPP_CV_FLOW_ID` to its ID to route new `START` sessions to that version. Leave the variable unset to continue using the existing named Flow lookup.
+
+### Website CV builder
+
+The homepage offers both **Build on WhatsApp** and **Build on this website**. The website path is a six-stage guided form at `/cv/build`. It keeps work facts, education, skills, personal qualities, writing preferences, generated wording, PDF version, and generation status in separate MongoDB collections. Experience, education, and languages support additional entries. Suggested tasks and qualities start unchecked. Blank date-of-birth and identity-number fields are not requested in the default journey. A draft can be downloaded, approved, edited by revisiting the form, or tailored to another role. Website drafts and their records expire after 30 days; the PDF access link uses a random key.
+
+Gemini wording help is optional and requires the candidate's explicit checkbox consent in the website form. Only professional wording inputs are sent to Gemini; contact information is excluded. The template writer remains available when the candidate opts out or Gemini is unavailable.
 
 ### Optional Gemini CV wording polish
 

@@ -48,6 +48,7 @@ export default function Home() {
               <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center gap-3 rounded-full bg-emerald-300 px-7 py-4 text-sm font-bold text-[#06211a] shadow-[0_12px_36px_rgba(52,211,153,.18)] transition hover:-translate-y-0.5 hover:bg-emerald-200">
                 <WhatsAppIcon /> Create my CV on WhatsApp <span aria-hidden="true">↗</span>
               </a>
+              <a href="/cv/build" className="inline-flex items-center justify-center rounded-full border border-white/20 px-7 py-4 text-sm font-bold text-white transition hover:border-emerald-200 hover:text-emerald-200">Build on this website</a>
               <span className="px-2 text-sm text-[#a8b6ad]">Free CV generation while we test</span>
             </div>
             <div className="flex flex-wrap gap-x-7 gap-y-3 border-t border-white/10 pt-6 text-xs text-[#a8b6ad]">

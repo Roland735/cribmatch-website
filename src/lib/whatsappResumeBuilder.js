@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import clientPromise from "@/lib/mongodb";
+import { cleanCandidateFacts, normalizeCandidatePhone, writeCandidateCv } from "@/lib/cvWriting";
 
 const GRAPH_VERSION = "v24.0";
 const MAX_ANSWER_LENGTH = 1800;
@@ -286,6 +287,11 @@ async function sendActionButtons(to, body, buttons) {
 
 async function getOrCreateFlow() {
   if (cachedFlowId) return cachedFlowId;
+  const configuredFlowId = String(process.env.WHATSAPP_CV_FLOW_ID || "").trim();
+  if (configuredFlowId) {
+    cachedFlowId = configuredFlowId;
+    return cachedFlowId;
+  }
   const wabaId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
   if (!wabaId) throw new Error("WHATSAPP_BUSINESS_ACCOUNT_ID is not configured");
   const query = new URLSearchParams({ fields: "id,name,status", limit: "100" });
@@ -366,6 +372,17 @@ function getIncomingMessages(payload) {
 
 function safeText(value) {
   return String(value || "").trim().slice(0, MAX_ANSWER_LENGTH);
+}
+
+function safeFlowDate(value) {
+  const raw = safeText(value);
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/.exec(raw);
+  if (!match) return "";
+  const [, year, month, day] = match;
+  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  return Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== `${year}-${month}-${day}`
+    ? ""
+    : `${year}-${month}-${day}`;
 }
 
 function commandText(text) {
@@ -464,6 +481,10 @@ async function polishResumeWithGemini(data) {
   const primaryModel = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
   const fallbackModel = process.env.GEMINI_FALLBACK_MODEL || "gemini-3.5-flash-lite";
   const models = [...new Set([primaryModel, fallbackModel])];
+  const redactIdentifiers = (value) => String(value || "")
+    .replace(/\b\d{2}-\d{6,7}[A-Z]\d{2}\b/gi, "[redacted identifier]")
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[redacted email]")
+    .replace(/\b(?:\+?\d[\d\s().-]{7,}\d)\b/g, "[redacted phone]");
   const source = {
     targetRole: data.targetRole,
     profile: data.profile,
@@ -480,6 +501,9 @@ async function polishResumeWithGemini(data) {
     awards: data.awards,
     volunteering: data.volunteering,
   };
+  for (const [key, value] of Object.entries(source)) {
+    source[key] = Array.isArray(value) ? value.map(redactIdentifiers) : redactIdentifiers(value);
+  }
   const prompt = [
     "Improve the wording of this CV for the stated target role. Return only a JSON object with string fields profile, objective, and achievements.",
     "Keep every claim grounded in the supplied text. Do not invent employers, dates, qualifications, metrics, duties, or skills. Preserve the meaning and scale of each achievement. Keep fields empty when the source is empty. Use clear, professional Zimbabwean/British English. Keep the profile concise (up to 100 words), objective up to 60 words, and achievements as concise bullet lines.",
@@ -527,7 +551,7 @@ async function polishResumeWithGemini(data) {
   return data;
 }
 
-function buildCvPdf(data) {
+export function buildCvPdf(data) {
   const pageWidth = 595;
   const pageHeight = 842;
   const left = 52;
@@ -560,7 +584,7 @@ function buildCvPdf(data) {
     pushText(text, { size, font, color, x });
     y -= gap;
   };
-  const drawBlock = (value, { size = 10, color = "#37483f", font = "F1", after = 5 } = {}) => {
+  const drawBlock = (value, { size = 11, color = "#37483f", font = "F1", after = 5 } = {}) => {
     const sourceLines = String(value || "").replace(/\r\n?/g, "\n").split("\n");
     for (const sourceLine of sourceLines) {
       const cleanLine = pdfPlainText(sourceLine);
@@ -607,69 +631,41 @@ function buildCvPdf(data) {
   pageOps[0].push(`0.82 0.87 0.84 RG 0.8 w ${left} ${y} m ${right} ${y} l S`);
   y -= 12;
 
-  drawSection("Professional profile");
-  drawBlock(data.profile);
-  if (data.objective) {
-    drawSection("Career objective");
-    drawBlock(data.objective);
-  }
-  if (data.expertise) {
-    drawSection("Core expertise");
-    drawBlock(data.expertise);
-  }
-  if (data.experience || data.achievements) {
-    drawSection("Experience");
-    if (data.experience) {
-      drawLabel("Roles and employers");
-      drawBlock(data.experience, { after: data.achievements ? 2 : 5 });
-    }
-    if (data.achievements) {
-      drawLabel("Key duties and results");
-      drawBlock(data.achievements);
-    }
-  }
-  if (data.education && !/^skip$/i.test(data.education)) {
-    drawSection("Education");
-    drawBlock(data.education);
-  }
-  if (data.certifications) {
-    drawSection("Certifications and training");
-    drawBlock(data.certifications);
-  }
-  if (data.skills || data.technologies || data.languages) {
-    drawSection("Skills and tools");
-    if (data.skills) {
-      drawLabel("Core skills");
-      drawBlock(data.skills, { color: "#24362d", after: data.technologies || data.languages ? 2 : 5 });
-    }
-    if (data.technologies) {
-      drawLabel("Tools and technology");
-      drawBlock(data.technologies, { after: data.languages ? 2 : 5 });
-    }
-    if (data.languages) {
-      drawLabel("Languages");
-      drawBlock(data.languages);
-    }
-  }
-  if (data.projects) {
-    drawSection("Selected projects");
-    drawBlock(data.projects);
-  }
-  if (data.awards || data.volunteering || data.references) {
-    drawSection("Additional details");
-    if (data.awards) {
-      drawLabel("Awards and honours");
-      drawBlock(data.awards, { after: data.volunteering || data.references ? 2 : 5 });
-    }
-    if (data.volunteering) {
-      drawLabel("Community work");
-      drawBlock(data.volunteering, { after: data.references ? 2 : 5 });
-    }
-    if (data.references) {
-      drawLabel("References");
-      drawBlock(data.references);
-    }
-  }
+  const renderSection = {
+    profile: () => {
+      if (!data.profile && data.sectionOrder) return;
+      drawSection("Professional profile");
+      drawBlock(data.profile);
+    },
+    objective: () => { if (data.objective) { drawSection("Career objective"); drawBlock(data.objective); } },
+    expertise: () => { if (data.expertise) { drawSection("Core expertise"); drawBlock(data.expertise); } },
+    practical: () => { if (data.practicalSkills) { drawSection("Practical skills"); drawBlock(data.practicalSkills); } },
+    experience: () => {
+      if (!data.experience && !data.achievements) return;
+      drawSection("Work Experience");
+      if (data.experience) { drawLabel("Roles and employers"); drawBlock(data.experience, { after: data.achievements ? 2 : 5 }); }
+      if (data.achievements) { drawLabel("Key duties and results"); drawBlock(data.achievements); }
+    },
+    education: () => { if (data.education && !/^skip$/i.test(data.education)) { drawSection("Education"); drawBlock(data.education); } },
+    certifications: () => { if (data.certifications) { drawSection("Certifications and training"); drawBlock(data.certifications); } },
+    skills: () => {
+      if (!data.skills && !data.technologies && !data.languages) return;
+      drawSection("Skills and tools");
+      if (data.skills) { drawLabel("Core skills"); drawBlock(data.skills, { color: "#24362d", after: data.technologies || data.languages ? 2 : 5 }); }
+      if (data.technologies) { drawLabel("Tools and technology"); drawBlock(data.technologies, { after: data.languages ? 2 : 5 }); }
+      if (data.languages) { drawLabel("Languages"); drawBlock(data.languages); }
+    },
+    projects: () => { if (data.projects) { drawSection("Selected projects"); drawBlock(data.projects); } },
+    additional: () => {
+      if (!data.awards && !data.volunteering && !data.references) return;
+      drawSection("Additional details");
+      if (data.awards) { drawLabel("Awards and honours"); drawBlock(data.awards, { after: data.volunteering || data.references ? 2 : 5 }); }
+      if (data.volunteering) { drawLabel("Community work"); drawBlock(data.volunteering, { after: data.references ? 2 : 5 }); }
+      if (data.references) { drawLabel("References"); drawBlock(data.references); }
+    },
+  };
+  const defaultOrder = ["profile", "objective", "expertise", "practical", "experience", "education", "certifications", "skills", "projects", "additional"];
+  for (const section of data.sectionOrder || defaultOrder) renderSection[section]?.();
   for (let index = 0; index < pageOps.length; index += 1) {
     pageOps[index].push(`0.82 0.87 0.84 RG 0.55 w ${left} 43 m ${right} 43 l S`);
     pageOps[index].push(`BT ${colorCommand("#87948c")} /F1 8 Tf 1 0 0 1 ${left} 28 Tm (Prepared with CribMatch CV) Tj ET`);
@@ -731,6 +727,7 @@ function cleanFlowData(flowReply, senderPhone) {
   ];
   const data = {};
   for (const field of fields) data[field] = safeText(parsed[field]);
+  data.dateOfBirth = safeFlowDate(data.dateOfBirth);
   // Keep accepting submissions from the existing published Flow's original field names.
   data.experience_1 = data.experience_1 || safeText(parsed.experience);
   data.achievements_1 = data.achievements_1 || safeText(parsed.achievements);
@@ -757,24 +754,47 @@ function cleanFlowData(flowReply, senderPhone) {
   data.technologies = [data.technologies_1, data.technologies_2, data.technologies_3, data.technologies_4].filter(Boolean).map((item) => `- ${item}`).join("\n");
   data.languages = [data.languages_1, data.languages_2, data.languages_3, data.languages_4].filter(Boolean).map((item) => `- ${item}`).join("\n");
   if (!data.phone) data.phone = safeText(senderPhone);
-  if (data.fullName.length < 3 || !data.targetRole || !data.profile) return null;
+  if (data.fullName.length < 3 || !data.targetRole) return null;
   if (data.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) return null;
   return data;
 }
 
-async function handleIncomingMessage(db, { from, text, flowReply }) {
+async function handleIncomingMessage(db, { id: inboundMessageId, from, text, flowReply }) {
   const normalized = commandText(text);
   if (flowReply) {
-    const data = cleanFlowData(flowReply, from);
+    let structuredFacts = null;
+    let data = null;
+    let parsedFlow = flowReply;
+    if (typeof parsedFlow === "string") {
+      try { parsedFlow = JSON.parse(parsedFlow); } catch { parsedFlow = null; }
+    }
+    if (parsedFlow && (parsedFlow.schemaVersion === 2 || parsedFlow.targetRoleId || parsedFlow.goal)) {
+      const sourceFacts = parsedFlow.facts || parsedFlow;
+      structuredFacts = cleanCandidateFacts(sourceFacts);
+      if (!structuredFacts.candidate.phone) structuredFacts.candidate.phone = from;
+      if (structuredFacts.candidate.fullName.length >= 3 && structuredFacts.goal.targetRole) data = await writeCandidateCv(structuredFacts);
+    } else data = cleanFlowData(flowReply, from);
     if (!data) {
       await sendText(from, "I couldn't read all the required fields. Send START to reopen the CV form and submit it again.");
       return;
     }
-    const pdfData = await polishResumeWithGemini(data);
+    const pdfData = structuredFacts ? data : await polishResumeWithGemini(data);
     const now = new Date();
     await db.collection("cv_whatsapp_submissions").insertOne({ phone: from, data: pdfData, createdAt: now, updatedAt: now });
     const filename = `${data.fullName.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "CribMatch-CV"}.pdf`;
-    await sendPdf(from, buildCvPdf(pdfData), filename, "Your CribMatch CV test PDF is ready.");
+    const pdf = buildCvPdf(pdfData);
+    if (structuredFacts) {
+      const id = crypto.randomUUID();
+      const candidateRecordId = crypto.randomUUID();
+      const expiresAt = new Date(now.getTime() + 30 * 86400000);
+      await db.collection("cv_generation_jobs").updateOne({ _id: inboundMessageId }, { $setOnInsert: { _id: inboundMessageId, channel: "whatsapp", status: "processing", createdAt: now }, $set: { updatedAt: now } }, { upsert: true });
+      await db.collection("cv_candidate_facts").insertOne({ _id: candidateRecordId, versionId: id, candidatePhoneDigits: normalizeCandidatePhone(from), facts: structuredFacts, createdAt: now, expiresAt });
+      await db.collection("cv_writing_preferences").insertOne({ _id: id, candidateRecordId, preferences: structuredFacts.writingPreferences, createdAt: now, expiresAt });
+      await db.collection("cv_generated_wording").insertOne({ _id: id, candidateRecordId, wording: { objective: pdfData.objective, profile: pdfData.profile, achievements: pdfData.achievements }, provider: structuredFacts.writingPreferences.aiConsent && process.env.GEMINI_API_KEY ? "gemini-or-template-fallback" : "template", createdAt: now, expiresAt });
+      await db.collection("cv_versions").insertOne({ _id: id, candidateRecordId, status: "draft", channel: "whatsapp", accessKey: crypto.randomBytes(32).toString("base64url"), phoneDigits: from, pdf, filename, createdAt: now, expiresAt });
+      await db.collection("cv_generation_jobs").updateOne({ _id: inboundMessageId }, { $set: { status: "completed", versionId: id, updatedAt: new Date(), completedAt: new Date() } });
+    }
+    await sendPdf(from, pdf, filename, "Your CribMatch CV draft is ready to review.");
     await sendActionButtons(from, "Your CV test PDF is attached. No payment is enabled yet.", [
       { id: "START", title: "Make another CV" },
       { id: "DELETE", title: "Delete my data" },
@@ -782,6 +802,18 @@ async function handleIncomingMessage(db, { from, text, flowReply }) {
     return;
   }
   if (["delete", "delete my data"].includes(normalized)) {
+    const candidateFacts = db.collection("cv_candidate_facts");
+    const matchingCandidates = await candidateFacts.find({ candidatePhoneDigits: normalizeCandidatePhone(from) }).project({ versionId: 1 }).toArray();
+    const matchingIds = matchingCandidates.map((record) => record.versionId);
+    if (matchingIds.length) {
+      await Promise.all([
+        candidateFacts.deleteMany({ versionId: { $in: matchingIds } }),
+        db.collection("cv_writing_preferences").deleteMany({ _id: { $in: matchingIds } }),
+        db.collection("cv_generated_wording").deleteMany({ _id: { $in: matchingIds } }),
+        db.collection("cv_versions").deleteMany({ _id: { $in: matchingIds } }),
+        db.collection("cv_generation_jobs").updateMany({ versionId: { $in: matchingIds }, status: { $in: ["queued", "processing"] } }, { $set: { status: "cancelled", updatedAt: new Date() } }),
+      ]);
+    }
     await db.collection("cv_whatsapp_submissions").deleteMany({ phone: from });
     await db.collection("cv_whatsapp_sessions").deleteOne({ _id: from });
     await db.collection("cv_whatsapp_orders").deleteMany({ phone: from });
@@ -802,6 +834,10 @@ export async function handleResumeWhatsAppWebhook(payload) {
   const received = db.collection("cv_whatsapp_received_messages");
   await db.collection("cv_whatsapp_submissions").createIndex({ createdAt: 1 }, { expireAfterSeconds: 60 * 60 * 24 * 30 }).catch(() => {});
   await received.createIndex({ createdAt: 1 }, { expireAfterSeconds: 60 * 60 * 24 * 30 }).catch(() => {});
+  await Promise.all([
+    ...["cv_candidate_facts", "cv_writing_preferences", "cv_generated_wording", "cv_versions"].map((name) => db.collection(name).createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }).catch(() => {})),
+    db.collection("cv_candidate_facts").createIndex({ candidatePhoneDigits: 1 }).catch(() => {}),
+  ]);
   let processed = 0;
   for (const message of messages) {
     try {
