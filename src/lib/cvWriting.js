@@ -32,6 +32,8 @@ export function cleanCandidateFacts(input = {}) {
       town: asText(candidate.town, 80),
       suburb: asText(candidate.suburb, 80),
       website: asText(candidate.website, 180),
+      dateOfBirth: asText(candidate.dateOfBirth, 20),
+      idNumber: asText(candidate.idNumber, 120),
     },
     experienceTypes: listText(input.experienceTypes),
     workExperience: (Array.isArray(input.workExperience) ? input.workExperience : []).slice(0, 6).map((item) => ({
@@ -49,6 +51,8 @@ export function cleanCandidateFacts(input = {}) {
     })),
     selectedSkills: listText(input.selectedSkills).slice(0, 40),
     otherSkills: Array.isArray(input.otherSkills) ? input.otherSkills.map((item) => asText(item, 80)).filter(Boolean).slice(0, 20) : asText(input.otherSkills, 600).split(/[\n;]/).map((item) => asText(item, 80)).filter(Boolean).slice(0, 20),
+    technologies: asText(input.technologies, 500),
+    certifications: asText(input.certifications, 500),
     personalQualities: listText(input.personalQualities).slice(0, 20),
     languages: (Array.isArray(input.languages) ? input.languages : []).slice(0, 10).map((item) => ({ name: asText(item?.name, 60), proficiency: asText(item?.proficiency, 30) })).filter((item) => item.name),
     availability: asText(input.availability, 120),
@@ -64,6 +68,105 @@ export function cleanCandidateFacts(input = {}) {
   };
 }
 
+const flowList = (value) => Array.isArray(value) ? value.filter(Boolean) : value ? [value] : [];
+const flowEnabled = (value) => value === true || String(value).toLowerCase() === "true";
+
+export function candidateFactsFromFlowPayload(payload = {}) {
+  if (payload?.data && typeof payload.data === "object" && !Array.isArray(payload.data)) payload = payload.data;
+  if (payload?.facts && typeof payload.facts === "object" && !Array.isArray(payload.facts)) payload = payload.facts;
+  if (payload?.candidate && payload?.goal) return cleanCandidateFacts(payload);
+
+  const roleId = asText(payload.targetRoleId, 60) || "other";
+  const workExperience = [1, 2].map((number) => {
+    const role = asText(payload[`experience_${number}`], 100);
+    const tasks = number === 1 ? flowList(payload[`workTasks_1_${roleId}`]) : [];
+    const otherTasks = asText(payload[`otherTasks_${number}`], 500);
+    const achievementMode = flowEnabled(payload[`manualDuties_${number}`]) ? "manual" : "write_for_me";
+    const achievement = achievementMode === "manual" ? asText(payload[`achievements_${number}`], 500) : "";
+    const item = {
+      role,
+      employer: asText(payload[`employer_${number}`], 100),
+      startDate: asText(payload[`startDate_${number}`], 30),
+      endDate: asText(payload[`endDate_${number}`], 30),
+      current: flowEnabled(payload[`current_${number}`]),
+      tasks,
+      otherTasks,
+      achievement,
+      achievementMode,
+    };
+    return [item, Boolean(role || item.employer || item.startDate || item.endDate || item.current || tasks.length || otherTasks || achievement)];
+  }).filter(([, include]) => include).map(([item]) => item);
+
+  const education = [1, 2].map((number) => {
+    const item = {
+      title: asText(payload[`education_${number}`], 120),
+      level: asText(payload[`educationLevel_${number}`], 40),
+      status: asText(payload[`educationStatus_${number}`], 30),
+      awardingBody: asText(payload[`educationBody_${number}`], 40),
+      startYear: asText(payload[`educationStartYear_${number}`], 4),
+      endYear: asText(payload[`educationEndYear_${number}`], 4),
+      subjects: asText(payload[`educationSubjects_${number}`], 500),
+      results: asText(payload[`educationResults_${number}`], 500),
+      coursework: asText(payload[`educationCoursework_${number}`], 500),
+    };
+    return [item, Object.values(item).some(Boolean)];
+  }).filter(([, include]) => include).map(([item]) => item);
+
+  const projects = [1, 2].map((number) => ({
+    name: asText(payload[`projects_${number}`], 120),
+    description: asText(payload[`projectsDescription_${number}`], 700),
+  })).filter((item) => item.name || item.description);
+
+  const selectedSkills = [
+    ...flowList(payload[`skillSuggestions_${roleId}`]),
+    ...[1, 2, 3, 4].map((number) => asText(payload[`skills_${number}`], 100)).filter(Boolean),
+  ];
+  const languages = [1, 2].map((number) => asText(payload[`languages_${number}`], 100)).filter(Boolean).map((name) => ({ name }));
+  const technologies = [1, 2].map((number) => asText(payload[`technologies_${number}`], 100)).filter(Boolean).join("\n");
+
+  return cleanCandidateFacts({
+    goal: {
+      applicationType: payload.applicationType,
+      targetRoleId: roleId,
+      targetRole: payload.targetRole,
+      targetField: payload.targetField,
+      attachmentStartDate: payload.attachmentStartDate,
+      attachmentDuration: payload.attachmentDuration,
+    },
+    candidate: {
+      fullName: payload.fullName,
+      phone: payload.phone,
+      email: payload.email,
+      town: payload.location,
+      website: payload.links,
+      dateOfBirth: payload.dateOfBirth,
+      idNumber: payload.idNumber,
+    },
+    experienceTypes: flowList(payload.experienceTypes),
+    workExperience,
+    practicalTasks: flowList(payload[`practicalTasks_${roleId}`]),
+    education,
+    selectedSkills,
+    otherSkills: payload.skillsOther,
+    technologies,
+    certifications: [1, 2].map((number) => asText(payload[`certifications_${number}`], 180)).filter(Boolean).join("\n"),
+    personalQualities: flowList(payload.personalQualities),
+    languages,
+    availability: payload.availability,
+    projects,
+    volunteering: payload.volunteering,
+    awards: payload.awards,
+    references: payload.references,
+    writingPreferences: {
+      objectiveMode: flowEnabled(payload.objectiveManual) ? "manual" : "write_for_me",
+      objectiveText: payload.objectiveManualText,
+      profileMode: flowEnabled(payload.profileManual) ? "manual" : "write_for_me",
+      profileText: payload.profileManualText,
+      aiConsent: flowEnabled(payload.aiConsent),
+    },
+  });
+}
+
 function yearRange(item) {
   const start = item.startYear || "";
   const end = item.status === "current" ? "Present" : item.endYear || "";
@@ -75,10 +178,11 @@ export function candidateFactsToPdfData(facts) {
   const work = facts.workExperience.map((item) => [item.role, item.employer, [item.startDate, item.current ? "Present" : item.endDate].filter(Boolean).join(" – ")].filter(Boolean).join(" | ")).filter(Boolean);
   const tasks = facts.workExperience.flatMap((item) => [...item.tasks.map((id) => TASK_LABELS[id] || id), item.otherTasks]).filter(Boolean);
   const practical = facts.practicalTasks.map((id) => TASK_LABELS[id] || id);
+  const objectiveTasks = work.length ? tasks : practical;
   const edu = facts.education.map((item) => [item.title || item.level, item.institution, yearRange(item), item.status === "current" ? "Currently studying" : item.status === "incomplete" ? "Attended, not completed" : "", item.awardingBody, item.subjects && `Subjects: ${item.subjects}`, item.results && `Results: ${item.results}`, item.coursework && `Coursework: ${item.coursework}`].filter(Boolean).join(" | ")).filter(Boolean);
   const qualityLabels = new Map(PERSONAL_QUALITY_OPTIONS.map(({ id, title }) => [id, title]));
   const skills = [...facts.selectedSkills.map((id) => SKILL_LABELS[id] || id), ...facts.personalQualities.map((id) => qualityLabels.get(id) || id), ...facts.otherSkills].filter(Boolean);
-  const objective = !facts.writingPreferences.includeObjective ? "" : facts.writingPreferences.objectiveMode === "manual" ? facts.writingPreferences.objectiveText : `To obtain a ${role} opportunity${tasks.length ? ` where I can contribute confirmed experience in ${tasks.slice(0, 4).join(", ").toLowerCase()}` : " where I can apply my confirmed skills and continue to develop"}.`;
+  const objective = !facts.writingPreferences.includeObjective ? "" : facts.writingPreferences.objectiveMode === "manual" ? facts.writingPreferences.objectiveText : `To obtain a ${role} opportunity${objectiveTasks.length ? ` where I can contribute confirmed ${work.length ? "experience" : "practical skills"} in ${objectiveTasks.slice(0, 4).join(", ").toLowerCase()}` : " where I can apply my confirmed skills and continue to develop"}.`;
   const profile = facts.writingPreferences.profileMode === "manual" ? facts.writingPreferences.profileText : (work.length
     ? `${role} applicant with experience as ${facts.workExperience.map((item) => item.role).filter(Boolean).join(", ") || "a worker"}${tasks.length ? `, including ${tasks.slice(0, 5).join(", ").toLowerCase()}` : ""}.`
     : facts.education.length ? `${role} applicant with ${facts.education.map((item) => item.title || item.level).filter(Boolean).join(" and ") || "education and training"}${facts.education.some((item) => item.status === "current") ? " currently in progress" : ""}.` : "");
@@ -96,14 +200,15 @@ export function candidateFactsToPdfData(facts) {
         : ["profile", "objective", "expertise", "experience", "education", "certifications", "skills", "projects", "additional"];
   return {
     fullName: facts.candidate.fullName, targetRole: role, email: facts.candidate.email, phone: facts.candidate.phone,
+    dateOfBirth: facts.candidate.dateOfBirth, idNumber: facts.candidate.idNumber,
     location: [facts.candidate.suburb, facts.candidate.town].filter(Boolean).join(", "), links: facts.candidate.website,
     objective, profile, expertise: "", sectionOrder,
     experience: work.join("\n"), achievements: [duties, achievements].filter(Boolean).join("\n"),
     practicalSkills: practical.map((task) => `- ${task}`).join("\n"), education: edu.join("\n"),
-    certifications: "", skills: skills.map((skill) => `- ${skill}`).join("\n"),
+    certifications: facts.certifications, technologies: facts.technologies, skills: skills.map((skill) => `- ${skill}`).join("\n"),
     languages: facts.languages.map((item) => `- ${item.name}${item.proficiency ? ` (${item.proficiency})` : ""}`).join("\n"),
     projects: facts.projects.map((item) => [item.name, item.description].filter(Boolean).join("\n")).join("\n\n"),
-    awards: facts.awards, volunteering: facts.volunteering, references: facts.references,
+    awards: facts.awards, volunteering: facts.volunteering, references: facts.references, availability: facts.availability,
   };
 }
 

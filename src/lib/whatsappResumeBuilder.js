@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import clientPromise from "@/lib/mongodb";
-import { cleanCandidateFacts, normalizeCandidatePhone, writeCandidateCv } from "@/lib/cvWriting";
+import { candidateFactsFromFlowPayload, normalizeCandidatePhone, writeCandidateCv } from "@/lib/cvWriting";
 
 const GRAPH_VERSION = "v24.0";
 const MAX_ANSWER_LENGTH = 1800;
@@ -657,11 +657,12 @@ export function buildCvPdf(data) {
     },
     projects: () => { if (data.projects) { drawSection("Selected projects"); drawBlock(data.projects); } },
     additional: () => {
-      if (!data.awards && !data.volunteering && !data.references) return;
+      if (!data.awards && !data.volunteering && !data.references && !data.availability) return;
       drawSection("Additional details");
       if (data.awards) { drawLabel("Awards and honours"); drawBlock(data.awards, { after: data.volunteering || data.references ? 2 : 5 }); }
       if (data.volunteering) { drawLabel("Community work"); drawBlock(data.volunteering, { after: data.references ? 2 : 5 }); }
       if (data.references) { drawLabel("References"); drawBlock(data.references); }
+      if (data.availability) { drawLabel("Availability"); drawBlock(data.availability); }
     },
   };
   const defaultOrder = ["profile", "objective", "expertise", "practical", "experience", "education", "certifications", "skills", "projects", "additional"];
@@ -768,12 +769,15 @@ async function handleIncomingMessage(db, { id: inboundMessageId, from, text, flo
     if (typeof parsedFlow === "string") {
       try { parsedFlow = JSON.parse(parsedFlow); } catch { parsedFlow = null; }
     }
-    if (parsedFlow && (parsedFlow.schemaVersion === 2 || parsedFlow.targetRoleId || parsedFlow.goal)) {
-      const sourceFacts = parsedFlow.facts || parsedFlow;
-      structuredFacts = cleanCandidateFacts(sourceFacts);
+    const flowValues = parsedFlow?.data && typeof parsedFlow.data === "object" && !Array.isArray(parsedFlow.data)
+      ? parsedFlow.data
+      : parsedFlow;
+    if (flowValues && (flowValues.schemaVersion === 2 || flowValues.targetRoleId || flowValues.goal)) {
+      const sourceFacts = flowValues.facts || flowValues;
+      structuredFacts = candidateFactsFromFlowPayload(sourceFacts);
       if (!structuredFacts.candidate.phone) structuredFacts.candidate.phone = from;
       if (structuredFacts.candidate.fullName.length >= 3 && structuredFacts.goal.targetRole) data = await writeCandidateCv(structuredFacts);
-    } else data = cleanFlowData(flowReply, from);
+    } else data = cleanFlowData(flowValues, from);
     if (!data) {
       await sendText(from, "I couldn't read all the required fields. Send START to reopen the CV form and submit it again.");
       return;

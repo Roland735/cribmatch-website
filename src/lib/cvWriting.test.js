@@ -1,10 +1,52 @@
 import { describe, expect, it, vi } from "vitest";
-import { candidateFactsToPdfData, cleanCandidateFacts, writeCandidateCv } from "@/lib/cvWriting";
+import { candidateFactsFromFlowPayload, candidateFactsToPdfData, cleanCandidateFacts, writeCandidateCv } from "@/lib/cvWriting";
 
 vi.mock("@/lib/mongodb", () => ({ default: Promise.resolve({}) }));
 const { buildCvPdf } = await import("@/lib/whatsappResumeBuilder");
 
 describe("CV facts and wording", () => {
+  it("converts the flat WhatsApp Flow response into candidate facts", () => {
+    const facts = candidateFactsFromFlowPayload({
+      applicationType: "employment",
+      targetRoleId: "domestic_worker",
+      targetRole: "Domestic Worker",
+      fullName: "Alex Test Candidate",
+      phone: "0770000000",
+      email: "alex.candidate@example.invalid",
+      location: "Test Town",
+      practicalTasks_domestic_worker: ["household_cleaning", "laundry", "ironing"],
+      personalQualities: ["punctual"],
+      skillSuggestions_domestic_worker: ["cleaning", "laundry", "ironing"],
+      skills_1: "Household organisation",
+      skills_2: "Safe use of cleaning products",
+      languages_1: "Shona — fluent",
+      languages_2: "English — conversational",
+      availability: "Available immediately",
+    });
+    const cv = candidateFactsToPdfData(facts);
+
+    expect(facts.candidate.fullName).toBe("Alex Test Candidate");
+    expect(facts.goal.targetRole).toBe("Domestic Worker");
+    expect(cv.phone).toBe("0770000000");
+    expect(cv.location).toBe("Test Town");
+    expect(cv.practicalSkills).toContain("Household cleaning");
+    expect(cv.practicalSkills).toContain("Laundry");
+    expect(cv.skills).toContain("Household organisation");
+    expect(cv.languages).toContain("English — conversational");
+    expect(cv.objective).toContain("Domestic Worker");
+    expect(cv.objective).toContain("household cleaning, laundry, ironing");
+    expect(cv.availability).toBe("Available immediately");
+  });
+
+  it("unwraps a WhatsApp Flow response whose fields are nested under data", () => {
+    const facts = candidateFactsFromFlowPayload({
+      screen: "REVIEW",
+      data: { targetRoleId: "cashier", targetRole: "Cashier", fullName: "Alex Test Candidate" },
+    });
+    expect(facts.candidate.fullName).toBe("Alex Test Candidate");
+    expect(facts.goal.targetRole).toBe("Cashier");
+  });
+
   it("keeps domestic practical abilities separate from work history", () => {
     const facts = cleanCandidateFacts({
       goal: { targetRoleId: "domestic_worker", targetRole: "Domestic worker" },
