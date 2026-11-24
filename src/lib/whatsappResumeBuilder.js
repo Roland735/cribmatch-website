@@ -328,7 +328,7 @@ async function sendCvFlow(to) {
       interactive: {
         type: "flow",
         body: { text: "Fill in your details in this WhatsApp form. When you submit it, CribMatch will create a test CV PDF and send it here." },
-        action: { name: "flow", parameters: { flow_message_version: "3", flow_id: flowId, flow_cta: "Build my CV", flow_action: "navigate", flow_action_payload: { screen: "CONTACT" } } },
+        action: { name: "flow", parameters: { flow_message_version: "3", flow_id: flowId, flow_cta: "Build my CV", flow_action: "navigate", flow_action_payload: { screen: process.env.WHATSAPP_CV_FLOW_ID ? "GOAL" : "CONTACT" } } },
       },
     }),
   });
